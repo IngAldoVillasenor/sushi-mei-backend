@@ -1,0 +1,849 @@
+[
+    {
+        "sku": "1815549",
+        "producto": "2 calpi 500ml",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 39.0,
+        "rag_content": "Producto: 2 calpi 500ml. Categoría: Charolas/Sushi Box. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815548",
+        "producto": "2 coca cola 355ml",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 39.0,
+        "rag_content": "Producto: 2 coca cola 355ml. Categoría: Charolas/Sushi Box. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815543",
+        "producto": "3 Topping",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 99.0,
+        "rag_content": "Producto: 3 Topping. Categoría: Charolas/Sushi Box. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815544",
+        "producto": "5 Topping",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 169.0,
+        "rag_content": "Producto: 5 Topping. Categoría: Charolas/Sushi Box. Precio: $169.00 MXN."
+    },
+    {
+        "sku": "1818425",
+        "producto": "Aderezo chipotle",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Aderezo chipotle. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1861005",
+        "producto": "Aderezo ranch",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Aderezo ranch. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1818428",
+        "producto": "Aderezo Sriracha",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Aderezo Sriracha. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1818426",
+        "producto": "Aderezo tampico",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Aderezo tampico. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1815585",
+        "producto": "Agua de pepino c/limón",
+        "categoria": "Bebidas",
+        "precio": 29.0,
+        "rag_content": "Producto: Agua de pepino c/limón. Categoría: Bebidas. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1906963",
+        "producto": "Agua huglez",
+        "categoria": "Bebidas",
+        "precio": 25.0,
+        "rag_content": "Producto: Agua huglez. Categoría: Bebidas. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1870676",
+        "producto": "Agua mineral",
+        "categoria": "Bebidas",
+        "precio": 25.0,
+        "rag_content": "Producto: Agua mineral. Categoría: Bebidas. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1870677",
+        "producto": "Agua Natural",
+        "categoria": "Bebidas",
+        "precio": 15.0,
+        "rag_content": "Producto: Agua Natural. Categoría: Bebidas. Precio: $15.00 MXN."
+    },
+    {
+        "sku": "1815511",
+        "producto": "Avocado ebi",
+        "categoria": "Camarón",
+        "precio": 99.0,
+        "rag_content": "Producto: Avocado ebi. Categoría: Camarón. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815503",
+        "producto": "Avocado roll",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Avocado roll. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1891987",
+        "producto": "Baby Boneless BBQ",
+        "categoria": "Toppings",
+        "precio": 39.0,
+        "rag_content": "Producto: Baby Boneless BBQ. Categoría: Toppings. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1894855",
+        "producto": "Baby Boneless Bufalo",
+        "categoria": "Toppings",
+        "precio": 39.0,
+        "rag_content": "Producto: Baby Boneless Bufalo. Categoría: Toppings. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815512",
+        "producto": "Banana ebi",
+        "categoria": "Camarón",
+        "precio": 99.0,
+        "rag_content": "Producto: Banana ebi. Categoría: Camarón. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815498",
+        "producto": "Banana roll",
+        "categoria": "Clásicos",
+        "precio": 79.0,
+        "rag_content": "Producto: Banana roll. Categoría: Clásicos. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1861002",
+        "producto": "Boneless 200g (8pz)",
+        "categoria": "Complementos",
+        "precio": 119.0,
+        "rag_content": "Producto: Boneless 200g (8pz). Categoría: Complementos. Precio: $119.00 MXN."
+    },
+    {
+        "sku": "1861003",
+        "producto": "Boneless 360g (12 pz)",
+        "categoria": "Complementos",
+        "precio": 149.0,
+        "rag_content": "Producto: Boneless 360g (12 pz). Categoría: Complementos. Precio: $149.00 MXN."
+    },
+    {
+        "sku": "1861004",
+        "producto": "Boneless 540g (18pz)",
+        "categoria": "Complementos",
+        "precio": 199.0,
+        "rag_content": "Producto: Boneless 540g (18pz). Categoría: Complementos. Precio: $199.00 MXN."
+    },
+    {
+        "sku": "1896717",
+        "producto": "Cajita especial",
+        "categoria": "Servicio a domicilio",
+        "precio": 99.99,
+        "rag_content": "Producto: Cajita especial. Categoría: Servicio a domicilio. Precio: $99.99 MXN."
+    },
+    {
+        "sku": "1815509",
+        "producto": "California ebi",
+        "categoria": "Camarón",
+        "precio": 99.0,
+        "rag_content": "Producto: California ebi. Categoría: Camarón. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815495",
+        "producto": "California roll",
+        "categoria": "Clásicos",
+        "precio": 79.0,
+        "rag_content": "Producto: California roll. Categoría: Clásicos. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815577",
+        "producto": "Calpi 500ml (Bebida Japonesa)",
+        "categoria": "Bebidas",
+        "precio": 25.0,
+        "rag_content": "Producto: Calpi 500ml. Categoría: Bebidas. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1815579",
+        "producto": "Calpi de Fresa 500ml (Bebida Japonesa)",
+        "categoria": "Bebidas",
+        "precio": 35.0,
+        "rag_content": "Producto: Calpi de Fresa 500ml. Categoría: Bebidas. Precio: $35.00 MXN."
+    },
+    {
+        "sku": "1894858",
+        "producto": "Calpi de mango (Bebida Japonesa)",
+        "categoria": "Bebidas",
+        "precio": 35.0,
+        "rag_content": "Producto: Calpi de mango. Categoría: Bebidas. Precio: $35.00 MXN."
+    },
+    {
+        "sku": "1815578",
+        "producto": "Calpi mineral 500ml (Bebida Japonesa)",
+        "categoria": "Bebidas",
+        "precio": 29.0,
+        "rag_content": "Producto: Calpi mineral 500ml. Categoría: Bebidas. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1815564",
+        "producto": "Camarón Empanizado (Orden de 10)",
+        "categoria": "Complementos",
+        "precio": 179.0,
+        "rag_content": "Producto: Camarón Empanizado (Orden de 10). Categoría: Complementos. Precio: $179.00 MXN."
+    },
+    {
+        "sku": "1815562",
+        "producto": "Camarón Empanizado (Orden de 4)",
+        "categoria": "Complementos",
+        "precio": 79.0,
+        "rag_content": "Producto: Camarón Empanizado (Orden de 4). Categoría: Complementos. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815563",
+        "producto": "Camarón Empanizado (Orden de 6)",
+        "categoria": "Complementos",
+        "precio": 109.0,
+        "rag_content": "Producto: Camarón Empanizado (Orden de 6). Categoría: Complementos. Precio: $109.00 MXN."
+    },
+    {
+        "sku": "1815539",
+        "producto": "Camarón familiar",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 289.0,
+        "rag_content": "Producto: Camarón familiar. Categoría: Charolas/Sushi Box. Precio: $289.00 MXN."
+    },
+    {
+        "sku": "1815542",
+        "producto": "Camarón Supreme",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 449.0,
+        "rag_content": "Producto: Camarón Supreme. Categoría: Charolas/Sushi Box. Precio: $449.00 MXN."
+    },
+    {
+        "sku": "1894857",
+        "producto": "Chiles serranos",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Chiles serranos. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1815500",
+        "producto": "Chipotle roll",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Chipotle roll. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815502",
+        "producto": "Chorizo roll",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Chorizo roll. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815537",
+        "producto": "Clásica Familiar",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 199.0,
+        "rag_content": "Producto: Clásica Familiar. Categoría: Charolas/Sushi Box. Precio: $199.00 MXN."
+    },
+    {
+        "sku": "1815540",
+        "producto": "Clásica Supreme",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 339.0,
+        "rag_content": "Producto: Clásica Supreme. Categoría: Charolas/Sushi Box. Precio: $339.00 MXN."
+    },
+    {
+        "sku": "1905230",
+        "producto": "Coca 1.75 ml (Refresco)",
+        "categoria": "Bebidas",
+        "precio": 45.0,
+        "rag_content": "Producto: Coca 1.75 ml. Categoría: Bebidas. Precio: $45.00 MXN."
+    },
+    {
+        "sku": "1900036",
+        "producto": "Coca 600 ml (Refresco)",
+        "categoria": "Bebidas",
+        "precio": 28.0,
+        "rag_content": "Producto: Coca 600 ml. Categoría: Bebidas. Precio: $28.00 MXN."
+    },
+    {
+        "sku": "1815574",
+        "producto": "Coca Normal 355ml (Refresco)",
+        "categoria": "Bebidas",
+        "precio": 22.0,
+        "rag_content": "Producto: Coca Normal 355ml. Categoría: Bebidas. Precio: $22.00 MXN."
+    },
+    {
+        "sku": "1815575",
+        "producto": "Coca Sin Azúcar 355 ml (Refresco)",
+        "categoria": "Bebidas",
+        "precio": 22.0,
+        "rag_content": "Producto: Coca Sin Azúcar 355 ml. Categoría: Bebidas. Precio: $22.00 MXN."
+    },
+    {
+        "sku": "1900039",
+        "producto": "Coffee americano/vainilla 230 ml",
+        "categoria": "Bebidas",
+        "precio": 30.0,
+        "rag_content": "Producto: Coffee americano/vainilla 230 ml. Categoría: Bebidas. Precio: $30.00 MXN."
+    },
+    {
+        "sku": "1870520",
+        "producto": "Combo familiar",
+        "categoria": "Promociones",
+        "precio": 299.99,
+        "rag_content": "Producto: Combo familiar. Categoría: Promociones. Precio: $299.99 MXN."
+    },
+    {
+        "sku": "1855832",
+        "producto": "Combo individual",
+        "categoria": "Promociones",
+        "precio": 99.99,
+        "rag_content": "Producto: Combo individual. Categoría: Promociones. Precio: $99.99 MXN."
+    },
+    {
+        "sku": "1815517",
+        "producto": "Combos pareja",
+        "categoria": "Promociones",
+        "precio": 179.99,
+        "rag_content": "Producto: Combos pareja. Categoría: Promociones. Precio: $179.99 MXN."
+    },
+    {
+        "sku": "1815508",
+        "producto": "Empanizado ebi",
+        "categoria": "Camarón",
+        "precio": 99.0,
+        "rag_content": "Producto: Empanizado ebi. Categoría: Camarón. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815499",
+        "producto": "Empanizado especial",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Empanizado especial. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815494",
+        "producto": "Empanizado roll",
+        "categoria": "Clásicos",
+        "precio": 79.0,
+        "rag_content": "Producto: Empanizado roll. Categoría: Clásicos. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815538",
+        "producto": "Especial Familiar",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 249.0,
+        "rag_content": "Producto: Especial Familiar. Categoría: Charolas/Sushi Box. Precio: $249.00 MXN."
+    },
+    {
+        "sku": "1815541",
+        "producto": "Especial Supreme",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 399.0,
+        "rag_content": "Producto: Especial Supreme. Categoría: Charolas/Sushi Box. Precio: $399.00 MXN."
+    },
+    {
+        "sku": "1815501",
+        "producto": "Francés roll",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Francés roll. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815525",
+        "producto": "Fuego manchego",
+        "categoria": "Toppings",
+        "precio": 39.0,
+        "rag_content": "Producto: Fuego manchego. Categoría: Toppings. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815576",
+        "producto": "Fuze Tea 600ml",
+        "categoria": "Bebidas",
+        "precio": 25.0,
+        "rag_content": "Producto: Fuze Tea 600ml. Categoría: Bebidas. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1894856",
+        "producto": "Ghohan",
+        "categoria": "Yakimeshi",
+        "precio": 35.0,
+        "rag_content": "Producto: Ghohan. Categoría: Yakimeshi. Precio: $35.00 MXN."
+    },
+    {
+        "sku": "1815573",
+        "producto": "Helado frito",
+        "categoria": "Postres",
+        "precio": 69.0,
+        "rag_content": "Producto: Helado frito. Categoría: Postres. Precio: $69.00 MXN."
+    },
+    {
+        "sku": "1815588",
+        "producto": "Jarra 1.5L",
+        "categoria": "Bebidas",
+        "precio": 89.0,
+        "rag_content": "Producto: Jarra 1.5L. Categoría: Bebidas. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1900038",
+        "producto": "Jugo Jumex lata 355 ml",
+        "categoria": "Bebidas",
+        "precio": 22.0,
+        "rag_content": "Producto: Jugo Jumex lata 355 ml. Categoría: Bebidas. Precio: $22.00 MXN."
+    },
+    {
+        "sku": "1900037",
+        "producto": "Jugo Jumex vidrio 413 ml",
+        "categoria": "Bebidas",
+        "precio": 25.0,
+        "rag_content": "Producto: Jugo Jumex vidrio 413 ml. Categoría: Bebidas. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1815566",
+        "producto": "Kushiagues 1pz",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Kushiagues 1pz. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1815567",
+        "producto": "Kushiagues 4pz",
+        "categoria": "Complementos",
+        "precio": 69.0,
+        "rag_content": "Producto: Kushiagues 4pz. Categoría: Complementos. Precio: $69.00 MXN."
+    },
+    {
+        "sku": "1815568",
+        "producto": "Kushiagues 6pz",
+        "categoria": "Complementos",
+        "precio": 89.0,
+        "rag_content": "Producto: Kushiagues 6pz. Categoría: Complementos. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815580",
+        "producto": "Limonada",
+        "categoria": "Bebidas",
+        "precio": 29.0,
+        "rag_content": "Producto: Limonada. Categoría: Bebidas. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1815581",
+        "producto": "Limonada Rosa",
+        "categoria": "Bebidas",
+        "precio": 29.0,
+        "rag_content": "Producto: Limonada Rosa. Categoría: Bebidas. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1815518",
+        "producto": "Lunes $69",
+        "categoria": "Promociones",
+        "precio": 69.0,
+        "rag_content": "Producto: Lunes $69. Categoría: Promociones. Precio: $69.00 MXN."
+    },
+    {
+        "sku": "1815514",
+        "producto": "Mango roll",
+        "categoria": "Eztrella roll",
+        "precio": 109.0,
+        "rag_content": "Producto: Mango roll. Categoría: Eztrella roll. Precio: $109.00 MXN."
+    },
+    {
+        "sku": "1900999",
+        "producto": "Manzanita sol 600 ml (Refresco)",
+        "categoria": "Bebidas",
+        "precio": 25.0,
+        "rag_content": "Producto: Manzanita sol 600 ml. Categoría: Bebidas. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1815507",
+        "producto": "Mar y tierra",
+        "categoria": "Camarón",
+        "precio": 99.0,
+        "rag_content": "Producto: Mar y tierra. Categoría: Camarón. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815583",
+        "producto": "Naranjada Mineral",
+        "categoria": "Bebidas",
+        "precio": 29.0,
+        "rag_content": "Producto: Naranjada Mineral. Categoría: Bebidas. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1815582",
+        "producto": "Naranjada Natural",
+        "categoria": "Bebidas",
+        "precio": 29.0,
+        "rag_content": "Producto: Naranjada Natural. Categoría: Bebidas. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1871449",
+        "producto": "Nico Nico",
+        "categoria": "Bebidas",
+        "precio": 39.0,
+        "rag_content": "Producto: Nico Nico. Categoría: Bebidas. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815570",
+        "producto": "Nuggets 100gr",
+        "categoria": "Complementos",
+        "precio": 39.0,
+        "rag_content": "Producto: Nuggets 100gr. Categoría: Complementos. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815572",
+        "producto": "Nutella roll",
+        "categoria": "Postres",
+        "precio": 69.0,
+        "rag_content": "Producto: Nutella roll. Categoría: Postres. Precio: $69.00 MXN."
+    },
+    {
+        "sku": "1815527",
+        "producto": "Olas Cremosas",
+        "categoria": "Toppings",
+        "precio": 39.0,
+        "rag_content": "Producto: Olas Cremosas. Categoría: Toppings. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1815569",
+        "producto": "Papas a la francesa 230gr",
+        "categoria": "Complementos",
+        "precio": 45.0,
+        "rag_content": "Producto: Papas a la francesa 230gr. Categoría: Complementos. Precio: $45.00 MXN."
+    },
+    {
+        "sku": "1815571",
+        "producto": "Papas al gajo 250gr",
+        "categoria": "Complementos",
+        "precio": 49.0,
+        "rag_content": "Producto: Papas al gajo 250gr. Categoría: Complementos. Precio: $49.00 MXN."
+    },
+    {
+        "sku": "1815554",
+        "producto": "Papas gajo extra",
+        "categoria": "Volcán",
+        "precio": 19.0,
+        "rag_content": "Producto: Papas gajo extra. Categoría: Volcán. Precio: $19.00 MXN."
+    },
+    {
+        "sku": "1815565",
+        "producto": "Pepino Mei",
+        "categoria": "Complementos",
+        "precio": 49.99,
+        "rag_content": "Producto: Pepino Mei. Categoría: Complementos. Precio: $49.99 MXN."
+    },
+    {
+        "sku": "1815510",
+        "producto": "Philadelphia ebi",
+        "categoria": "Camarón",
+        "precio": 99.0,
+        "rag_content": "Producto: Philadelphia ebi. Categoría: Camarón. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815496",
+        "producto": "Philadelphia roll",
+        "categoria": "Clásicos",
+        "precio": 79.0,
+        "rag_content": "Producto: Philadelphia roll. Categoría: Clásicos. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815584",
+        "producto": "Piña colada",
+        "categoria": "Bebidas",
+        "precio": 49.0,
+        "rag_content": "Producto: Piña colada. Categoría: Bebidas. Precio: $49.00 MXN."
+    },
+    {
+        "sku": "1815504",
+        "producto": "Queso roll Frío",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Queso roll Frío. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815505",
+        "producto": "Queso roll Frito",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Queso roll Frito. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1863190",
+        "producto": "Ramen Tonkotsu",
+        "categoria": "Ramen tonkotsu",
+        "precio": 189.99,
+        "rag_content": "Producto: Ramen Tonkotsu. Categoría: Ramen tonkotsu. Precio: $189.99 MXN."
+    },
+    {
+        "sku": "1815515",
+        "producto": "Salmón roll",
+        "categoria": "Eztrella roll",
+        "precio": 119.0,
+        "rag_content": "Producto: Salmón roll. Categoría: Eztrella roll. Precio: $119.00 MXN."
+    },
+    {
+        "sku": "1818427",
+        "producto": "Salsa anguila",
+        "categoria": "Complementos",
+        "precio": 20.0,
+        "rag_content": "Producto: Salsa anguila. Categoría: Complementos. Precio: $20.00 MXN."
+    },
+    {
+        "sku": "1819831",
+        "producto": "Salsa Soya",
+        "categoria": "Complementos",
+        "precio": 15.0,
+        "rag_content": "Producto: Salsa Soya. Categoría: Complementos. Precio: $15.00 MXN."
+    },
+    {
+        "sku": "1815519",
+        "producto": "Servicio a domicilio",
+        "categoria": "Servicio a domicilio",
+        "precio": 35.0,
+        "rag_content": "Producto: Servicio a domicilio. Categoría: Servicio a domicilio. Precio: $35.00 MXN."
+    },
+    {
+        "sku": "1815520",
+        "producto": "Servicio a domicilio",
+        "categoria": "Servicio a domicilio",
+        "precio": 40.0,
+        "rag_content": "Producto: Servicio a domicilio. Categoría: Servicio a domicilio. Precio: $40.00 MXN."
+    },
+    {
+        "sku": "1815521",
+        "producto": "Servicio a domicilio",
+        "categoria": "Servicio a domicilio",
+        "precio": 45.0,
+        "rag_content": "Producto: Servicio a domicilio. Categoría: Servicio a domicilio. Precio: $45.00 MXN."
+    },
+    {
+        "sku": "1815522",
+        "producto": "Servicio a domicilio",
+        "categoria": "Servicio a domicilio",
+        "precio": 50.0,
+        "rag_content": "Producto: Servicio a domicilio. Categoría: Servicio a domicilio. Precio: $50.00 MXN."
+    },
+    {
+        "sku": "1815523",
+        "producto": "Servicio a domicilio",
+        "categoria": "Servicio a domicilio",
+        "precio": 55.0,
+        "rag_content": "Producto: Servicio a domicilio. Categoría: Servicio a domicilio. Precio: $55.00 MXN."
+    },
+    {
+        "sku": "1819832",
+        "producto": "Soya picante",
+        "categoria": "Complementos",
+        "precio": 15.0,
+        "rag_content": "Producto: Soya picante. Categoría: Complementos. Precio: $15.00 MXN."
+    },
+    {
+        "sku": "1900040",
+        "producto": "Strawberry 230 ml",
+        "categoria": "Bebidas",
+        "precio": 30.0,
+        "rag_content": "Producto: Strawberry 230 ml. Categoría: Bebidas. Precio: $30.00 MXN."
+    },
+    {
+        "sku": "1815547",
+        "producto": "Sushi box camarón",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 339.0,
+        "rag_content": "Producto: Sushi box camarón. Categoría: Charolas/Sushi Box. Precio: $339.00 MXN."
+    },
+    {
+        "sku": "1815545",
+        "producto": "Sushi box Clásica",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 299.0,
+        "rag_content": "Producto: Sushi box Clásica. Categoría: Charolas/Sushi Box. Precio: $299.00 MXN."
+    },
+    {
+        "sku": "1815546",
+        "producto": "Sushi box especial",
+        "categoria": "Charolas/Sushi Box",
+        "precio": 319.0,
+        "rag_content": "Producto: Sushi box especial. Categoría: Charolas/Sushi Box. Precio: $319.00 MXN."
+    },
+    {
+        "sku": "1815561",
+        "producto": "Sushi Burger",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 59.0,
+        "rag_content": "Producto: Sushi Burger. Categoría: Sushi pop premium/Burger. Precio: $59.00 MXN."
+    },
+    {
+        "sku": "1815559",
+        "producto": "Sushi pop Clásica",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 25.0,
+        "rag_content": "Producto: Sushi pop Clásica. Categoría: Sushi pop premium/Burger. Precio: $25.00 MXN."
+    },
+    {
+        "sku": "1815560",
+        "producto": "Sushi pop especial",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 29.0,
+        "rag_content": "Producto: Sushi pop especial. Categoría: Sushi pop premium/Burger. Precio: $29.00 MXN."
+    },
+    {
+        "sku": "1815558",
+        "producto": "Sushi pop de Arrachera",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 99.0,
+        "rag_content": "Producto: Sushi pop de Arrachera. Categoría: Sushi pop premium/Burger. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815557",
+        "producto": "Sushi pop de Camarón",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 89.0,
+        "rag_content": "Producto: Sushi pop de Camarón. Categoría: Sushi pop premium/Burger. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815555",
+        "producto": "Sushi pop de Pollo",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 79.0,
+        "rag_content": "Producto: Sushi pop de Pollo. Categoría: Sushi pop premium/Burger. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815556",
+        "producto": "Sushi pop de Res",
+        "categoria": "Sushi pop premium/Burger",
+        "precio": 79.0,
+        "rag_content": "Producto: Sushi pop de Res. Categoría: Sushi pop premium/Burger. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815513",
+        "producto": "Takis roll",
+        "categoria": "Eztrella roll",
+        "precio": 99.0,
+        "rag_content": "Producto: Takis roll. Categoría: Eztrella roll. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815506",
+        "producto": "Tampico especial",
+        "categoria": "Especiales",
+        "precio": 89.0,
+        "rag_content": "Producto: Tampico especial. Categoría: Especiales. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815497",
+        "producto": "Tampico roll",
+        "categoria": "Clásicos",
+        "precio": 79.0,
+        "rag_content": "Producto: Tampico roll. Categoría: Clásicos. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815524",
+        "producto": "Tsunami Roll",
+        "categoria": "Toppings",
+        "precio": 39.0,
+        "rag_content": "Producto: Tsunami Roll. Categoría: Toppings. Precio: $39.00 MXN."
+    },
+    {
+        "sku": "1900041",
+        "producto": "Vaso hielo",
+        "categoria": "Bebidas",
+        "precio": 9.0,
+        "rag_content": "Producto: Vaso hielo. Categoría: Bebidas. Precio: $9.00 MXN."
+    },
+    {
+        "sku": "1815552",
+        "producto": "Volcán camarón",
+        "categoria": "Volcán",
+        "precio": 109.0,
+        "rag_content": "Producto: Volcán camarón. Categoría: Volcán. Precio: $109.00 MXN."
+    },
+    {
+        "sku": "1815550",
+        "producto": "Volcán clásica",
+        "categoria": "Volcán",
+        "precio": 89.0,
+        "rag_content": "Producto: Volcán clásica. Categoría: Volcán. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815551",
+        "producto": "Volcán especial",
+        "categoria": "Volcán",
+        "precio": 99.0,
+        "rag_content": "Producto: Volcán especial. Categoría: Volcán. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815553",
+        "producto": "Volcán eztrella",
+        "categoria": "Volcán",
+        "precio": 129.0,
+        "rag_content": "Producto: Volcán eztrella. Categoría: Volcán. Precio: $129.00 MXN."
+    },
+    {
+        "sku": "1815535",
+        "producto": "Yakimeshi Especial de Camarón",
+        "categoria": "Yakimeshi",
+        "precio": 119.0,
+        "rag_content": "Producto: Yakimeshi Especial de Camarón. Categoría: Yakimeshi. Precio: $119.00 MXN."
+    },
+    {
+        "sku": "1815536",
+        "producto": "Yakimeshi Especial de Mixto",
+        "categoria": "Yakimeshi",
+        "precio": 129.0,
+        "rag_content": "Producto: Yakimeshi Especial de Mixto. Categoría: Yakimeshi. Precio: $129.00 MXN."
+    },
+    {
+        "sku": "1815533",
+        "producto": "Yakimeshi Especial de Pollo",
+        "categoria": "Yakimeshi",
+        "precio": 99.0,
+        "rag_content": "Producto: Yakimeshi Especial de Pollo. Categoría: Yakimeshi. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815534",
+        "producto": "Yakimeshi Especial de Res",
+        "categoria": "Yakimeshi",
+        "precio": 99.0,
+        "rag_content": "Producto: Yakimeshi Especial de Res. Categoría: Yakimeshi. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815531",
+        "producto": "Yakimeshi Natural de Camarón",
+        "categoria": "Yakimeshi",
+        "precio": 89.0,
+        "rag_content": "Producto: Yakimeshi Natural de Camarón. Categoría: Yakimeshi. Precio: $89.00 MXN."
+    },
+    {
+        "sku": "1815532",
+        "producto": "Yakimeshi Natural de Mixto",
+        "categoria": "Yakimeshi",
+        "precio": 99.0,
+        "rag_content": "Producto: Yakimeshi Natural de Mixto. Categoría: Yakimeshi. Precio: $99.00 MXN."
+    },
+    {
+        "sku": "1815529",
+        "producto": "Yakimeshi Natural de Pollo",
+        "categoria": "Yakimeshi",
+        "precio": 79.0,
+        "rag_content": "Producto: Yakimeshi Natural de Pollo. Categoría: Yakimeshi. Precio: $79.00 MXN."
+    },
+    {
+        "sku": "1815530",
+        "producto": "Yakimeshi Natural de Res",
+        "categoria": "Yakimeshi",
+        "precio": 79.0,
+        "rag_content": "Producto: Yakimeshi Natural de Res. Categoría: Yakimeshi. Precio: $79.00 MXN."
+    }
+]

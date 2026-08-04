@@ -1,0 +1,41 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/sushidb
+    username: sushi
+    password: mei
+  jpa:
+    hibernate:
+      ddl-auto: update # Ideal para desarrollo, crea las tablas automáticamente
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+langchain4j:
+  ollama:
+    chat-model:
+      base-url: http://localhost:11434
+      model-name: llama3.1
+      temperature: 0.3
+    embedding-model:
+      base-url: http://localhost:11434
+      model-name: nomic-embed-text
+
+whatsapp:
+  api:
+    token: "EAAVQfqZA1FkoBSOOzMZBbUiWPpwZB8dEHyDbgnxQomKvtl45xx2ZAJjZBcQHwANfsh1GDVsZB7O3tomUyoY3EEZBURQTZAYJKEQyitgSo8eUos20SnZBfs9V8vQFmA8u86fZApkrMq6HoA88yuh1KQfQfS1c3N56r3VkTxIPkovL3PfU5nztlBihli0BTGvfGsZCkOjBTZByaxljZCgsNdZB0sB7ZBZBZAsEV6GaR2XQaiZCMCUwXsxk3m26HFNS3LhpYbcsagy8povhZCeX3yvHoGr60WZAe13UkW3eSPTUKVVbOwZDZD"
+    phone-number-id: "1320287381159448" # El identificador del número de prueba
+
+server:
+  address: 0.0.0.0
+
+ai:
+
+  provider: gemini
+
+  gemini:
+    api-key: AQ.Ab8RN6ILc_7IGo2vtaQ2X06lww5MbePIMg8gFqr5jtgGGEqcpA
+    model: gemini-2.5-flash
+
+  ollama:
+    base-url: http://localhost:11434
+    model: llama3.1
