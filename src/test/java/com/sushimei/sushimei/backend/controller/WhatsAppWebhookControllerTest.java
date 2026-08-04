@@ -1,24 +1,20 @@
 package com.sushimei.sushimei.backend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sushimei.sushimei.backend.agent.SushiAgent;
 import com.sushimei.sushimei.backend.configuration.WhatsAppProperties;
-import com.sushimei.sushimei.backend.conversation.ConversationSessionService;
-import com.sushimei.sushimei.backend.repository.OrderRepository;
+import com.sushimei.sushimei.backend.conversation.ConversationManager;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,86 +26,94 @@ class WhatsAppWebhookControllerTest {
     private static final String TEXT_MESSAGE = "Quiero un rollo";
 
     @Mock
-    private SushiAgent sushiAgent;
+    private ConversationManager conversationManager;
 
     @Mock
     private WhatsAppService whatsAppService;
-
-    @Mock
-    private OrderRepository orderRepository;
-
-    @Mock
-    private ConversationSessionService conversationSessionService;
 
     private WhatsAppWebhookController controller;
 
     @BeforeEach
     void setUp() {
         controller = new WhatsAppWebhookController(
-                sushiAgent,
+                conversationManager,
                 whatsAppService,
-                orderRepository,
                 new WhatsAppProperties("test-token", "test-phone", "test-verify", "v19.0"),
-                new ObjectMapper(),
-                conversationSessionService);
+                new ObjectMapper());
     }
 
     @Test
-    void inboundTextRecordsActivityAndKeepsExistingAgentInvocationArguments() {
-        when(sushiAgent.chat(NORMALIZED_PHONE_NUMBER, NORMALIZED_PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("response");
+    void inboundTextNormalizesPhoneRecordsActivityOnceDelegatesAndForwardsTheResponse() {
+        when(conversationManager.handleTextMessage(NORMALIZED_PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("response");
 
         ResponseEntity<String> response = controller.receiveMessage(textPayload());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo("EVENT_RECEIVED");
-        verify(conversationSessionService).recordInboundActivity(NORMALIZED_PHONE_NUMBER);
-        verify(conversationSessionService, never()).recordTransferReceipt(anyString(), anyString());
-        verify(sushiAgent).chat(NORMALIZED_PHONE_NUMBER, NORMALIZED_PHONE_NUMBER, TEXT_MESSAGE);
-        verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "response");
+        InOrder inOrder = inOrder(conversationManager, whatsAppService);
+        inOrder.verify(conversationManager).recordInboundMessage(NORMALIZED_PHONE_NUMBER);
+        inOrder.verify(conversationManager).handleTextMessage(NORMALIZED_PHONE_NUMBER, TEXT_MESSAGE);
+        inOrder.verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "response");
     }
 
     @Test
-    void downloadedImageRecordsReceiptWithoutChangingExistingOrderOrAgentFlow() {
+    void downloadedImageDelegatesTheSavedPathAfterActivityAndForwardsTheManagerResponse() {
         when(whatsAppService.downloadWhatsAppImage("media-123")).thenReturn("receipts/media-123.jpg");
-        when(sushiAgent.chat(eq(NORMALIZED_PHONE_NUMBER), eq(NORMALIZED_PHONE_NUMBER), anyString())).thenReturn("thanks");
+        when(conversationManager.handleImageMessage(NORMALIZED_PHONE_NUMBER, "receipts/media-123.jpg"))
+                .thenReturn("thanks");
 
         ResponseEntity<String> response = controller.receiveMessage(imagePayload());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo("EVENT_RECEIVED");
-        verify(conversationSessionService).recordInboundActivity(NORMALIZED_PHONE_NUMBER);
-        verify(conversationSessionService).recordTransferReceipt(NORMALIZED_PHONE_NUMBER, "receipts/media-123.jpg");
-        verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(
-                NORMALIZED_PHONE_NUMBER, "PENDING_VALIDATION");
-        verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "thanks");
+        InOrder inOrder = inOrder(conversationManager, whatsAppService);
+        inOrder.verify(conversationManager).recordInboundMessage(NORMALIZED_PHONE_NUMBER);
+        inOrder.verify(whatsAppService).downloadWhatsAppImage("media-123");
+        inOrder.verify(conversationManager).handleImageMessage(NORMALIZED_PHONE_NUMBER, "receipts/media-123.jpg");
+        inOrder.verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "thanks");
     }
 
     @Test
-    void shadowPersistenceFailureDoesNotPreventExistingTextResponse() {
-        doThrow(new IllegalStateException("database unavailable"))
-                .when(conversationSessionService).recordInboundActivity(NORMALIZED_PHONE_NUMBER);
-        when(sushiAgent.chat(NORMALIZED_PHONE_NUMBER, NORMALIZED_PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("response");
-
-        ResponseEntity<String> response = controller.receiveMessage(textPayload());
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isEqualTo("EVENT_RECEIVED");
-        verify(sushiAgent).chat(NORMALIZED_PHONE_NUMBER, NORMALIZED_PHONE_NUMBER, TEXT_MESSAGE);
-        verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "response");
-    }
-
-    @Test
-    void failedImageDownloadDoesNotRecordTransferReceipt() {
+    void failedImageDownloadDelegatesANullPathAndForwardsTheManagerResponse() {
         when(whatsAppService.downloadWhatsAppImage("media-123")).thenReturn(null);
-        when(sushiAgent.chat(eq(NORMALIZED_PHONE_NUMBER), eq(NORMALIZED_PHONE_NUMBER), anyString())).thenReturn("thanks");
+        when(conversationManager.handleImageMessage(NORMALIZED_PHONE_NUMBER, null)).thenReturn("thanks");
 
         ResponseEntity<String> response = controller.receiveMessage(imagePayload());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo("EVENT_RECEIVED");
-        verify(conversationSessionService).recordInboundActivity(NORMALIZED_PHONE_NUMBER);
-        verify(conversationSessionService, never()).recordTransferReceipt(anyString(), anyString());
-        verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "thanks");
+        InOrder inOrder = inOrder(conversationManager, whatsAppService);
+        inOrder.verify(conversationManager).recordInboundMessage(NORMALIZED_PHONE_NUMBER);
+        inOrder.verify(whatsAppService).downloadWhatsAppImage("media-123");
+        inOrder.verify(conversationManager).handleImageMessage(NORMALIZED_PHONE_NUMBER, null);
+        inOrder.verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "thanks");
+    }
+
+    @Test
+    void audioDelegatesWithTheNormalizedPhoneAndForwardsTheManagerResponse() {
+        when(conversationManager.handleAudioMessage(NORMALIZED_PHONE_NUMBER)).thenReturn("audio response");
+
+        ResponseEntity<String> response = controller.receiveMessage(audioPayload());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo("EVENT_RECEIVED");
+        verify(conversationManager).recordInboundMessage(NORMALIZED_PHONE_NUMBER);
+        verify(conversationManager).handleAudioMessage(NORMALIZED_PHONE_NUMBER);
+        verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "audio response");
+    }
+
+    @Test
+    void unsupportedMessageDelegatesTheTypeAndForwardsTheManagerResponse() {
+        when(conversationManager.handleUnsupportedMessage(NORMALIZED_PHONE_NUMBER, "video"))
+                .thenReturn("unsupported response");
+
+        ResponseEntity<String> response = controller.receiveMessage(unsupportedPayload());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo("EVENT_RECEIVED");
+        verify(conversationManager).recordInboundMessage(NORMALIZED_PHONE_NUMBER);
+        verify(conversationManager).handleUnsupportedMessage(NORMALIZED_PHONE_NUMBER, "video");
+        verify(whatsAppService).sendMessage(NORMALIZED_PHONE_NUMBER, "unsupported response");
     }
 
     private String textPayload() {
@@ -121,6 +125,18 @@ class WhatsAppWebhookControllerTest {
     private String imagePayload() {
         return """
                 {"entry":[{"changes":[{"value":{"messages":[{"from":"%s","type":"image","image":{"id":"media-123"}}]}}]}]}
+                """.formatted(RAW_PHONE_NUMBER);
+    }
+
+    private String audioPayload() {
+        return """
+                {"entry":[{"changes":[{"value":{"messages":[{"from":"%s","type":"audio"}]}}]}]}
+                """.formatted(RAW_PHONE_NUMBER);
+    }
+
+    private String unsupportedPayload() {
+        return """
+                {"entry":[{"changes":[{"value":{"messages":[{"from":"%s","type":"video"}]}}]}]}
                 """.formatted(RAW_PHONE_NUMBER);
     }
 }
