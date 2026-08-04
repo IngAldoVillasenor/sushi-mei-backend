@@ -83,13 +83,11 @@ class ConversationSessionServiceTest {
     @Test
     void resetPreservesCreationTimeAndClearsCheckoutFields() {
         ConversationSession session = ConversationSession.create(PHONE_NUMBER, CREATED_AT);
-        session.captureCheckoutDetails(
-                FulfillmentType.DELIVERY,
-                "Calle 1",
-                "Ana",
-                PaymentMethod.CASH,
-                new BigDecimal("500.00"),
-                CREATED_AT.plusSeconds(60));
+        Instant checkoutTime = CREATED_AT.plusSeconds(60);
+        session.selectDelivery(checkoutTime);
+        session.captureDeliveryAddress("Calle 1", checkoutTime);
+        session.selectCash(checkoutTime);
+        session.captureCashDenomination(new BigDecimal("500.00"), checkoutTime);
         session.recordTransferReceipt("receipts/old.jpg", CREATED_AT.plusSeconds(60));
         conversationSessionRepository.saveAndFlush(session);
         Long persistedVersion = session.getVersion();

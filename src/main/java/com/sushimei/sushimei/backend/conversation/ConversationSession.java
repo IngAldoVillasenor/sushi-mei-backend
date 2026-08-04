@@ -93,21 +93,88 @@ public class ConversationSession {
         touch(now);
     }
 
-    /*
-     * These package-private capture methods persist future deterministic inputs.
-     * They intentionally do not infer or transition checkout state.
-     */
-    void captureCheckoutDetails(FulfillmentType fulfillmentType,
-                                String deliveryAddress,
-                                String pickupName,
-                                PaymentMethod paymentMethod,
-                                BigDecimal cashDenomination,
-                                Instant now) {
-        this.fulfillmentType = fulfillmentType;
-        this.deliveryAddress = deliveryAddress;
-        this.pickupName = pickupName;
-        this.paymentMethod = paymentMethod;
-        this.cashDenomination = cashDenomination;
+    void beginCartConfirmation(Instant now) {
+        this.state = ConversationState.WAITING_CART_CONFIRMATION;
+        touch(now);
+    }
+
+    void confirmCart(Instant now) {
+        this.state = ConversationState.WAITING_FULFILLMENT_TYPE;
+        touch(now);
+    }
+
+    void returnToOrdering(Instant now) {
+        this.state = ConversationState.ORDERING;
+        touch(now);
+    }
+
+    void selectDelivery(Instant now) {
+        this.fulfillmentType = FulfillmentType.DELIVERY;
+        this.pickupName = null;
+        this.state = ConversationState.WAITING_DELIVERY_ADDRESS;
+        touch(now);
+    }
+
+    void selectPickup(Instant now) {
+        this.fulfillmentType = FulfillmentType.PICKUP;
+        this.deliveryAddress = null;
+        this.state = ConversationState.WAITING_PICKUP_NAME;
+        touch(now);
+    }
+
+    void captureDeliveryAddress(String address, Instant now) {
+        this.deliveryAddress = address;
+        this.state = ConversationState.WAITING_PAYMENT_METHOD;
+        touch(now);
+    }
+
+    void capturePickupName(String name, Instant now) {
+        this.pickupName = name;
+        this.state = ConversationState.WAITING_PAYMENT_METHOD;
+        touch(now);
+    }
+
+    void selectCash(Instant now) {
+        this.paymentMethod = PaymentMethod.CASH;
+        this.transferReceiptPath = null;
+        this.state = ConversationState.WAITING_CASH_DENOMINATION;
+        touch(now);
+    }
+
+    void selectTransfer(Instant now) {
+        this.paymentMethod = PaymentMethod.TRANSFER;
+        this.cashDenomination = null;
+        this.state = ConversationState.WAITING_TRANSFER_RECEIPT;
+        touch(now);
+    }
+
+    void selectPickupCard(Instant now) {
+        this.paymentMethod = PaymentMethod.CARD;
+        this.cashDenomination = null;
+        this.transferReceiptPath = null;
+        this.state = ConversationState.READY_TO_CONFIRM;
+        touch(now);
+    }
+
+    void captureCashDenomination(BigDecimal denomination, Instant now) {
+        this.cashDenomination = denomination;
+        this.state = ConversationState.READY_TO_CONFIRM;
+        touch(now);
+    }
+
+    void captureTransferReceipt(String receiptPath, Instant now) {
+        this.transferReceiptPath = receiptPath;
+        this.state = ConversationState.READY_TO_CONFIRM;
+        touch(now);
+    }
+
+    void confirmCheckout(Instant now) {
+        this.state = ConversationState.ORDER_CONFIRMED;
+        touch(now);
+    }
+
+    void cancelCheckout(Instant now) {
+        this.state = ConversationState.CANCELLED;
         touch(now);
     }
 

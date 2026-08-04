@@ -2,14 +2,13 @@
 
 ## Current architecture
 
-The application is a Spring Boot monolith that receives WhatsApp webhooks, invokes the `SushiAgent` LangChain4j service, and persists carts and orders with Spring Data JPA. The current agent owns natural-language interaction and initiates the existing cart and checkout tool calls. PostgreSQL with pgvector stores menu embeddings, and Ollama provides both the chat and embedding models.
+The application is a Spring Boot monolith that receives WhatsApp webhooks, invokes the `SushiAgent` LangChain4j service, and persists carts and orders with Spring Data JPA. PostgreSQL with pgvector stores menu embeddings, and Ollama provides both active chat and embedding models.
 
 ## Current reliability issues
 
-- Configuration and secrets were previously committed or hardcoded in Java classes.
-- Provider dependencies were mixed across incompatible Spring AI and LangChain4j versions.
-- The checkout progression is encoded in prompt instructions, so conversation history can be mistaken for business state.
-- External services made the context-load test dependent on developer infrastructure.
+- Checkout progression is still expressed in prompt instructions, so conversational history can be mistaken for operational state.
+- The LLM currently coordinates language and legacy checkout behavior, which makes deterministic validation difficult.
+- External provider and infrastructure failures must remain isolated from core order and checkout data.
 
 ## Phase 0: foundation
 
@@ -17,29 +16,66 @@ Phase 0 makes configuration environment-backed, keeps PostgreSQL, pgvector, and 
 
 ## Phase 1: persistent conversation sessions (shadow mode)
 
-Phase 1 adds a durable `ConversationSession` keyed by normalized customer phone number. It stores future operational checkout fields and a typed lifecycle state, but the webhook only records inbound activity and successfully downloaded transfer-receipt paths. Session data is written in shadow mode: it does not select a response branch, change the `SushiAgent` prompt or memory, create an order, or transition checkout state. There are no automatic transitions based on message text, captions, images, or LLM output.
+Phase 1 adds a durable `ConversationSession` keyed by normalized customer phone number. It stores typed future checkout fields and a lifecycle state, but production handling only records inbound activity and successfully downloaded transfer-receipt paths. These shadow writes do not select a response branch, change the `SushiAgent` prompt or memory, create an order, or transition checkout state.
 
-Chat memory remains unchanged and continues to support conversational tone and continuity. It is not a checkout source of truth, and neither is the Phase 1 session until deterministic orchestration is introduced.
+Chat memory remains useful for conversational tone and continuity. It is not a checkout source of truth, and neither are the Phase 1 shadow fields until explicit commands are routed to deterministic orchestration.
+
+## Phase 2: ConversationManager boundary
+
+Phase 2 introduces `ConversationManager` as the application boundary for inbound WhatsApp messages. The webhook controller continues to own Meta payload parsing, Mexico phone normalization, media download, response delivery, and HTTP acknowledgements. The manager coordinates the existing `SushiAgent`, shadow session writes, and receipt-to-order association without changing checkout progression.
+
+`ConversationSession` remains shadow-only in production: customer text, media content, prompts, and LLM output are not persisted as checkout state. The LLM retains the current language behavior only.
+
+## Phase 3: deterministic transition engine
+
+Phase 3 adds `ConversationStateMachine` and `ConversationTransitionService`. The state machine is a pure deterministic domain component: it has no repository, LLM, HTTP, or transaction dependency. The transition service owns short database transactions, loads existing sessions, obtains one `Clock` instant per command, invokes the state machine, and persists the result.
+
+This strict command layer is intentionally **not invoked by production WhatsApp messages yet**. `ConversationManager`, the webhook controller, `SushiAgent`, carts, order creation, and `OrderRecord` behavior remain unchanged. Shadow receipt recording through `ConversationSessionService.recordTransferReceipt` is still permissive and never advances state; `ConversationTransitionService.provideTransferReceipt` is the separate strict command that requires the transfer-receipt state and validates readiness.
+
+### Transition matrix
+
+| Current state | Command | Next state |
+| --- | --- | --- |
+| `ORDERING` | request checkout review | `WAITING_CART_CONFIRMATION` |
+| `WAITING_CART_CONFIRMATION` | confirm cart | `WAITING_FULFILLMENT_TYPE` |
+| `WAITING_CART_CONFIRMATION` | continue ordering | `ORDERING` |
+| `WAITING_FULFILLMENT_TYPE` | select delivery | `WAITING_DELIVERY_ADDRESS` |
+| `WAITING_FULFILLMENT_TYPE` | select pickup | `WAITING_PICKUP_NAME` |
+| `WAITING_DELIVERY_ADDRESS` | provide delivery address | `WAITING_PAYMENT_METHOD` |
+| `WAITING_PICKUP_NAME` | provide pickup name | `WAITING_PAYMENT_METHOD` |
+| `WAITING_PAYMENT_METHOD` | select cash | `WAITING_CASH_DENOMINATION` |
+| `WAITING_PAYMENT_METHOD` | select transfer | `WAITING_TRANSFER_RECEIPT` |
+| `WAITING_PAYMENT_METHOD` | select card for pickup only | `READY_TO_CONFIRM` |
+| `WAITING_CASH_DENOMINATION` | provide cash denomination | `READY_TO_CONFIRM` |
+| `WAITING_TRANSFER_RECEIPT` | provide transfer receipt | `READY_TO_CONFIRM` |
+| `READY_TO_CONFIRM` | confirm order | `ORDER_CONFIRMED` |
+| Active non-terminal states | cancel checkout | `CANCELLED` |
+
+`ORDER_CONFIRMED` and `CANCELLED` reject ordinary checkout transitions. Cancellation preserves already collected fields for audit; reset is the distinct explicit operation that clears checkout data and returns to `ORDERING`.
+
+### Field invariants
+
+Every command validates its exact source state and all input before mutating the session. Ready-to-confirm requires a valid fulfillment branch and payment branch:
+
+- Delivery requires a non-blank address between 5 and 500 characters.
+- Pickup requires a non-blank name between 2 and 120 characters. The existing legacy `OrderTools` combines address and pickup validation at five characters; the deterministic domain uses two because short real pickup names are valid.
+- Cash requires a positive `BigDecimal` that fits precision 19 and scale 2.
+- Transfer requires a non-blank receipt path up to 1024 characters.
+- Card is supported only for pickup with a valid pickup name, matching the existing business behavior; delivery card selection is rejected.
+
+The state machine re-checks these invariants before every transition to `READY_TO_CONFIRM` and before confirmation, so inconsistent persisted sessions cannot be confirmed merely because earlier steps normally supplied the data.
+
+Conversational checkout state and the persisted `OrderRecord` lifecycle are separate domains. The new engine does not create orders, clear carts, select kitchen statuses, or perform deterministic checkout completion yet.
 
 ## Future phases
 
-### ConversationSession persistence
+### Typed intent routing (Phase 4)
 
-Phase 1 establishes the durable `ConversationSession` keyed by customer identity. Future work will use it to persist and advance deterministic checkout data independently from prompt history.
+A future application boundary will translate explicitly recognized, typed customer intents into `ConversationTransitionService` commands. It will not infer state or fields directly from raw message text, captions, images, or LLM output. Only then will selected production paths leave shadow mode.
 
-### ConversationManager (Phase 2)
+### Deterministic checkout completion
 
-Phase 2 introduces a `ConversationManager` as the application boundary for inbound WhatsApp messages. The webhook controller remains responsible for Meta payload parsing, phone normalization, media download, response delivery, and HTTP acknowledgements. The manager coordinates the existing `SushiAgent`, shadow conversation writes, and receipt-to-order association without changing checkout progression.
-
-`ConversationSession` remains shadow-only: inbound activity and successful receipt paths are persisted, but no customer text, media content, prompt, LLM output, or inferred state is stored. No deterministic transition exists in this phase. The LLM continues to own the current language behavior only; Phase 3 will add validated state transitions outside the LLM.
-
-### Deterministic state transitions (Phase 3)
-
-Phase 3 will introduce explicit, validated `OrderStateMachine` transitions for cart review, fulfillment selection, address or pickup identity, payment collection, payment validation, kitchen preparation, and completion. This is intentionally not introduced in Phase 1.
-
-### Deterministic checkout
-
-Move checkout field validation, transition rules, order creation, cart closure, and payment gating into deterministic application services. The system will reject invalid transitions regardless of an LLM response.
+Move validated order creation, cart closure, payment gating, and explicit confirmation into deterministic application services. The system will reject invalid transitions regardless of an LLM response.
 
 ### Safe catalog and price resolution
 
@@ -47,12 +83,8 @@ Resolve product identifiers, variants, availability, quantities, and prices usin
 
 ### Provider abstraction
 
-Add a provider abstraction after the deterministic boundaries are in place. Ollama remains the initial provider; Gemini can be added behind the abstraction without changing checkout logic or leaking provider settings into business workflows.
+Add a provider abstraction after deterministic boundaries are in place. Ollama remains the initial provider; Gemini can be added behind the abstraction without changing checkout logic or leaking provider settings into business workflows.
 
-### Persistent chat memory
+### Persistent chat memory and test scenarios
 
-Keep chat memory for tone, continuity, and natural response generation, but never treat it as the source of truth for checkout state. Durable session and order data will own all operational facts.
-
-### Test scenarios
-
-Add tests for repeated or out-of-order messages, payment-proof handling, rejected orders, cart reopening and merge behavior, catalog-price verification, duplicated webhook delivery, deterministic state transitions, and provider outage handling.
+Keep chat memory for tone, continuity, and natural response generation, but never treat it as the source of truth for checkout state. Future tests will cover duplicate and out-of-order messages, typed intent routing, payment-proof handling, rejected orders, cart reopening, catalog-price verification, optimistic-lock conflicts, and provider outages.
