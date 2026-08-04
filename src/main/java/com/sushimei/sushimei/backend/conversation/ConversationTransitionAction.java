@@ -1,0 +1,18 @@
+package com.sushimei.sushimei.backend.conversation;
+
+public enum ConversationTransitionAction {
+    REQUEST_CHECKOUT_REVIEW,
+    CONFIRM_CART,
+    CONTINUE_ORDERING,
+    SELECT_DELIVERY,
+    SELECT_PICKUP,
+    PROVIDE_DELIVERY_ADDRESS,
+    PROVIDE_PICKUP_NAME,
+    SELECT_CASH,
+    SELECT_TRANSFER,
+    SELECT_CARD,
+    PROVIDE_CASH_DENOMINATION,
+    PROVIDE_TRANSFER_RECEIPT,
+    CONFIRM_ORDER,
+    CANCEL_CHECKOUT
+}
