@@ -29,7 +29,9 @@ Phase 1 establishes the durable `ConversationSession` keyed by customer identity
 
 ### ConversationManager (Phase 2)
 
-Phase 2 will introduce a `ConversationManager` that loads, creates, and advances a session for each inbound message. It will coordinate the agent, deterministic services, and persistence boundaries without letting the agent become the source of truth.
+Phase 2 introduces a `ConversationManager` as the application boundary for inbound WhatsApp messages. The webhook controller remains responsible for Meta payload parsing, phone normalization, media download, response delivery, and HTTP acknowledgements. The manager coordinates the existing `SushiAgent`, shadow conversation writes, and receipt-to-order association without changing checkout progression.
+
+`ConversationSession` remains shadow-only: inbound activity and successful receipt paths are persisted, but no customer text, media content, prompt, LLM output, or inferred state is stored. No deterministic transition exists in this phase. The LLM continues to own the current language behavior only; Phase 3 will add validated state transitions outside the LLM.
 
 ### Deterministic state transitions (Phase 3)
 

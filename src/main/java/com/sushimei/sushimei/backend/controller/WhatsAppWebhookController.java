@@ -2,11 +2,8 @@ package com.sushimei.sushimei.backend.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sushimei.sushimei.backend.agent.SushiAgent;
 import com.sushimei.sushimei.backend.configuration.WhatsAppProperties;
-import com.sushimei.sushimei.backend.conversation.ConversationSessionService;
-import com.sushimei.sushimei.backend.entity.OrderRecord;
-import com.sushimei.sushimei.backend.repository.OrderRepository;
+import com.sushimei.sushimei.backend.conversation.ConversationManager;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,25 +22,19 @@ public class WhatsAppWebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WhatsAppWebhookController.class);
 
-    private final SushiAgent sushiAgent;
+    private final ConversationManager conversationManager;
     private final WhatsAppService whatsAppService;
-    private final OrderRepository orderRepository;
     private final WhatsAppProperties whatsAppProperties;
     private final ObjectMapper objectMapper;
-    private final ConversationSessionService conversationSessionService;
 
-    public WhatsAppWebhookController(SushiAgent sushiAgent,
+    public WhatsAppWebhookController(ConversationManager conversationManager,
                                      WhatsAppService whatsAppService,
-                                     OrderRepository orderRepository,
                                      WhatsAppProperties whatsAppProperties,
-                                     ObjectMapper objectMapper,
-                                     ConversationSessionService conversationSessionService) {
-        this.sushiAgent = sushiAgent;
+                                     ObjectMapper objectMapper) {
+        this.conversationManager = conversationManager;
         this.whatsAppService = whatsAppService;
-        this.orderRepository = orderRepository;
         this.whatsAppProperties = whatsAppProperties;
         this.objectMapper = objectMapper;
-        this.conversationSessionService = conversationSessionService;
     }
 
     @GetMapping("/webhook")
@@ -78,7 +69,7 @@ public class WhatsAppWebhookController {
                     fromPhone = "52" + fromPhone.substring(3);
                 }
 
-                recordInboundActivityInShadowMode(fromPhone);
+                conversationManager.recordInboundMessage(fromPhone);
 
                 String messageType = messageNode.path("type").asText();
                 String aiResponse = "";
@@ -86,33 +77,18 @@ public class WhatsAppWebhookController {
                 if (messageType.equals("text")) {
                     String textMessage = messageNode.path("text").path("body").asText();
                     log.info("WhatsApp text message received from {}", fromPhone);
-                    aiResponse = sushiAgent.chat(fromPhone, fromPhone, textMessage);
+                    aiResponse = conversationManager.handleTextMessage(fromPhone, textMessage);
                 } else if (messageType.equals("image")) {
                     String mediaId = messageNode.path("image").path("id").asText();
-                    log.info("WhatsApp image received from {} with media ID {}", fromPhone, mediaId);
+                    log.info("WhatsApp image received from {}", fromPhone);
 
                     String savedPath = whatsAppService.downloadWhatsAppImage(mediaId);
-                    if (savedPath != null) {
-                        recordTransferReceiptInShadowMode(fromPhone, savedPath);
-                        OrderRecord pendingOrder = orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(fromPhone, "PENDING_VALIDATION");
-
-                        if (pendingOrder != null) {
-                            pendingOrder.setTransferReceiptPath(savedPath);
-                            orderRepository.save(pendingOrder);
-                            log.info("Receipt linked to order {}", pendingOrder.getId());
-                        } else {
-                            log.warn("Receipt saved but no pending order was found for {}", fromPhone);
-                        }
-                    }
-
-                    String promptParaIA = "EL CLIENTE ACABA DE ENVIAR UNA IMAGEN. Asume que es el comprobante de transferencia. Agradécele por el envío e indícale que el pago está siendo validado por administración y su orden en proceso.";
-                    aiResponse = sushiAgent.chat(fromPhone, fromPhone, promptParaIA);
+                    aiResponse = conversationManager.handleImageMessage(fromPhone, savedPath);
                 } else if (messageType.equals("audio")) {
                     log.info("WhatsApp audio received from {}; responding without the agent", fromPhone);
-                    aiResponse = "¡Hola! 😅 Por el momento soy un asistente virtual y no puedo escuchar notas de voz. ¿Podrías escribirme tu pedido o enviarme una foto de tu comprobante por aquí?";
+                    aiResponse = conversationManager.handleAudioMessage(fromPhone);
                 } else {
-                    log.info("Unsupported WhatsApp message type {} from {}", messageType, fromPhone);
-                    aiResponse = "¡Hola! Por ahora solo puedo procesar mensajes de texto y fotografías de comprobantes. ¿Me ayudas escribiendo tu mensaje? 🍣";
+                    aiResponse = conversationManager.handleUnsupportedMessage(fromPhone, messageType);
                 }
 
                 log.info("WhatsApp response prepared for {}", fromPhone);
@@ -123,22 +99,6 @@ public class WhatsAppWebhookController {
         } catch (Exception e) {
             log.warn("Unable to process WhatsApp webhook payload", e);
             return ResponseEntity.ok("ERROR_CONTROLADO");
-        }
-    }
-
-    private void recordInboundActivityInShadowMode(String phoneNumber) {
-        try {
-            conversationSessionService.recordInboundActivity(phoneNumber);
-        } catch (Exception e) {
-            log.warn("Unable to record shadow conversation activity for {}", phoneNumber, e);
-        }
-    }
-
-    private void recordTransferReceiptInShadowMode(String phoneNumber, String receiptPath) {
-        try {
-            conversationSessionService.recordTransferReceipt(phoneNumber, receiptPath);
-        } catch (Exception e) {
-            log.warn("Unable to record shadow transfer receipt for {}", phoneNumber, e);
         }
     }
 }
