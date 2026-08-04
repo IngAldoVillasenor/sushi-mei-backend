@@ -1,72 +1,70 @@
 package com.sushimei.sushimei.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import com.sushimei.sushimei.backend.configuration.StorageProperties;
+import com.sushimei.sushimei.backend.configuration.WhatsAppProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
 public class WhatsAppService {
 
-    // Estas variables las pondremos en el application.yml
-    @Value("${whatsapp.api.token}")
-    private String apiToken;
+    private static final Logger log = LoggerFactory.getLogger(WhatsAppService.class);
 
-    @Value("${whatsapp.api.phone-number-id}")
-    private String phoneNumberId;
+    private final WhatsAppProperties whatsAppProperties;
+    private final StorageProperties storageProperties;
 
-    // Carpeta donde se guardarán los tickets (Asegúrate de crear esta carpeta en tu PC)
-    private final String UPLOAD_DIR = "C:/sushimei/comprobantes/";
+    public WhatsAppService(WhatsAppProperties whatsAppProperties, StorageProperties storageProperties) {
+        this.whatsAppProperties = whatsAppProperties;
+        this.storageProperties = storageProperties;
+    }
 
     public String downloadWhatsAppImage(String mediaId) {
         try {
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(apiToken);
+            headers.setBearerAuth(whatsAppProperties.apiToken());
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            // PASO 1: Consultar la URL de la imagen usando el mediaId
-            String urlGraph = "https://graph.facebook.com/v19.0/" + mediaId;
+            String urlGraph = graphApiUrl(mediaId);
             ResponseEntity<JsonNode> responseInfo = restTemplate.exchange(urlGraph, HttpMethod.GET, entity, JsonNode.class);
-
             String imageUrl = responseInfo.getBody().path("url").asText();
 
-            // PASO 2: Descargar los bytes de la imagen
             ResponseEntity<byte[]> responseMedia = restTemplate.exchange(imageUrl, HttpMethod.GET, entity, byte[].class);
             byte[] imageBytes = responseMedia.getBody();
 
-            // PASO 3: Guardar la imagen en el disco duro
-            Files.createDirectories(Paths.get(UPLOAD_DIR)); // Crea la carpeta si no existe
-            String filePath = UPLOAD_DIR + mediaId + ".jpg";
-
-            Path path = Paths.get(filePath);
+            Files.createDirectories(storageProperties.receiptsDirectory());
+            Path path = storageProperties.receiptsDirectory().resolve(mediaId + ".jpg");
             Files.write(path, imageBytes);
 
-            System.out.println("📸 ¡Comprobante descargado exitosamente en: " + filePath + "!");
-            return filePath;
-
+            log.info("WhatsApp receipt downloaded to {}", path);
+            return path.toString();
         } catch (Exception e) {
-            System.err.println("⚠️ Error descargando la imagen: " + e.getMessage());
+            log.warn("Unable to download WhatsApp receipt", e);
             return null;
         }
     }
 
     public void sendMessage(String toPhoneNumber, String message) {
         RestTemplate restTemplate = new RestTemplate();
-        String url = "https://graph.facebook.com/v19.0/" + phoneNumberId + "/messages";
+        String url = graphApiUrl(whatsAppProperties.phoneNumberId() + "/messages");
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(apiToken);
+        headers.setBearerAuth(whatsAppProperties.apiToken());
 
-        // Construimos el JSON exacto que pide Meta para enviar un mensaje de texto
         Map<String, Object> body = new HashMap<>();
         body.put("messaging_product", "whatsapp");
         body.put("recipient_type", "individual");
@@ -82,9 +80,13 @@ public class WhatsAppService {
 
         try {
             restTemplate.postForEntity(url, request, String.class);
-            System.out.println("📤 Respuesta enviada a WhatsApp: " + toPhoneNumber);
+            log.info("WhatsApp response sent to {}", toPhoneNumber);
         } catch (Exception e) {
-            System.err.println("❌ Error enviando mensaje a WhatsApp: " + e.getMessage());
+            log.warn("Unable to send WhatsApp response to {}", toPhoneNumber, e);
         }
+    }
+
+    private String graphApiUrl(String resource) {
+        return "https://graph.facebook.com/" + whatsAppProperties.graphApiVersion() + "/" + resource;
     }
 }

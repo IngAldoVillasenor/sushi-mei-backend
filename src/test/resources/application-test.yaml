@@ -1,0 +1,34 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:sushimei;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  autoconfigure:
+    exclude:
+      - dev.langchain4j.ollama.spring.OllamaAutoConfiguration
+
+whatsapp:
+  api-token: test-token
+  phone-number-id: test-phone-number-id
+  verify-token: test-verify-token
+  graph-api-version: v19.0
+
+storage:
+  receipts-directory: target/test-receipts
+  public-upload-directory: target/test-uploads
+
+rag:
+  embedding-store:
+    table: menu_embeddings
+    dimension: 768
+  retrieval:
+    max-results: 15
+    min-score: 0.0
+  memory:
+    max-messages: 20
