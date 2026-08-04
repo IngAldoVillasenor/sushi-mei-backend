@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sushimei.sushimei.backend.agent.SushiAgent;
 import com.sushimei.sushimei.backend.configuration.WhatsAppProperties;
+import com.sushimei.sushimei.backend.conversation.ConversationSessionService;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
@@ -29,17 +30,20 @@ public class WhatsAppWebhookController {
     private final OrderRepository orderRepository;
     private final WhatsAppProperties whatsAppProperties;
     private final ObjectMapper objectMapper;
+    private final ConversationSessionService conversationSessionService;
 
     public WhatsAppWebhookController(SushiAgent sushiAgent,
                                      WhatsAppService whatsAppService,
                                      OrderRepository orderRepository,
                                      WhatsAppProperties whatsAppProperties,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     ConversationSessionService conversationSessionService) {
         this.sushiAgent = sushiAgent;
         this.whatsAppService = whatsAppService;
         this.orderRepository = orderRepository;
         this.whatsAppProperties = whatsAppProperties;
         this.objectMapper = objectMapper;
+        this.conversationSessionService = conversationSessionService;
     }
 
     @GetMapping("/webhook")
@@ -74,6 +78,8 @@ public class WhatsAppWebhookController {
                     fromPhone = "52" + fromPhone.substring(3);
                 }
 
+                recordInboundActivityInShadowMode(fromPhone);
+
                 String messageType = messageNode.path("type").asText();
                 String aiResponse = "";
 
@@ -87,6 +93,7 @@ public class WhatsAppWebhookController {
 
                     String savedPath = whatsAppService.downloadWhatsAppImage(mediaId);
                     if (savedPath != null) {
+                        recordTransferReceiptInShadowMode(fromPhone, savedPath);
                         OrderRecord pendingOrder = orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(fromPhone, "PENDING_VALIDATION");
 
                         if (pendingOrder != null) {
@@ -116,6 +123,22 @@ public class WhatsAppWebhookController {
         } catch (Exception e) {
             log.warn("Unable to process WhatsApp webhook payload", e);
             return ResponseEntity.ok("ERROR_CONTROLADO");
+        }
+    }
+
+    private void recordInboundActivityInShadowMode(String phoneNumber) {
+        try {
+            conversationSessionService.recordInboundActivity(phoneNumber);
+        } catch (Exception e) {
+            log.warn("Unable to record shadow conversation activity for {}", phoneNumber, e);
+        }
+    }
+
+    private void recordTransferReceiptInShadowMode(String phoneNumber, String receiptPath) {
+        try {
+            conversationSessionService.recordTransferReceipt(phoneNumber, receiptPath);
+        } catch (Exception e) {
+            log.warn("Unable to record shadow transfer receipt for {}", phoneNumber, e);
         }
     }
 }

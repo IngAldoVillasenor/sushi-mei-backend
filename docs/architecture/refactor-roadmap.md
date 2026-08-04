@@ -15,19 +15,25 @@ The application is a Spring Boot monolith that receives WhatsApp webhooks, invok
 
 Phase 0 makes configuration environment-backed, keeps PostgreSQL, pgvector, and Ollama active, aligns LangChain4j dependencies, and makes the test suite self-contained. It does not change the `SushiAgent` prompt, tool signatures, cart behavior, webhook flow, or order status flow.
 
+## Phase 1: persistent conversation sessions (shadow mode)
+
+Phase 1 adds a durable `ConversationSession` keyed by normalized customer phone number. It stores future operational checkout fields and a typed lifecycle state, but the webhook only records inbound activity and successfully downloaded transfer-receipt paths. Session data is written in shadow mode: it does not select a response branch, change the `SushiAgent` prompt or memory, create an order, or transition checkout state. There are no automatic transitions based on message text, captions, images, or LLM output.
+
+Chat memory remains unchanged and continues to support conversational tone and continuity. It is not a checkout source of truth, and neither is the Phase 1 session until deterministic orchestration is introduced.
+
 ## Future phases
 
 ### ConversationSession persistence
 
-Introduce a durable `ConversationSession` keyed by the customer identity. It will persist the active conversation, selected fulfillment method, collected checkout fields, and relevant timestamps independently from prompt history.
+Phase 1 establishes the durable `ConversationSession` keyed by customer identity. Future work will use it to persist and advance deterministic checkout data independently from prompt history.
 
-### ConversationManager
+### ConversationManager (Phase 2)
 
-Introduce a `ConversationManager` that loads, creates, and advances a session for each inbound message. It will coordinate the agent, deterministic services, and persistence boundaries without letting the agent become the source of truth.
+Phase 2 will introduce a `ConversationManager` that loads, creates, and advances a session for each inbound message. It will coordinate the agent, deterministic services, and persistence boundaries without letting the agent become the source of truth.
 
-### OrderStateMachine
+### Deterministic state transitions (Phase 3)
 
-Introduce an `OrderStateMachine` with explicit, validated transitions for cart review, fulfillment selection, address or pickup identity, payment collection, payment validation, kitchen preparation, and completion. This is intentionally not introduced in Phase 0.
+Phase 3 will introduce explicit, validated `OrderStateMachine` transitions for cart review, fulfillment selection, address or pickup identity, payment collection, payment validation, kitchen preparation, and completion. This is intentionally not introduced in Phase 1.
 
 ### Deterministic checkout
 
