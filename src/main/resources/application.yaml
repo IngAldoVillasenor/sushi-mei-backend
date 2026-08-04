@@ -22,7 +22,7 @@ langchain4j:
 
 whatsapp:
   api:
-    token: "EAAVQfqZA1FkoBSOOzMZBbUiWPpwZB8dEHyDbgnxQomKvtl45xx2ZAJjZBcQHwANfsh1GDVsZB7O3tomUyoY3EEZBURQTZAYJKEQyitgSo8eUos20SnZBfs9V8vQFmA8u86fZApkrMq6HoA88yuh1KQfQfS1c3N56r3VkTxIPkovL3PfU5nztlBihli0BTGvfGsZCkOjBTZByaxljZCgsNdZB0sB7ZBZBZAsEV6GaR2XQaiZCMCUwXsxk3m26HFNS3LhpYbcsagy8povhZCeX3yvHoGr60WZAe13UkW3eSPTUKVVbOwZDZD"
+    token: ""
     phone-number-id: "1320287381159448" # El identificador del número de prueba
 
 server:
@@ -33,7 +33,7 @@ ai:
   provider: gemini
 
   gemini:
-    api-key: AQ.Ab8RN6ILc_7IGo2vtaQ2X06lww5MbePIMg8gFqr5jtgGGEqcpA
+    api-key: ${GEMINI_API_KEY}
     model: gemini-2.5-flash
 
   ollama:
