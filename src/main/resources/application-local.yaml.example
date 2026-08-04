@@ -1,24 +1,13 @@
+# Copy this file to application-local.yaml only when local overrides are needed.
+# application-local.yaml is ignored by Git. Start with SPRING_PROFILES_ACTIVE=local to load it.
+# Production values should be supplied
+# through the environment variables referenced by application.yaml.
+
 spring:
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
-  jpa:
-    hibernate:
-      ddl-auto: update
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-
-langchain4j:
-  ollama:
-    chat-model:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model-name: ${OLLAMA_CHAT_MODEL:llama3.1}
-      temperature: 0.3
-    embedding-model:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      model-name: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
 
 whatsapp:
   api-token: ${WHATSAPP_API_TOKEN}
@@ -30,6 +19,14 @@ storage:
   receipts-directory: ${RECEIPTS_DIRECTORY}
   public-upload-directory: ${PUBLIC_UPLOAD_DIRECTORY}
 
+langchain4j:
+  ollama:
+    chat-model:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_CHAT_MODEL:llama3.1}
+    embedding-model:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model-name: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
 rag:
   embedding-store:
     table: ${RAG_TABLE:menu_embeddings}
@@ -39,6 +36,3 @@ rag:
     min-score: ${RAG_MIN_SCORE:0.0}
   memory:
     max-messages: ${CHAT_MEMORY_MAX_MESSAGES:20}
-
-server:
-  address: 0.0.0.0
