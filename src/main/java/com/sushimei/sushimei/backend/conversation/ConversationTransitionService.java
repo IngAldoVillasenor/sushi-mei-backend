@@ -136,11 +136,12 @@ public class ConversationTransitionService {
     }
 
     @Transactional
-    public ConversationSession confirmOrder(String phoneNumber) {
+    public ConversationSession confirmCheckout(String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         Instant now = clock.instant();
-        ConversationSession session = requiredSession(normalizedPhoneNumber, ConversationTransitionAction.CONFIRM_ORDER);
-        conversationStateMachine.confirmOrder(session, now);
+        ConversationSession session = requiredSession(normalizedPhoneNumber,
+                ConversationTransitionAction.CONFIRM_CHECKOUT);
+        conversationStateMachine.confirmCheckout(session, now);
         return conversationSessionRepository.save(session);
     }
 
