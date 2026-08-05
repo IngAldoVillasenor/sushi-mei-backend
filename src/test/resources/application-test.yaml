@@ -1,14 +1,23 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:sushimei;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:mem:sushimei-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     username: sa
     password:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    baseline-on-migrate: false
+    clean-disabled: true
+    validate-migration-naming: true
+    # H2 exposes its built-in public schema as the physical identifier PUBLIC.
+    default-schema: PUBLIC
+    schemas:
+      - PUBLIC
+    locations: classpath:db/migration/{vendor}
   autoconfigure:
     exclude:
       - dev.langchain4j.ollama.spring.OllamaAutoConfiguration

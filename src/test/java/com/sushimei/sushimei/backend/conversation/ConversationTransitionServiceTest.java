@@ -4,6 +4,7 @@ import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,11 @@ class ConversationTransitionServiceTest {
 
     @BeforeEach
     void clearSessions() {
+        conversationSessionRepository.deleteAll();
+    }
+
+    @AfterEach
+    void clearSessionsAfterTest() {
         conversationSessionRepository.deleteAll();
     }
 
