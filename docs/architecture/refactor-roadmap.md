@@ -67,13 +67,24 @@ The state machine re-checks these invariants before every transition to `READY_T
 
 Conversational checkout state and the persisted `OrderRecord` lifecycle are separate domains. The new engine does not create orders, clear carts, select kitchen statuses, or perform deterministic checkout completion yet.
 
+## Phase 4: typed intent routing boundary
+
+Phase 4 introduces `CheckoutIntent` and `CheckoutIntentRouter`. A `CheckoutIntent` is an already typed, trusted Java object; the router maps it to exactly one `ConversationTransitionService` command and returns only safe operational metadata. The router has no transaction, repository, HTTP, WhatsApp, LLM, or response-generation responsibility. `ConversationTransitionService` retains the short transactional boundary, and `ConversationStateMachine` remains the sole authority for state, field, and business-option validation.
+
+Phase 4 does not recognize intents from raw customer text, image captions, JSON payloads, or chat history. It does not accept LLM output as operational truth. The router is intentionally not connected to production WhatsApp traffic.
+
+The current `ORDER_CONFIRMED` value remains conversational session state only. It does not atomically create an `OrderRecord` or clear a cart. Legacy `OrderTools` continues to create actual orders and clear carts. Connecting the router to customer traffic before deterministic checkout completion would risk split-brain state between the session and order domains.
+
+### Distinct future boundaries
+
+1. **Intent recognition** converts untrusted natural language into a candidate typed intent. It is not implemented in Phase 4.
+2. **Typed intent routing** maps one trusted `CheckoutIntent` to one transition command. This is Phase 4.
+3. **State transition** validates and mutates `ConversationSession` through `ConversationStateMachine` and `ConversationTransitionService`.
+4. **Checkout completion** must atomically create an `OrderRecord` and clear the cart. It is not implemented yet.
+5. **Language generation** produces human-readable replies and remains on the existing conversational path.
 ## Future phases
 
-### Typed intent routing (Phase 4)
-
-A future application boundary will translate explicitly recognized, typed customer intents into `ConversationTransitionService` commands. It will not infer state or fields directly from raw message text, captions, images, or LLM output. Only then will selected production paths leave shadow mode.
-
-### Deterministic checkout completion
+### Deterministic checkout completion (next phase)
 
 Move validated order creation, cart closure, payment gating, and explicit confirmation into deterministic application services. The system will reject invalid transitions regardless of an LLM response.
 

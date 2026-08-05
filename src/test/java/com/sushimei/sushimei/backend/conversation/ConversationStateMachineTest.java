@@ -39,7 +39,7 @@ class ConversationStateMachineTest {
         stateMachine.provideDeliveryAddress(session, "  Calle 123  ", TRANSITION_TIME);
         stateMachine.selectCash(session, TRANSITION_TIME);
         stateMachine.provideCashDenomination(session, new BigDecimal("500"), TRANSITION_TIME);
-        stateMachine.confirmOrder(session, TRANSITION_TIME);
+        stateMachine.confirmCheckout(session, TRANSITION_TIME);
 
         assertThat(session.getState()).isEqualTo(ConversationState.ORDER_CONFIRMED);
         assertThat(session.getFulfillmentType()).isEqualTo(FulfillmentType.DELIVERY);
@@ -158,7 +158,7 @@ class ConversationStateMachineTest {
                 new InvalidAction(this::newSession, session -> stateMachine.selectCard(session, TRANSITION_TIME)),
                 new InvalidAction(this::newSession, session -> stateMachine.provideCashDenomination(session, BigDecimal.ONE, TRANSITION_TIME)),
                 new InvalidAction(this::newSession, session -> stateMachine.provideTransferReceipt(session, "receipts/a.jpg", TRANSITION_TIME)),
-                new InvalidAction(this::newSession, session -> stateMachine.confirmOrder(session, TRANSITION_TIME)),
+                new InvalidAction(this::newSession, session -> stateMachine.confirmCheckout(session, TRANSITION_TIME)),
                 new InvalidAction(this::confirmedSession, session -> stateMachine.cancelCheckout(session, TRANSITION_TIME)));
 
         for (InvalidAction invalidAction : invalidActions) {
@@ -280,24 +280,24 @@ class ConversationStateMachineTest {
         stateMachine.provideCashDenomination(deliveryCash, new BigDecimal("50.00"), TRANSITION_TIME);
         forceField(deliveryCash, "cashDenomination", BigDecimal.ZERO);
 
-        assertInvalidAndUnchanged(deliveryCash, session -> stateMachine.confirmOrder(session, TRANSITION_TIME),
-                ConversationTransitionAction.CONFIRM_ORDER);
+        assertInvalidAndUnchanged(deliveryCash, session -> stateMachine.confirmCheckout(session, TRANSITION_TIME),
+                ConversationTransitionAction.CONFIRM_CHECKOUT);
 
         ConversationSession pickupCard = pickupWaitingForPayment();
         stateMachine.selectCard(pickupCard, TRANSITION_TIME);
         forceField(pickupCard, "fulfillmentType", FulfillmentType.DELIVERY);
         forceField(pickupCard, "deliveryAddress", "Calle 123");
 
-        assertInvalidAndUnchanged(pickupCard, session -> stateMachine.confirmOrder(session, TRANSITION_TIME),
-                ConversationTransitionAction.CONFIRM_ORDER);
+        assertInvalidAndUnchanged(pickupCard, session -> stateMachine.confirmCheckout(session, TRANSITION_TIME),
+                ConversationTransitionAction.CONFIRM_CHECKOUT);
 
         ConversationSession pickupCardWithoutName = pickupWaitingForPayment();
         stateMachine.selectCard(pickupCardWithoutName, TRANSITION_TIME);
         forceField(pickupCardWithoutName, "pickupName", " ");
 
         assertInvalidAndUnchanged(pickupCardWithoutName,
-                session -> stateMachine.confirmOrder(session, TRANSITION_TIME),
-                ConversationTransitionAction.CONFIRM_ORDER);
+                session -> stateMachine.confirmCheckout(session, TRANSITION_TIME),
+                ConversationTransitionAction.CONFIRM_CHECKOUT);
     }
 
     @Test
@@ -380,7 +380,7 @@ class ConversationStateMachineTest {
     private ConversationSession confirmedSession() {
         ConversationSession session = deliveryWaitingForCash();
         stateMachine.provideCashDenomination(session, new BigDecimal("100.00"), TRANSITION_TIME);
-        stateMachine.confirmOrder(session, TRANSITION_TIME);
+        stateMachine.confirmCheckout(session, TRANSITION_TIME);
         return session;
     }
 
@@ -452,5 +452,103 @@ class ConversationStateMachineTest {
                     session.getUpdatedAt(),
                     session.getLastActivityAt());
         }
+    }
+
+
+    @Test
+    void classifiesTransitionRejectionReasonsWithoutMutatingTheSession() {
+        assertInvalidReasonAndUnchanged(newSession(),
+                session -> stateMachine.provideDeliveryAddress(session, "Calle", TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_SOURCE_STATE);
+        assertInvalidReasonAndUnchanged(newSession(),
+                session -> stateMachine.confirmCheckout(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_SOURCE_STATE);
+
+        ConversationSession cancelled = newSession();
+        stateMachine.cancelCheckout(cancelled, TRANSITION_TIME);
+        assertInvalidReasonAndUnchanged(cancelled,
+                session -> stateMachine.requestCheckoutReview(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_SOURCE_STATE);
+        assertInvalidReasonAndUnchanged(confirmedSession(),
+                session -> stateMachine.selectDelivery(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_SOURCE_STATE);
+
+        assertInvalidReasonAndUnchanged(deliveryWaitingForAddress(),
+                session -> stateMachine.provideDeliveryAddress(session, " ", TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(pickupWaitingForName(),
+                session -> stateMachine.providePickupName(session, "A", TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(deliveryWaitingForCash(),
+                session -> stateMachine.provideCashDenomination(session, BigDecimal.ZERO, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(deliveryWaitingForCash(),
+                session -> stateMachine.provideCashDenomination(session, new BigDecimal("1.001"), TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(deliveryWaitingForTransfer(),
+                session -> stateMachine.provideTransferReceipt(session, " ", TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(deliveryWaitingForAddress(),
+                session -> stateMachine.provideDeliveryAddress(session, "x".repeat(501), TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(pickupWaitingForName(),
+                session -> stateMachine.providePickupName(session, "x".repeat(121), TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(deliveryWaitingForCash(),
+                session -> stateMachine.provideCashDenomination(session, new BigDecimal("999999999999999999.99"),
+                        TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+        assertInvalidReasonAndUnchanged(deliveryWaitingForTransfer(),
+                session -> stateMachine.provideTransferReceipt(session, "x".repeat(1025), TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVALID_INPUT);
+
+        ConversationSession missingFulfillment = deliveryWaitingForAddress();
+        forceField(missingFulfillment, "fulfillmentType", null);
+        assertInvalidReasonAndUnchanged(missingFulfillment,
+                session -> stateMachine.provideDeliveryAddress(session, "Calle", TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVARIANT_VIOLATION);
+
+        ConversationSession deliveryWithInvalidAddress = deliveryWaitingForPayment();
+        forceField(deliveryWithInvalidAddress, "deliveryAddress", " ");
+        assertInvalidReasonAndUnchanged(deliveryWithInvalidAddress,
+                session -> stateMachine.selectCash(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVARIANT_VIOLATION);
+
+        ConversationSession pickupWithInvalidName = pickupWaitingForPayment();
+        forceField(pickupWithInvalidName, "pickupName", " ");
+        assertInvalidReasonAndUnchanged(pickupWithInvalidName,
+                session -> stateMachine.selectCash(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVARIANT_VIOLATION);
+
+        ConversationSession malformedReadyPayment = deliveryWaitingForCash();
+        stateMachine.provideCashDenomination(malformedReadyPayment, new BigDecimal("50.00"), TRANSITION_TIME);
+        forceField(malformedReadyPayment, "paymentMethod", null);
+        assertInvalidReasonAndUnchanged(malformedReadyPayment,
+                session -> stateMachine.confirmCheckout(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVARIANT_VIOLATION);
+
+        ConversationSession malformedReadyCard = pickupWaitingForPayment();
+        stateMachine.selectCard(malformedReadyCard, TRANSITION_TIME);
+        forceField(malformedReadyCard, "fulfillmentType", FulfillmentType.DELIVERY);
+        forceField(malformedReadyCard, "deliveryAddress", "Calle 123");
+        assertInvalidReasonAndUnchanged(malformedReadyCard,
+                session -> stateMachine.confirmCheckout(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.INVARIANT_VIOLATION);
+
+        assertInvalidReasonAndUnchanged(deliveryWaitingForPayment(),
+                session -> stateMachine.selectCard(session, TRANSITION_TIME),
+                InvalidConversationTransitionReason.UNSUPPORTED_OPTION);
+    }
+
+    private void assertInvalidReasonAndUnchanged(ConversationSession session,
+                                                 Consumer<ConversationSession> command,
+                                                 InvalidConversationTransitionReason expectedReason) {
+        Snapshot before = Snapshot.from(session);
+
+        assertThatThrownBy(() -> command.accept(session))
+                .isInstanceOfSatisfying(InvalidConversationTransitionException.class,
+                        exception -> assertThat(exception.getReason()).isEqualTo(expectedReason));
+
+        assertThat(Snapshot.from(session)).isEqualTo(before);
     }
 }

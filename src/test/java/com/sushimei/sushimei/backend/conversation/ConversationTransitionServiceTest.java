@@ -164,7 +164,7 @@ class ConversationTransitionServiceTest {
         String confirmedPhone = "525512345609";
         startPickup(confirmedPhone);
         conversationTransitionService.selectCard(confirmedPhone);
-        ConversationSession confirmed = conversationTransitionService.confirmOrder(confirmedPhone);
+        ConversationSession confirmed = conversationTransitionService.confirmCheckout(confirmedPhone);
         assertThat(requiredSession(confirmedPhone).getState()).isEqualTo(ConversationState.ORDER_CONFIRMED);
 
         ConversationSession resetConfirmed = conversationSessionService.resetSession(confirmedPhone);
