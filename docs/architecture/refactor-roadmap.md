@@ -93,9 +93,23 @@ Checkout money is positive, exact, and normalized to precision 19 and scale 2. V
 
 Phase 5A1 does not create an order, close a cart, confirm a conversation session, route trusted intents into production traffic, or change the legacy `OrderTools` checkout behavior. Persisted `Double` money remains technical debt until Phase 5A2.
 
-## Phase 5A2: schema and deterministic-order foundations
+## Phase 5A2a: Flyway baseline ownership
 
-Phase 5A2 requires a verified PostgreSQL schema export before any production migration is designed. It will introduce a Flyway baseline and explicit migrations, parallel `NUMERIC(19,2)` columns, validation and exact backfill of legacy floating-point values, structured order lines, source-cart idempotency, and order-specific typed fulfillment and payment metadata. Only after safe rollout and validation can Hibernate move toward `ddl-auto: validate` and the legacy floating-point columns be retired.
+Phase 5A2a adopts Flyway 12.4.0, managed by Spring Boot 4.1, for the current application schema. `B1__current_application_schema.sql` is a clean-database baseline at version 1 for PostgreSQL and H2. It creates `cart`, `cart_items`, `orders`, `conversation_sessions`, and the intentionally preserved unmapped legacy `carts` table without inserting production data.
+
+Existing `sushidb` deployments are not migrated by B1. An authorized operator must first verify the reviewed schema fingerprint, backup, aggregate profile, absence of `flyway_schema_history`, and preservation of `public.carts`, then run an explicit Flyway baseline at version 1. `baselineOnMigrate` remains false so a non-empty unexpected database fails instead of being silently accepted. Hibernate now validates the schema; it no longer creates or updates it.
+
+Flyway owns the five application and legacy transactional tables. Infrastructure owns the PostgreSQL `vector` extension. LangChain4j continues to own `menu_embeddings`; B1 neither creates nor changes that table. Clean PostgreSQL environments therefore require infrastructure to provision the extension before RAG startup. The H2 test profile excludes RAG, so it does not require either externally managed object.
+
+Phase 5A2a changes no monetary column, order model, cart behavior, production routing, or deterministic completion. Future versioned migrations begin at `V2` or higher.
+
+## Phase 5A2b: parallel monetary migration
+
+Phase 5A2b requires the verified baseline to be deployed first. It will introduce parallel `NUMERIC(19,2)` monetary columns, exact validation and backfill of legacy floating-point values, and compatible dual reads and writes. Persisted `Double` money remains technical debt until that migration is complete.
+
+## Phase 5A2c: structured orders and idempotency
+
+Phase 5A2c will add structured order lines, nullable historical source-cart identity, a unique idempotency constraint for non-null source carts, and order-specific fulfillment and payment metadata. Legacy `orderDetails` remains compatible during that transition.
 
 ## Phase 5B: atomic deterministic checkout completion
 

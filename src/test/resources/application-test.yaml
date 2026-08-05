@@ -5,10 +5,15 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    baseline-on-migrate: false
+    clean-disabled: true
+    validate-migration-naming: true
+    locations: classpath:db/migration/{vendor}
   autoconfigure:
     exclude:
       - dev.langchain4j.ollama.spring.OllamaAutoConfiguration
