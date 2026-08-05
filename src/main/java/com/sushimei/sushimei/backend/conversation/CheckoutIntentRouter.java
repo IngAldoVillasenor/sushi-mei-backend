@@ -67,26 +67,24 @@ public class CheckoutIntentRouter {
     private CheckoutIntentResult routeFulfillment(String phoneNumber, FulfillmentType fulfillmentType) {
         FulfillmentType selectedFulfillmentType = Objects.requireNonNull(
                 fulfillmentType, "fulfillmentType must not be null");
-        if (selectedFulfillmentType == FulfillmentType.DELIVERY) {
-            return result(ConversationTransitionAction.SELECT_DELIVERY,
+        return switch (selectedFulfillmentType) {
+            case DELIVERY -> result(ConversationTransitionAction.SELECT_DELIVERY,
                     conversationTransitionService.selectDelivery(phoneNumber));
-        }
-        return result(ConversationTransitionAction.SELECT_PICKUP,
-                conversationTransitionService.selectPickup(phoneNumber));
+            case PICKUP -> result(ConversationTransitionAction.SELECT_PICKUP,
+                    conversationTransitionService.selectPickup(phoneNumber));
+        };
     }
 
     private CheckoutIntentResult routePaymentMethod(String phoneNumber, PaymentMethod paymentMethod) {
         PaymentMethod selectedPaymentMethod = Objects.requireNonNull(paymentMethod, "paymentMethod must not be null");
-        if (selectedPaymentMethod == PaymentMethod.CASH) {
-            return result(ConversationTransitionAction.SELECT_CASH,
+        return switch (selectedPaymentMethod) {
+            case CASH -> result(ConversationTransitionAction.SELECT_CASH,
                     conversationTransitionService.selectCash(phoneNumber));
-        }
-        if (selectedPaymentMethod == PaymentMethod.TRANSFER) {
-            return result(ConversationTransitionAction.SELECT_TRANSFER,
+            case TRANSFER -> result(ConversationTransitionAction.SELECT_TRANSFER,
                     conversationTransitionService.selectTransfer(phoneNumber));
-        }
-        return result(ConversationTransitionAction.SELECT_CARD,
-                conversationTransitionService.selectCard(phoneNumber));
+            case CARD -> result(ConversationTransitionAction.SELECT_CARD,
+                    conversationTransitionService.selectCard(phoneNumber));
+        };
     }
 
     private CheckoutIntentResult result(ConversationTransitionAction action, ConversationSession session) {
