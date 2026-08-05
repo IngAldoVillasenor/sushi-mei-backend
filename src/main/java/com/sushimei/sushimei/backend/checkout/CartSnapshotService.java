@@ -18,10 +18,15 @@ public class CartSnapshotService {
 
     private final CartRepository cartRepository;
     private final CheckoutMoney checkoutMoney;
+    private final ParallelMoneyResolver parallelMoneyResolver;
 
-    public CartSnapshotService(CartRepository cartRepository, CheckoutMoney checkoutMoney) {
+    public CartSnapshotService(CartRepository cartRepository,
+                               CheckoutMoney checkoutMoney,
+                               ParallelMoneyResolver parallelMoneyResolver) {
         this.cartRepository = Objects.requireNonNull(cartRepository, "cartRepository must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
+        this.parallelMoneyResolver = Objects.requireNonNull(parallelMoneyResolver,
+                "parallelMoneyResolver must not be null");
     }
 
     @Transactional(readOnly = true)
@@ -76,9 +81,9 @@ public class CartSnapshotService {
 
         BigDecimal unitPrice;
         try {
-            unitPrice = checkoutMoney.normalizeLegacyUnitPrice(item.getUnitPrice());
-        } catch (IllegalArgumentException exception) {
-            throw new InvalidCartItemException(InvalidCartItemReason.INVALID_UNIT_PRICE);
+            unitPrice = parallelMoneyResolver.resolve(item.getUnitPriceAmount(), item.getUnitPrice());
+        } catch (MonetaryCompatibilityException exception) {
+            throw new InvalidCartItemException(mapMoneyReason(exception.getReason()));
         }
 
         BigDecimal lineTotal;
@@ -89,6 +94,15 @@ public class CartSnapshotService {
         }
 
         return new CartLineSnapshot(item.getId(), dishName, quantity, unitPrice, lineTotal);
+    }
+
+    private InvalidCartItemReason mapMoneyReason(MonetaryCompatibilityReason reason) {
+        return switch (reason) {
+            case BOTH_REPRESENTATIONS_ABSENT -> InvalidCartItemReason.MISSING_MONETARY_REPRESENTATIONS;
+            case INVALID_NUMERIC_REPRESENTATION -> InvalidCartItemReason.INVALID_NUMERIC_UNIT_PRICE;
+            case INVALID_LEGACY_REPRESENTATION -> InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE;
+            case REPRESENTATIONS_DISAGREE -> InvalidCartItemReason.UNIT_PRICE_REPRESENTATIONS_DISAGREE;
+        };
     }
 
     private String requirePhoneNumber(String phoneNumber) {

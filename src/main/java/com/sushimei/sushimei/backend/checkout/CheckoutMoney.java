@@ -18,11 +18,19 @@ public class CheckoutMoney {
     public static final int SCALE = 2;
 
     public BigDecimal normalizeLegacyUnitPrice(Double legacyUnitPrice) {
-        if (legacyUnitPrice == null || !Double.isFinite(legacyUnitPrice)) {
+        return normalizeLegacyAmount(legacyUnitPrice);
+    }
+
+    public BigDecimal normalizeLegacyAmount(Double legacyAmount) {
+        if (legacyAmount == null || !Double.isFinite(legacyAmount)) {
             throw new IllegalArgumentException("Unit price must be a finite value.");
         }
 
-        return normalizePositiveAmount(BigDecimal.valueOf(legacyUnitPrice));
+        return normalizeNumericAmount(BigDecimal.valueOf(legacyAmount));
+    }
+
+    public BigDecimal normalizeNumericAmount(BigDecimal amount) {
+        return normalizePositiveAmount(amount);
     }
 
     public int requirePositiveQuantity(Integer quantity) {

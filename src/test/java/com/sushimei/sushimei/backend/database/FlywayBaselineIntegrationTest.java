@@ -22,6 +22,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.ActiveProfiles;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -35,8 +36,9 @@ import static org.mockito.Mockito.mock;
 @Import(FlywayBaselineIntegrationTest.TestInfrastructureConfiguration.class)
 class FlywayBaselineIntegrationTest {
 
-    private static final String H2_BASELINE_LOCATION = "classpath:db/migration/h2";
+    private static final String H2_MIGRATION_LOCATION = "classpath:db/migration/h2";
     private static final String H2_BASELINE_SCRIPT = "db/migration/h2/B1__current_application_schema.sql";
+    private static final String V2_SCRIPT = "V2__add_parallel_numeric_money_columns.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -56,15 +58,13 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void applicationContextUsesFlywayBaselineAndHibernateValidation() {
+    void applicationContextUsesFlywayMigrationsAndHibernateValidation() {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
 
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
-        assertThat(historyValue(jdbcTemplate, "version")).isEqualTo("1");
-        assertThat(historyValue(jdbcTemplate, "type")).isEqualTo("SQL_BASELINE");
-        assertThat(historyValue(jdbcTemplate, "script")).isEqualTo("B1__current_application_schema.sql");
-        assertThat(historySuccess(jdbcTemplate)).isTrue();
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("1");
+        assertSqlMigration(jdbcTemplate, 1, "SQL_BASELINE", "B1__current_application_schema.sql");
+        assertSqlMigration(jdbcTemplate, 2, "SQL", V2_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("2");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -93,23 +93,27 @@ class FlywayBaselineIntegrationTest {
         assertThat(identityValue(jdbcTemplate, "ORDERS", "ID")).isEqualTo("YES");
         assertThat(identityValue(jdbcTemplate, "CARTS", "ID")).isEqualTo("YES");
 
-        assertColumnAbsent(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
-        assertColumnAbsent(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
+        assertParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
+        assertParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
+        assertColumnPresent(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE");
+        assertColumnPresent(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT");
         assertColumnAbsent(jdbcTemplate, "ORDERS", "SOURCE_CART_ID");
+        assertNoBaselineData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsB1AsSuccessfulSqlBaseline() {
+    void cleanIsolatedDatabaseRecordsB1AndV2AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
         newFlyway(isolatedDataSource).migrate();
 
-        assertThat(historyValue(jdbcTemplate, "version")).isEqualTo("1");
-        assertThat(historyValue(jdbcTemplate, "type")).isEqualTo("SQL_BASELINE");
-        assertThat(historyValue(jdbcTemplate, "script")).isEqualTo("B1__current_application_schema.sql");
-        assertThat(historySuccess(jdbcTemplate)).isTrue();
+        assertSqlMigration(jdbcTemplate, 1, "SQL_BASELINE", "B1__current_application_schema.sql");
+        assertSqlMigration(jdbcTemplate, 2, "SQL", V2_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("2");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
+        assertParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
+        assertParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
         assertNoBaselineData(jdbcTemplate);
     }
 
@@ -126,24 +130,39 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void explicitBaselineOfMatchingSchemaRecordsBaselineAndDoesNotExecuteB1Again() {
+    void explicitBaselineOfMatchingSchemaDoesNotExecuteB1AndExecutesV2Once() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
         loadH2BaselineOutsideFlyway(isolatedDataSource);
+        jdbcTemplate.update("insert into public.cart (phone_number, status) values (?, ?)", "525512345678", "OPEN");
+        Long legacyCartId = jdbcTemplate.queryForObject(
+                "select id from public.cart where phone_number = ?", Long.class, "525512345678");
+        jdbcTemplate.update("insert into public.cart_items (dish_name, quantity, unit_price, cart_id) values (?, ?, ?, ?)",
+                "Legacy Maki", 2, 10.50d, legacyCartId);
+        jdbcTemplate.update("insert into public.orders (phone_number, total_amount, status, created_at) values (?, ?, ?, current_timestamp)",
+                "525512345678", 10.50d, "PENDING");
         int tableCountBeforeBaseline = publicTableCount(jdbcTemplate);
-        Flyway flyway = newFlyway(isolatedDataSource);
+        Flyway isolatedFlyway = newFlyway(isolatedDataSource);
 
-        flyway.baseline();
-        flyway.migrate();
+        isolatedFlyway.baseline();
+        isolatedFlyway.migrate();
 
-        assertThat(historyValue(jdbcTemplate, "version")).isEqualTo("1");
-        assertThat(historyValue(jdbcTemplate, "type")).isEqualTo("BASELINE");
-        assertThat(jdbcTemplate.queryForObject("""
-                select count(*)
-                from public."flyway_schema_history"
-                where "type" = 'SQL_BASELINE'
-                """, Integer.class)).isZero();
+        assertThat(historyValue(jdbcTemplate, 1, "type")).isEqualTo("BASELINE");
+        assertThat(historyCount(jdbcTemplate, 1)).isEqualTo(1);
+        assertThat(historyCountForType(jdbcTemplate, "SQL_BASELINE")).isZero();
+        assertSqlMigration(jdbcTemplate, 2, "SQL", V2_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("2");
         assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline);
+        assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
+        assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
+        assertThat(jdbcTemplate.queryForObject("select cart_id from public.cart_items", Long.class)).isEqualTo(legacyCartId);
+        assertThat(jdbcTemplate.queryForObject("select unit_price_amount from public.cart_items", Object.class)).isNull();
+        assertThat(jdbcTemplate.queryForObject("select total_amount from public.orders", Double.class)).isEqualTo(10.50d);
+        assertThat(jdbcTemplate.queryForObject("select total_amount_amount from public.orders", Object.class)).isNull();
+        assertThat(isolatedFlyway.migrate().migrationsExecuted).isZero();
+        assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
         assertTableExists(jdbcTemplate, "CART");
         assertTableExists(jdbcTemplate, "CART_ITEMS");
         assertTableExists(jdbcTemplate, "ORDERS");
@@ -164,7 +183,7 @@ class FlywayBaselineIntegrationTest {
     private Flyway newFlyway(DataSource dataSource) {
         return Flyway.configure()
                 .dataSource(dataSource)
-                .locations(H2_BASELINE_LOCATION)
+                .locations(H2_MIGRATION_LOCATION)
                 .defaultSchema("PUBLIC")
                 .schemas("PUBLIC")
                 .baselineOnMigrate(false)
@@ -179,20 +198,52 @@ class FlywayBaselineIntegrationTest {
         populator.execute(dataSource);
     }
 
-    private String historyValue(JdbcTemplate jdbcTemplate, String column) {
+    private void assertSqlMigration(JdbcTemplate jdbcTemplate, int version, String type, String script) {
+        assertThat(historyValue(jdbcTemplate, version, "type")).isEqualTo(type);
+        assertThat(historyValue(jdbcTemplate, version, "script")).isEqualTo(script);
+        assertThat(historySuccess(jdbcTemplate, version)).isTrue();
+    }
+
+    private String historyValue(JdbcTemplate jdbcTemplate, int version, String column) {
         return jdbcTemplate.queryForObject("""
                 select "%s"
                 from public."flyway_schema_history"
-                where "version" = '1'
-                """.formatted(column), String.class);
+                where "version" = ?
+                """.formatted(column), String.class, Integer.toString(version));
     }
 
-    private boolean historySuccess(JdbcTemplate jdbcTemplate) {
+    private int historyCount(JdbcTemplate jdbcTemplate, int version) {
+        return jdbcTemplate.queryForObject("""
+                select count(*)
+                from public."flyway_schema_history"
+                where "version" = ?
+                """, Integer.class, Integer.toString(version));
+    }
+
+    private int historyCountForType(JdbcTemplate jdbcTemplate, String type) {
+        return jdbcTemplate.queryForObject("""
+                select count(*)
+                from public."flyway_schema_history"
+                where "type" = ?
+                """, Integer.class, type);
+    }
+
+    private String currentVersion(JdbcTemplate jdbcTemplate) {
+        return jdbcTemplate.queryForObject("""
+                select "version"
+                from public."flyway_schema_history"
+                where "success" = true and "version" is not null
+                order by "installed_rank" desc
+                fetch first row only
+                """, String.class);
+    }
+
+    private boolean historySuccess(JdbcTemplate jdbcTemplate, int version) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
                 select "success"
                 from public."flyway_schema_history"
-                where "version" = '1'
-                """, Boolean.class));
+                where "version" = ?
+                """, Boolean.class, Integer.toString(version)));
     }
 
     private void assertFlywayHistoryTableExistsInPublic(JdbcTemplate jdbcTemplate) {
@@ -268,13 +319,48 @@ class FlywayBaselineIntegrationTest {
                 """, String.class, tableName, columnName);
     }
 
+    private void assertParallelMoneyColumn(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+        assertColumnPresent(jdbcTemplate, tableName, columnName);
+        assertThat(jdbcTemplate.queryForObject("""
+                select data_type
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
+                """, String.class, tableName, columnName)).isIn("NUMERIC", "DECIMAL");
+        assertThat(jdbcTemplate.queryForObject("""
+                select numeric_precision
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
+                """, Integer.class, tableName, columnName)).isEqualTo(19);
+        assertThat(jdbcTemplate.queryForObject("""
+                select numeric_scale
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
+                """, Integer.class, tableName, columnName)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                select is_nullable
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
+                """, String.class, tableName, columnName)).isEqualTo("YES");
+        assertThat(jdbcTemplate.queryForObject("""
+                select column_default
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
+                """, String.class, tableName, columnName)).isNull();
+    }
+
+    private void assertColumnPresent(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
+                """, Integer.class, tableName, columnName)).isEqualTo(1);
+    }
+
     private void assertColumnAbsent(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*)
                 from information_schema.columns
-                where table_schema = 'PUBLIC'
-                  and table_name = ?
-                  and column_name = ?
+                where table_schema = 'PUBLIC' and table_name = ? and column_name = ?
                 """, Integer.class, tableName, columnName)).isZero();
     }
 

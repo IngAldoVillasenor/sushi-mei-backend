@@ -103,10 +103,17 @@ Flyway owns the five application and legacy transactional tables. Infrastructure
 
 Phase 5A2a changes no monetary column, order model, cart behavior, production routing, or deterministic completion. Future versioned migrations begin at `V2` or higher.
 
-## Phase 5A2b: parallel monetary migration
+## Phase 5A2b1: parallel monetary columns and compatibility
 
-Phase 5A2b requires the verified baseline to be deployed first. It will introduce parallel `NUMERIC(19,2)` monetary columns, exact validation and backfill of legacy floating-point values, and compatible dual reads and writes. Persisted `Double` money remains technical debt until that migration is complete.
+Phase 5A2b1 requires the verified Flyway version-1 baseline history row before `V2` may run. `V2__add_parallel_numeric_money_columns.sql` adds nullable, default-free `NUMERIC(19,2)` columns beside—not instead of—the legacy floating-point values: `cart_items.unit_price_amount` and `orders.total_amount_amount`. It neither backfills historical data nor adds constraints, indexes, triggers, or generated values.
 
+New cart-item and order-total writes prepare one exact `ParallelMoney` pair: the numeric value is validated at precision 19 and scale 2 with `RoundingMode.UNNECESSARY`, and the legacy `Double` is accepted only when a `BigDecimal.valueOf` round trip reproduces that exact value. Reads prefer numeric values, fall back to valid legacy values, and reject absent, invalid, or disagreeing representations explicitly. The new nullable entity fields remain hidden from legacy JSON responses.
+
+Cart reopening clones both validated representations. The legacy order flow still creates an order and then closes its cart non-atomically; that behavior is intentionally unchanged until Phase 5B. This release adds no historical backfill, order lines, idempotency key, typed order metadata, production typed-intent routing, or deterministic order completion. Persisted `Double` money remains technical debt.
+
+## Phase 5A2b2: exact historical backfill and convergence
+
+After post-deployment profiling confirms compatible writes, Phase 5A2b2 will backfill only values that normalize exactly, verify zero mismatches and zero required numeric nulls, and introduce constraints only after convergence. Legacy reads will remain until the verified cutover plan is complete.
 ## Phase 5A2c: structured orders and idempotency
 
 Phase 5A2c will add structured order lines, nullable historical source-cart identity, a unique idempotency constraint for non-null source carts, and order-specific fulfillment and payment metadata. Legacy `orderDetails` remains compatible during that transition.
