@@ -54,6 +54,7 @@ CREATE TABLE public.conversation_sessions (
     transfer_receipt_path character varying(1024),
     updated_at timestamp(6) with time zone NOT NULL,
     version bigint NOT NULL,
+    CONSTRAINT conversation_sessions_pkey PRIMARY KEY (phone_number),
     CONSTRAINT conversation_sessions_fulfillment_type_check
         CHECK ((fulfillment_type)::text = ANY ((ARRAY['DELIVERY'::character varying, 'PICKUP'::character varying])::text[])),
     CONSTRAINT conversation_sessions_payment_method_check

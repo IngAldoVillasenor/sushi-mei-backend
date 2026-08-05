@@ -13,6 +13,9 @@ spring:
     baseline-on-migrate: false
     clean-disabled: true
     validate-migration-naming: true
+    default-schema: public
+    schemas:
+      - public
     locations: classpath:db/migration/{vendor}
 
 langchain4j:

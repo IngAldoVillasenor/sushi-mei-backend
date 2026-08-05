@@ -65,6 +65,7 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyValue(jdbcTemplate, "script")).isEqualTo("B1__current_application_schema.sql");
         assertThat(historySuccess(jdbcTemplate)).isTrue();
         assertThat(flyway.info().current().getVersion().toString()).isEqualTo("1");
+        assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
         assertTableExists(jdbcTemplate, "CART_ITEMS");
@@ -76,6 +77,11 @@ class FlywayBaselineIntegrationTest {
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
         assertThat(constraintCount(jdbcTemplate, "CART_ITEMS", "FOREIGN KEY")).isEqualTo(1);
+        assertThat(constraintCount(jdbcTemplate, "CONVERSATION_SESSIONS", "PRIMARY KEY")).isEqualTo(1);
+        assertThat(namedConstraintExists(jdbcTemplate, "CONVERSATION_SESSIONS", "CONVERSATION_SESSIONS_PKEY"))
+                .isTrue();
+        assertThat(keyColumnCount(jdbcTemplate, "CONVERSATION_SESSIONS", "CONVERSATION_SESSIONS_PKEY", "PHONE_NUMBER"))
+                .isEqualTo(1);
         assertThat(namedConstraintExists(jdbcTemplate, "CONVERSATION_SESSIONS", "CONVERSATION_SESSIONS_STATE_CHECK"))
                 .isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "CONVERSATION_SESSIONS", "CONVERSATION_SESSIONS_PAYMENT_METHOD_CHECK"))
@@ -103,6 +109,7 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyValue(jdbcTemplate, "type")).isEqualTo("SQL_BASELINE");
         assertThat(historyValue(jdbcTemplate, "script")).isEqualTo("B1__current_application_schema.sql");
         assertThat(historySuccess(jdbcTemplate)).isTrue();
+        assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertNoBaselineData(jdbcTemplate);
     }
 
@@ -158,6 +165,8 @@ class FlywayBaselineIntegrationTest {
         return Flyway.configure()
                 .dataSource(dataSource)
                 .locations(H2_BASELINE_LOCATION)
+                .defaultSchema("PUBLIC")
+                .schemas("PUBLIC")
                 .baselineOnMigrate(false)
                 .baselineVersion(MigrationVersion.fromVersion("1"))
                 .cleanDisabled(true)
@@ -184,6 +193,14 @@ class FlywayBaselineIntegrationTest {
                 from public."flyway_schema_history"
                 where "version" = '1'
                 """, Boolean.class));
+    }
+
+    private void assertFlywayHistoryTableExistsInPublic(JdbcTemplate jdbcTemplate) {
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*)
+                from information_schema.tables
+                where table_schema = 'PUBLIC' and table_name = 'flyway_schema_history'
+                """, Integer.class)).isEqualTo(1);
     }
 
     private void assertTableExists(JdbcTemplate jdbcTemplate, String tableName) {
@@ -228,6 +245,17 @@ class FlywayBaselineIntegrationTest {
                   and table_name = ?
                   and constraint_name = ?
                 """, Integer.class, tableName, constraintName) == 1;
+    }
+
+    private int keyColumnCount(JdbcTemplate jdbcTemplate, String tableName, String constraintName, String columnName) {
+        return jdbcTemplate.queryForObject("""
+                select count(*)
+                from information_schema.key_column_usage
+                where constraint_schema = 'PUBLIC'
+                  and table_name = ?
+                  and constraint_name = ?
+                  and column_name = ?
+                """, Integer.class, tableName, constraintName, columnName);
     }
 
     private String identityValue(JdbcTemplate jdbcTemplate, String tableName, String columnName) {

@@ -13,6 +13,10 @@ spring:
     baseline-on-migrate: false
     clean-disabled: true
     validate-migration-naming: true
+    # H2 exposes its built-in public schema as the physical identifier PUBLIC.
+    default-schema: PUBLIC
+    schemas:
+      - PUBLIC
     locations: classpath:db/migration/{vendor}
   autoconfigure:
     exclude:

@@ -33,6 +33,7 @@ CREATE TABLE public.conversation_sessions (
     transfer_receipt_path varchar(1024),
     updated_at timestamp(6) with time zone NOT NULL,
     version bigint NOT NULL,
+    CONSTRAINT conversation_sessions_pkey PRIMARY KEY (phone_number),
     CONSTRAINT conversation_sessions_fulfillment_type_check
         CHECK (fulfillment_type IN ('DELIVERY', 'PICKUP')),
     CONSTRAINT conversation_sessions_payment_method_check
