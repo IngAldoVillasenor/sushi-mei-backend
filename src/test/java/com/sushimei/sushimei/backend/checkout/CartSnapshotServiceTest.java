@@ -17,7 +17,7 @@ import static org.mockito.Mockito.when;
 class CartSnapshotServiceTest {
 
     private final CartRepository cartRepository = mock(CartRepository.class);
-    private final CartSnapshotService cartSnapshotService = new CartSnapshotService(cartRepository, new CheckoutMoney());
+    private final CartSnapshotService cartSnapshotService = new CartSnapshotService(cartRepository, new CheckoutMoney(), new ParallelMoneyResolver(new CheckoutMoney()));
 
     @Test
     void rejectsAnUnpersistedCartItemThroughThePureMapper() {

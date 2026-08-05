@@ -1,8 +1,10 @@
 package com.sushimei.sushimei.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -30,6 +32,10 @@ public class OrderRecord {
     private String orderDetails; // Aquí podemos guardar un resumen en texto del carrito
 
     private Double totalAmount;
+
+    @JsonIgnore
+    @Column(name = "total_amount_amount", precision = 19, scale = 2)
+    private BigDecimal totalAmountAmount;
 
     private String status; // Ej. "PENDING", "DELIVERED"
 

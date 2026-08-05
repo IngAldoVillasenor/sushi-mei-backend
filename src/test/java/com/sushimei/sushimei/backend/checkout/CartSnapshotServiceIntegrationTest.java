@@ -127,21 +127,21 @@ class CartSnapshotServiceIntegrationTest {
     void rejectsNullPersistedPrice() {
         persistCart("525512345678", item("Maki", 1, null));
 
-        assertInvalidUnitPrice();
+        assertInvalidUnitPrice(InvalidCartItemReason.MISSING_MONETARY_REPRESENTATIONS);
     }
 
     @Test
     void rejectsNaNPersistedPriceWhenH2StoresIt() {
         persistCart("525512345678", item("Maki", 1, Double.NaN));
 
-        assertInvalidUnitPrice();
+        assertInvalidUnitPrice(InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
     }
 
     @Test
     void rejectsInfinitePersistedPriceWhenH2StoresIt() {
         persistCart("525512345678", item("Maki", 1, Double.POSITIVE_INFINITY));
 
-        assertInvalidUnitPrice();
+        assertInvalidUnitPrice(InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
     }
 
     @Test
@@ -150,9 +150,9 @@ class CartSnapshotServiceIntegrationTest {
         persistCart("negative", item("Maki", 1, -10.0d));
         persistCart("scale", item("Maki", 1, 10.001d));
 
-        assertInvalidUnitPrice("zero");
-        assertInvalidUnitPrice("negative");
-        assertInvalidUnitPrice("scale");
+        assertInvalidUnitPrice("zero", InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
+        assertInvalidUnitPrice("negative", InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
+        assertInvalidUnitPrice("scale", InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
     }
 
     @Test
@@ -165,15 +165,15 @@ class CartSnapshotServiceIntegrationTest {
                 .isEqualTo(InvalidCartItemReason.INVALID_QUANTITY);
     }
 
-    private void assertInvalidUnitPrice() {
-        assertInvalidUnitPrice("525512345678");
+    private void assertInvalidUnitPrice(InvalidCartItemReason reason) {
+        assertInvalidUnitPrice("525512345678", reason);
     }
 
-    private void assertInvalidUnitPrice(String phoneNumber) {
+    private void assertInvalidUnitPrice(String phoneNumber, InvalidCartItemReason reason) {
         assertThatThrownBy(() -> cartSnapshotService.readActiveCart(phoneNumber))
                 .isInstanceOf(InvalidCartItemException.class)
                 .extracting(exception -> ((InvalidCartItemException) exception).getReason())
-                .isEqualTo(InvalidCartItemReason.INVALID_UNIT_PRICE);
+                .isEqualTo(reason);
     }
 
     private Cart persistCart(String phoneNumber, CartItem... items) {
@@ -196,6 +196,25 @@ class CartSnapshotServiceIntegrationTest {
         return item;
     }
 
+    @Test
+    void readsNumericOnlyHistoricalData() {
+        CartItem item = item("Maki", 2, null);
+        item.setUnitPriceAmount(new BigDecimal("10.50"));
+        persistCart("numeric-only", item);
+
+        CartSnapshot snapshot = cartSnapshotService.readActiveCart("numeric-only");
+
+        assertThat(snapshot.total()).isEqualByComparingTo("21.00");
+    }
+
+    @Test
+    void rejectsMismatchingDualRepresentationsExplicitly() {
+        CartItem item = item("Maki", 1, 10.5d);
+        item.setUnitPriceAmount(new BigDecimal("10.51"));
+        persistCart("mismatch", item);
+
+        assertInvalidUnitPrice("mismatch", InvalidCartItemReason.UNIT_PRICE_REPRESENTATIONS_DISAGREE);
+    }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
 

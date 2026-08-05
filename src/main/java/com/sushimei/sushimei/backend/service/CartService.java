@@ -1,19 +1,37 @@
 package com.sushimei.sushimei.backend.service;
 
+import com.sushimei.sushimei.backend.checkout.ActiveCartNotFoundException;
+import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
+import com.sushimei.sushimei.backend.checkout.EmptyCartException;
+import com.sushimei.sushimei.backend.checkout.ParallelMoney;
+import com.sushimei.sushimei.backend.checkout.ParallelMoneyResolver;
+
 import com.sushimei.sushimei.backend.entity.Cart;
 import com.sushimei.sushimei.backend.entity.CartItem;
 import com.sushimei.sushimei.backend.repository.CartRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
 public class CartService {
 
     private final CartRepository cartRepository;
+    private final CheckoutMoney checkoutMoney;
+    private final ParallelMoneyResolver parallelMoneyResolver;
 
-    public CartService(CartRepository cartRepository) {
+    public CartService(CartRepository cartRepository,
+                       CheckoutMoney checkoutMoney,
+                       ParallelMoneyResolver parallelMoneyResolver) {
         this.cartRepository = cartRepository;
+        this.checkoutMoney = checkoutMoney;
+        this.parallelMoneyResolver = parallelMoneyResolver;
     }
 
     // ACTUALIZADO: Ahora busca el carrito asociado específicamente al número de WhatsApp
@@ -32,12 +50,15 @@ public class CartService {
 
     @Transactional
     public void addItem(String phoneNumber, String dishName, int quantity, Double unitPrice) {
+        checkoutMoney.requirePositiveQuantity(quantity);
+        ParallelMoney money = parallelMoneyResolver.forWriteFromLegacy(unitPrice);
         Cart cart = getOrCreateActiveCart(phoneNumber);
 
         CartItem item = new CartItem();
         item.setDishName(dishName);
         item.setQuantity(quantity);
-        item.setUnitPrice(unitPrice);
+        item.setUnitPrice(money.legacyAmount());
+        item.setUnitPriceAmount(money.numericAmount());
 
         cart.addItem(item);
         cartRepository.save(cart);
@@ -49,36 +70,60 @@ public class CartService {
     public String getCartContents(String phoneNumber) {
         Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
         if (cart == null || cart.getItems().isEmpty()) {
-            return "El carrito está vacío.";
+            return "El carrito est\u00e1 vac\u00edo.";
         }
 
         StringBuilder ticket = new StringBuilder("Detalle exacto de la orden:\n");
-        double total = 0.0;
+        List<BigDecimal> lineTotals = new ArrayList<>();
 
         for (CartItem item : cart.getItems()) {
-            double price = (item.getUnitPrice() != null) ? item.getUnitPrice() : 0.0;
-            double subtotal = item.getQuantity() * price;
-            total += subtotal;
+            int itemQuantity = checkoutMoney.requirePositiveQuantity(item.getQuantity());
+            BigDecimal price = parallelMoneyResolver.resolve(item.getUnitPriceAmount(), item.getUnitPrice());
+            BigDecimal subtotal = checkoutMoney.calculateLineTotal(itemQuantity, price);
+            lineTotals.add(subtotal);
 
-            ticket.append("- ").append(item.getQuantity()).append("x ")
-                    .append(item.getDishName()).append(" ($").append(price).append(" c/u) = $")
-                    .append(subtotal).append("\n");
+            ticket.append("- ").append(itemQuantity).append("x ")
+                    .append(item.getDishName()).append(" ($").append(formatTicketAmount(price)).append(" c/u) = $")
+                    .append(formatTicketAmount(subtotal)).append("\n");
         }
-        ticket.append("\nTOTAL A PAGAR: $").append(total).append(" MXN");
+        BigDecimal total = checkoutMoney.calculateCartTotal(lineTotals);
+        ticket.append("\nTOTAL A PAGAR: $").append(formatTicketAmount(total)).append(" MXN");
         return ticket.toString();
     }
-
     // NUEVO: Método para obtener solo el total numérico (útil para guardar en la BD final)
     @Transactional(readOnly = true)
     public Double getCartTotal(String phoneNumber) {
         Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
-        if (cart == null || cart.getItems().isEmpty()) return 0.0;
-
-        return cart.getItems().stream()
-                .mapToDouble(item -> item.getQuantity() * (item.getUnitPrice() != null ? item.getUnitPrice() : 0.0))
-                .sum();
+        if (cart == null || cart.getItems().isEmpty()) {
+            return 0.0;
+        }
+        return getCartTotalForOrder(phoneNumber).legacyAmount();
     }
 
+    /**
+     * Strict deterministic total used when the legacy order flow creates an
+     * OrderRecord. It never creates a cart and never returns zero for checkout.
+     */
+    @Transactional(readOnly = true)
+    public ParallelMoney getCartTotalForOrder(String phoneNumber) {
+        Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        if (cart == null) {
+            throw new ActiveCartNotFoundException();
+        }
+        if (cart.getItems() == null || cart.getItems().isEmpty()) {
+            throw new EmptyCartException();
+        }
+
+        List<BigDecimal> lineTotals = new ArrayList<>();
+        for (CartItem item : cart.getItems()) {
+            int itemQuantity = checkoutMoney.requirePositiveQuantity(item.getQuantity());
+            BigDecimal unitPrice = parallelMoneyResolver.resolve(item.getUnitPriceAmount(), item.getUnitPrice());
+            lineTotals.add(checkoutMoney.calculateLineTotal(itemQuantity, unitPrice));
+        }
+
+        BigDecimal total = checkoutMoney.calculateCartTotal(lineTotals);
+        return parallelMoneyResolver.forWriteFromExact(total);
+    }
     @Transactional
     public String removeItem(String phoneNumber, String dishName, int quantity) {
         Cart cart = getOrCreateActiveCart(phoneNumber);
@@ -117,49 +162,130 @@ public class CartService {
 
     @Transactional
     public void reopenCart(String phoneNumber) {
-        // 1. Buscamos el carrito que se bloqueó al generar la orden que acaba de ser rechazada
         Cart lastClosedCart = cartRepository.findFirstByPhoneNumberAndStatusOrderByIdDesc(phoneNumber, "CLOSED");
 
-        if (lastClosedCart != null) {
-            // 2. Verificamos si el cliente ya había empezado un carrito nuevo
-            Cart currentOpenCart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        if (lastClosedCart == null) {
+            System.out.println("No closed cart was found for the customer.");
+            return;
+        }
 
-            if (currentOpenCart != null) {
-                // FUSIÓN INTELIGENTE: Traspasamos los alimentos al carrito que estamos reviviendo
-                for (CartItem newItem : currentOpenCart.getItems()) {
-
-                    // Verificamos si el platillo nuevo ya existía en el carrito viejo
-                    java.util.Optional<CartItem> existingItemOpt = lastClosedCart.getItems().stream()
-                            .filter(oldItem -> oldItem.getDishName().equalsIgnoreCase(newItem.getDishName()))
-                            .findFirst();
-
-                    if (existingItemOpt.isPresent()) {
-                        // Si ya existía, solo sumamos las cantidades (Ej. 1x Coca + 1x Coca = 2x Coca)
-                        CartItem existingItem = existingItemOpt.get();
-                        existingItem.setQuantity(existingItem.getQuantity() + newItem.getQuantity());
-                    } else {
-                        // Si es un platillo totalmente nuevo, creamos una copia para evitar errores de persistencia
-                        CartItem clonedItem = new CartItem();
-                        clonedItem.setDishName(newItem.getDishName());
-                        clonedItem.setQuantity(newItem.getQuantity());
-                        clonedItem.setUnitPrice(newItem.getUnitPrice());
-
-                        lastClosedCart.addItem(clonedItem);
-                    }
+        Cart currentOpenCart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        if (currentOpenCart != null) {
+            List<ReopenLine> preparedLines = prepareReopenLines(currentOpenCart, lastClosedCart);
+            for (ReopenLine line : preparedLines) {
+                if (line.existingItem() != null) {
+                    line.existingItem().setQuantity(line.quantity());
+                    continue;
                 }
 
-                // Eliminamos el carrito temporal porque sus artículos ya fueron salvados
-                cartRepository.delete(currentOpenCart);
-                System.out.println("🔄 [DB Postgres] Se fusionaron los nuevos platillos con la orden rechazada.");
+                CartItem clonedItem = new CartItem();
+                clonedItem.setDishName(line.dishName());
+                clonedItem.setQuantity(line.quantity());
+                clonedItem.setUnitPrice(line.cloneMoney().legacyAmount());
+                clonedItem.setUnitPriceAmount(line.cloneMoney().numericAmount());
+                lastClosedCart.addItem(clonedItem);
             }
 
-            // 3. Le devolvemos la vida al carrito consolidado
-            lastClosedCart.setStatus("OPEN");
-            cartRepository.save(lastClosedCart);
-
-            System.out.println("🔄 [DB Postgres] Carrito restaurado exitosamente para " + phoneNumber);
-        } else {
-            System.out.println("⚠️ No se encontró carrito cerrado para el número " + phoneNumber + ".");
+            cartRepository.delete(currentOpenCart);
+            System.out.println("Open cart items were merged into the reopened cart.");
         }
+
+        lastClosedCart.setStatus("OPEN");
+        cartRepository.save(lastClosedCart);
+        System.out.println("Cart reopened successfully.");
+    }
+
+    private List<ReopenLine> prepareReopenLines(Cart currentOpenCart, Cart lastClosedCart) {
+        Map<String, ReopenLineAccumulator> accumulatorsByDish = new LinkedHashMap<>();
+        for (CartItem incomingItem : currentOpenCart.getItems()) {
+            int quantity = checkoutMoney.requirePositiveQuantity(incomingItem.getQuantity());
+            BigDecimal incomingPrice = parallelMoneyResolver.resolve(
+                    incomingItem.getUnitPriceAmount(), incomingItem.getUnitPrice());
+            String dishIdentity = incomingItem.getDishName().toLowerCase(Locale.ROOT);
+            ReopenLineAccumulator accumulator = accumulatorsByDish.get(dishIdentity);
+            if (accumulator == null) {
+                CartItem existingItem = findExistingItem(lastClosedCart, incomingItem.getDishName());
+                accumulator = ReopenLineAccumulator.create(existingItem, incomingItem.getDishName(), incomingPrice,
+                        checkoutMoney, parallelMoneyResolver);
+                accumulatorsByDish.put(dishIdentity, accumulator);
+            } else if (accumulator.unitPrice().compareTo(incomingPrice) != 0) {
+                throw new CartReopenException(CartReopenFailureReason.UNIT_PRICE_MISMATCH);
+            }
+
+            accumulator.addIncomingQuantity(quantity);
+        }
+
+        return accumulatorsByDish.values().stream()
+                .map(accumulator -> accumulator.toReopenLine(parallelMoneyResolver))
+                .toList();
+    }
+
+    private CartItem findExistingItem(Cart closedCart, String dishName) {
+        return closedCart.getItems().stream()
+                .filter(candidate -> candidate.getDishName().equalsIgnoreCase(dishName))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private record ReopenLine(CartItem existingItem,
+                              String dishName,
+                              int quantity,
+                              ParallelMoney cloneMoney) {
+    }
+
+    private static final class ReopenLineAccumulator {
+
+        private final CartItem existingItem;
+        private final String dishName;
+        private final BigDecimal unitPrice;
+        private int quantity;
+
+        private ReopenLineAccumulator(CartItem existingItem, String dishName, BigDecimal unitPrice, int quantity) {
+            this.existingItem = existingItem;
+            this.dishName = dishName;
+            this.unitPrice = unitPrice;
+            this.quantity = quantity;
+        }
+
+        static ReopenLineAccumulator create(CartItem existingItem,
+                                             String dishName,
+                                             BigDecimal incomingPrice,
+                                             CheckoutMoney checkoutMoney,
+                                             ParallelMoneyResolver parallelMoneyResolver) {
+            if (existingItem == null) {
+                return new ReopenLineAccumulator(null, dishName, incomingPrice, 0);
+            }
+
+            int existingQuantity = checkoutMoney.requirePositiveQuantity(existingItem.getQuantity());
+            BigDecimal existingPrice = parallelMoneyResolver.resolve(
+                    existingItem.getUnitPriceAmount(), existingItem.getUnitPrice());
+            if (existingPrice.compareTo(incomingPrice) != 0) {
+                throw new CartReopenException(CartReopenFailureReason.UNIT_PRICE_MISMATCH);
+            }
+            return new ReopenLineAccumulator(existingItem, existingItem.getDishName(), existingPrice, existingQuantity);
+        }
+
+        void addIncomingQuantity(int incomingQuantity) {
+            quantity = Math.addExact(quantity, incomingQuantity);
+        }
+
+        BigDecimal unitPrice() {
+            return unitPrice;
+        }
+
+        ReopenLine toReopenLine(ParallelMoneyResolver parallelMoneyResolver) {
+            ParallelMoney cloneMoney = existingItem == null
+                    ? parallelMoneyResolver.forWriteFromExact(unitPrice)
+                    : null;
+            return new ReopenLine(existingItem, dishName, quantity, cloneMoney);
+        }
+    }
+
+    private String formatTicketAmount(BigDecimal amount) {
+        BigDecimal withoutTrailingZeros = amount.stripTrailingZeros();
+        if (withoutTrailingZeros.scale() <= 0) {
+            return withoutTrailingZeros.toPlainString() + ".0";
+        }
+        return withoutTrailingZeros.toPlainString();
     }
 }
