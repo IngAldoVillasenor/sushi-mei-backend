@@ -82,6 +82,25 @@ The current `ORDER_CONFIRMED` value remains conversational session state only. I
 3. **State transition** validates and mutates `ConversationSession` through `ConversationStateMachine` and `ConversationTransitionService`.
 4. **Checkout completion** must atomically create an `OrderRecord` and clear the cart. It is not implemented yet.
 5. **Language generation** produces human-readable replies and remains on the existing conversational path.
+
+## Phase 5A1: deterministic cart snapshot foundation
+
+Phase 5A1 introduces deterministic money validation and an immutable checkout-cart snapshot boundary while preserving the current persisted schema and legacy production flow. `CartItem.unitPrice` remains a legacy `Double` during this interim phase. The snapshot adapter first verifies that the value is finite, converts it once with `BigDecimal.valueOf`, and performs every later calculation with `BigDecimal` only.
+
+Checkout money is positive, exact, and normalized to precision 19 and scale 2. Values requiring rounding, non-finite values, zero or negative prices, invalid quantities, and total overflows are rejected before they can be used by deterministic checkout. No customer-facing wording is produced by this boundary.
+
+`CartSnapshotService` reads exactly one existing `OPEN` cart in a short read-only transaction. It never creates, merges, changes, or closes carts, and it does not read formatted cart text. It returns immutable `CartSnapshot` and `CartLineSnapshot` records ordered by persisted cart-item ID. Missing, empty, or multiply-active carts are explicit errors rather than opportunities to select or create a cart arbitrarily.
+
+Phase 5A1 does not create an order, close a cart, confirm a conversation session, route trusted intents into production traffic, or change the legacy `OrderTools` checkout behavior. Persisted `Double` money remains technical debt until Phase 5A2.
+
+## Phase 5A2: schema and deterministic-order foundations
+
+Phase 5A2 requires a verified PostgreSQL schema export before any production migration is designed. It will introduce a Flyway baseline and explicit migrations, parallel `NUMERIC(19,2)` columns, validation and exact backfill of legacy floating-point values, structured order lines, source-cart idempotency, and order-specific typed fulfillment and payment metadata. Only after safe rollout and validation can Hibernate move toward `ddl-auto: validate` and the legacy floating-point columns be retired.
+
+## Phase 5B: atomic deterministic checkout completion
+
+Phase 5B will atomically use the validated cart snapshot to create the real order and its lines, close the source cart, and confirm the conversation session. It must enforce source-cart idempotency and leave no split-brain state between conversation confirmation and `OrderRecord` creation.
+
 ## Future phases
 
 ### Deterministic checkout completion (next phase)
