@@ -124,35 +124,49 @@ class CartSnapshotServiceIntegrationTest {
     }
 
     @Test
-    void rejectsNullPersistedPrice() {
-        persistCart("525512345678", item("Maki", 1, null));
-
-        assertInvalidUnitPrice(InvalidCartItemReason.MISSING_MONETARY_REPRESENTATIONS);
+    void rejectsMissingMonetaryRepresentationsThroughThePureMapper() {
+        assertInvalidPriceThroughPureMapper(
+                null,
+                null,
+                InvalidCartItemReason.MISSING_MONETARY_REPRESENTATIONS
+        );
     }
 
     @Test
-    void rejectsNaNPersistedPriceWhenH2StoresIt() {
-        persistCart("525512345678", item("Maki", 1, Double.NaN));
-
-        assertInvalidUnitPrice(InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
+    void rejectsNaNLegacyPriceThroughThePureMapper() {
+        assertInvalidPriceThroughPureMapper(
+                Double.NaN,
+                new BigDecimal("10.00"),
+                InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE
+        );
     }
 
     @Test
-    void rejectsInfinitePersistedPriceWhenH2StoresIt() {
-        persistCart("525512345678", item("Maki", 1, Double.POSITIVE_INFINITY));
-
-        assertInvalidUnitPrice(InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
+    void rejectsInfiniteLegacyPriceThroughThePureMapper() {
+        assertInvalidPriceThroughPureMapper(
+                Double.POSITIVE_INFINITY,
+                new BigDecimal("10.00"),
+                InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE
+        );
     }
 
     @Test
-    void rejectsZeroNegativeAndExcessiveScalePrices() {
-        persistCart("zero", item("Maki", 1, 0.0d));
-        persistCart("negative", item("Maki", 1, -10.0d));
-        persistCart("scale", item("Maki", 1, 10.001d));
-
-        assertInvalidUnitPrice("zero", InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
-        assertInvalidUnitPrice("negative", InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
-        assertInvalidUnitPrice("scale", InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE);
+    void rejectsZeroNegativeAndExcessiveScaleLegacyPricesThroughThePureMapper() {
+        assertInvalidPriceThroughPureMapper(
+                0.0d,
+                new BigDecimal("10.00"),
+                InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE
+        );
+        assertInvalidPriceThroughPureMapper(
+                -10.0d,
+                new BigDecimal("10.00"),
+                InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE
+        );
+        assertInvalidPriceThroughPureMapper(
+                10.001d,
+                new BigDecimal("10.00"),
+                InvalidCartItemReason.INVALID_LEGACY_UNIT_PRICE
+        );
     }
 
     @Test
@@ -176,6 +190,21 @@ class CartSnapshotServiceIntegrationTest {
                 .isEqualTo(reason);
     }
 
+    private void assertInvalidPriceThroughPureMapper(
+            Double legacyUnitPrice,
+            BigDecimal numericUnitPrice,
+            InvalidCartItemReason reason
+    ) {
+        CartItem item = item("Maki", 1, legacyUnitPrice);
+        item.setId(1L);
+        item.setUnitPriceAmount(numericUnitPrice);
+
+        assertThatThrownBy(() -> cartSnapshotService.toLineSnapshot(item))
+                .isInstanceOf(InvalidCartItemException.class)
+                .extracting(exception -> ((InvalidCartItemException) exception).getReason())
+                .isEqualTo(reason);
+    }
+
     private Cart persistCart(String phoneNumber, CartItem... items) {
         Cart cart = new Cart();
         cart.setPhoneNumber(phoneNumber);
@@ -193,6 +222,9 @@ class CartSnapshotServiceIntegrationTest {
         item.setDishName(dishName);
         item.setQuantity(quantity);
         item.setUnitPrice(unitPrice);
+        if (unitPrice != null && Double.isFinite(unitPrice) && unitPrice > 0) {
+            item.setUnitPriceAmount(BigDecimal.valueOf(unitPrice));
+        }
         return item;
     }
 
@@ -208,12 +240,12 @@ class CartSnapshotServiceIntegrationTest {
     }
 
     @Test
-    void rejectsMismatchingDualRepresentationsExplicitly() {
-        CartItem item = item("Maki", 1, 10.5d);
-        item.setUnitPriceAmount(new BigDecimal("10.51"));
-        persistCart("mismatch", item);
-
-        assertInvalidUnitPrice("mismatch", InvalidCartItemReason.UNIT_PRICE_REPRESENTATIONS_DISAGREE);
+    void rejectsMismatchingDualRepresentationsThroughThePureMapper() {
+        assertInvalidPriceThroughPureMapper(
+                10.5d,
+                new BigDecimal("10.51"),
+                InvalidCartItemReason.UNIT_PRICE_REPRESENTATIONS_DISAGREE
+        );
     }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
