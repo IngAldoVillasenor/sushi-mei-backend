@@ -113,7 +113,10 @@ Cart reopening clones both validated representations. The legacy order flow stil
 
 ## Phase 5A2b2: exact historical backfill and convergence
 
-After post-deployment profiling confirms compatible writes, Phase 5A2b2 will backfill only values that normalize exactly, verify zero mismatches and zero required numeric nulls, and introduce constraints only after convergence. Legacy reads will remain until the verified cutover plan is complete.
+Read-only production profiling verified all historical monetary values before this migration: 16 `cart_items` values and 3 `orders` totals were finite, positive, exact at scale 2, and compatible with the parallel `NUMERIC(19,2)` representation. `V3__backfill_and_constrain_numeric_money.sql` first revalidates that compatibility, backfills only exact legacy values, verifies convergence, and then makes `unit_price_amount` and `total_amount_amount` `NOT NULL` and positive. Named constraints also require exact agreement whenever a legacy floating-point value remains present; numeric-only rows remain supported for the later cutover.
+
+The legacy floating-point columns and legacy reads remain temporarily for compatibility until a separately verified cutover. PostgreSQL V3 owns `public.checkout_money_java_double_to_numeric(double precision)`: it fixes `extra_float_digits` to shortest-precise output and `search_path` to `pg_catalog`, so its schema-qualified use in the agreement checks is independent of caller-session configuration. The helper remains only until a later migration first removes the agreement checks and legacy floating-point columns after verified cutover. Phase 5A2b2 introduces neither structured order lines nor source-cart idempotency nor atomic checkout behavior.
+
 ## Phase 5A2c: structured orders and idempotency
 
 Phase 5A2c will add structured order lines, nullable historical source-cart identity, a unique idempotency constraint for non-null source carts, and order-specific fulfillment and payment metadata. Legacy `orderDetails` remains compatible during that transition.

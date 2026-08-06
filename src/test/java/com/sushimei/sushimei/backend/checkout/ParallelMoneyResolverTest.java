@@ -44,9 +44,13 @@ class ParallelMoneyResolverTest {
     }
 
     @Test
-    void rejectsInvalidLegacyRepresentation() {
+    void rejectsNonFiniteLegacyRepresentations() {
         assertReason(MonetaryCompatibilityReason.INVALID_LEGACY_REPRESENTATION,
                 () -> resolver.resolve(null, Double.NaN));
+        assertReason(MonetaryCompatibilityReason.INVALID_LEGACY_REPRESENTATION,
+                () -> resolver.resolve(null, Double.POSITIVE_INFINITY));
+        assertReason(MonetaryCompatibilityReason.INVALID_LEGACY_REPRESENTATION,
+                () -> resolver.resolve(null, Double.NEGATIVE_INFINITY));
     }
 
     @Test
@@ -74,9 +78,25 @@ class ParallelMoneyResolverTest {
     }
 
     @Test
+    void acceptsJavaCanonicalLegacyValueAtTheSupportedPrecisionBoundary() {
+        double legacyAmount = 99999999999999.98d;
+        BigDecimal numericAmount = new BigDecimal("99999999999999.98");
+
+        assertThat(resolver.forWriteFromLegacy(legacyAmount).numericAmount())
+                .isEqualByComparingTo(numericAmount);
+        assertThat(resolver.resolve(numericAmount, legacyAmount))
+                .isEqualByComparingTo(numericAmount);
+    }
+
+    @Test
     void rejectsExactNumericAmountThatCannotRoundTripThroughDouble() {
+        double legacyAmount = 99999999999999.98d;
+        BigDecimal exactAmount = new BigDecimal("99999999999999.99");
+
         assertReason(MonetaryCompatibilityReason.INVALID_LEGACY_REPRESENTATION,
-                () -> resolver.forWriteFromExact(new BigDecimal("99999999999999.99")));
+                () -> resolver.forWriteFromExact(exactAmount));
+        assertReason(MonetaryCompatibilityReason.REPRESENTATIONS_DISAGREE,
+                () -> resolver.resolve(exactAmount, legacyAmount));
     }
 
     private void assertReason(MonetaryCompatibilityReason expected,
