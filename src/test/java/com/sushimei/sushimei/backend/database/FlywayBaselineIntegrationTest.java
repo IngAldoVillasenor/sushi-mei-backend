@@ -40,6 +40,7 @@ class FlywayBaselineIntegrationTest {
     private static final String H2_BASELINE_SCRIPT = "db/migration/h2/B1__current_application_schema.sql";
     private static final String V2_SCRIPT = "V2__add_parallel_numeric_money_columns.sql";
     private static final String V3_SCRIPT = "V3__backfill_and_constrain_numeric_money.sql";
+    private static final String V4_SCRIPT = "V4__add_whatsapp_inbound_message_idempotency.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -66,7 +67,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 1, "SQL_BASELINE", "B1__current_application_schema.sql");
         assertSqlMigration(jdbcTemplate, 2, "SQL", V2_SCRIPT);
         assertSqlMigration(jdbcTemplate, 3, "SQL", V3_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("3");
+        assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("4");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -74,6 +76,7 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "ORDERS");
         assertTableExists(jdbcTemplate, "CONVERSATION_SESSIONS");
         assertTableExists(jdbcTemplate, "CARTS");
+        assertTableExists(jdbcTemplate, "WHATSAPP_INBOUND_MESSAGES");
         assertTableAbsent(jdbcTemplate, "ORDER_LINE_RECORD");
         assertTableAbsent(jdbcTemplate, "ORDER_LINE_RECORDS");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
@@ -90,6 +93,10 @@ class FlywayBaselineIntegrationTest {
                 .isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "CONVERSATION_SESSIONS", "CONVERSATION_SESSIONS_FULFILLMENT_TYPE_CHECK"))
                 .isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "WHATSAPP_INBOUND_MESSAGES", "WHATSAPP_INBOUND_MESSAGES_PKEY"))
+                .isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "WHATSAPP_INBOUND_MESSAGES",
+                "WHATSAPP_INBOUND_MESSAGES_PROCESSING_STATUS_CHECK")).isTrue();
         assertThat(identityValue(jdbcTemplate, "CART", "ID")).isEqualTo("YES");
         assertThat(identityValue(jdbcTemplate, "CART_ITEMS", "ID")).isEqualTo("YES");
         assertThat(identityValue(jdbcTemplate, "ORDERS", "ID")).isEqualTo("YES");
@@ -113,7 +120,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 1, "SQL_BASELINE", "B1__current_application_schema.sql");
         assertSqlMigration(jdbcTemplate, 2, "SQL", V2_SCRIPT);
         assertSqlMigration(jdbcTemplate, 3, "SQL", V3_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("3");
+        assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("4");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -133,7 +141,7 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void explicitBaselineOfMatchingSchemaDoesNotExecuteB1AndExecutesV2Once() {
+    void explicitBaselineOfMatchingSchemaDoesNotExecuteB1AndExecutesLaterMigrationsOnce() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
         loadH2BaselineOutsideFlyway(isolatedDataSource);
@@ -155,10 +163,12 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCountForType(jdbcTemplate, "SQL_BASELINE")).isZero();
         assertSqlMigration(jdbcTemplate, 2, "SQL", V2_SCRIPT);
         assertSqlMigration(jdbcTemplate, 3, "SQL", V3_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("3");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline);
+        assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("4");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 1);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -170,11 +180,13 @@ class FlywayBaselineIntegrationTest {
                 .isEqualByComparingTo("10.50");
         assertThat(isolatedFlyway.migrate().migrationsExecuted).isZero();
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
         assertTableExists(jdbcTemplate, "CART");
         assertTableExists(jdbcTemplate, "CART_ITEMS");
         assertTableExists(jdbcTemplate, "ORDERS");
         assertTableExists(jdbcTemplate, "CONVERSATION_SESSIONS");
         assertTableExists(jdbcTemplate, "CARTS");
+        assertTableExists(jdbcTemplate, "WHATSAPP_INBOUND_MESSAGES");
     }
 
     private JdbcConnectionPool newIsolatedDataSource() {
@@ -386,6 +398,7 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.conversation_sessions", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.carts", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.whatsapp_inbound_messages", Integer.class)).isZero();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

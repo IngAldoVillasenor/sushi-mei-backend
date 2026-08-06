@@ -57,7 +57,7 @@ public class WhatsAppService {
         }
     }
 
-    public void sendMessage(String toPhoneNumber, String message) {
+    public boolean sendMessage(String toPhoneNumber, String message) {
         RestTemplate restTemplate = new RestTemplate();
         String url = graphApiUrl(whatsAppProperties.phoneNumberId() + "/messages");
 
@@ -81,8 +81,10 @@ public class WhatsAppService {
         try {
             restTemplate.postForEntity(url, request, String.class);
             log.info("WhatsApp response sent to {}", toPhoneNumber);
+            return true;
         } catch (Exception e) {
             log.warn("Unable to send WhatsApp response to {}", toPhoneNumber, e);
+            return false;
         }
     }
 
