@@ -29,7 +29,7 @@ class CartServiceDualMoneyTest {
     @Test
     void newCartItemDualWritesTheValidatedLegacyAndNumericRepresentations() {
         Cart activeCart = activeCart("525512345678");
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(activeCart);
+        when(cartRepository.findOpenCartByPhoneNumberForUpdate("525512345678")).thenReturn(java.util.Optional.of(activeCart));
 
         cartService.addItem("525512345678", "Maki", 2, 10.5d);
 
