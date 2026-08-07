@@ -25,6 +25,11 @@ Chat memory remains useful for conversational tone and continuity. It is not a c
 Phase 2 introduces `ConversationManager` as the application boundary for inbound WhatsApp messages. The webhook controller continues to own Meta payload parsing, Mexico phone normalization, media download, response delivery, and HTTP acknowledgements. The manager coordinates the existing `SushiAgent`, shadow session writes, and receipt-to-order association without changing checkout progression.
 
 `ConversationSession` remains shadow-only in production: customer text, media content, prompts, and LLM output are not persisted as checkout state. The LLM retains the current language behavior only.
+## WhatsApp Reliability 1: inbound webhook idempotency
+
+Flyway V4 adds `whatsapp_inbound_messages`, keyed by Meta `messages[].id`. The webhook claims that ID in a short database transaction before any shadow activity write, media download, agent invocation, cart/order mutation, or WhatsApp response. A duplicate claim returns `EVENT_RECEIVED` without repeating any operational work. Newly claimed events move from `PROCESSING` to `COMPLETED` only after the response sender reports success; failures are recorded as `FAILED` in a separate short transaction and retain the existing controlled acknowledgement.
+
+Automatic replay of `FAILED` events is deliberately deferred. The external WhatsApp send and local completion update cannot be one atomic transaction: a send that succeeds immediately before local completion recording fails remains an acknowledged-delivery uncertainty that needs a later retry/outbox design.
 
 ## Phase 3: deterministic transition engine
 
