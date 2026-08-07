@@ -42,7 +42,16 @@ public class CartSnapshotService {
             throw new MultipleActiveCartsException();
         }
 
-        Cart cart = activeCarts.get(0);
+        return snapshotOf(activeCarts.get(0));
+    }
+
+    /**
+     * Builds the same immutable, exact snapshot for a caller that has already
+     * selected and locked one exact cart identity. It deliberately performs no
+     * repository lookup and never mutates the cart.
+     */
+    public CartSnapshot snapshotOf(Cart cart) {
+        Objects.requireNonNull(cart, "cart must not be null");
         if (cart.getId() == null) {
             throw new InvalidCartItemException(InvalidCartItemReason.MISSING_CART_ID);
         }
