@@ -1,6 +1,6 @@
 package com.sushimei.sushimei.backend.conversation;
 
-import com.sushimei.sushimei.backend.agent.SushiAgent;
+import com.sushimei.sushimei.backend.agent.AiConversationService;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +34,7 @@ class ConversationManagerTest {
                     + "¿Me ayudas escribiendo tu mensaje? 🍣";
 
     @Mock
-    private SushiAgent sushiAgent;
+    private AiConversationService aiConversationService;
 
     @Mock
     private ConversationSessionService conversationSessionService;
@@ -46,7 +46,7 @@ class ConversationManagerTest {
 
     @BeforeEach
     void setUp() {
-        conversationManager = new ConversationManager(sushiAgent, conversationSessionService, orderRepository);
+        conversationManager = new ConversationManager(aiConversationService, conversationSessionService, orderRepository);
     }
 
     @Test
@@ -56,14 +56,14 @@ class ConversationManagerTest {
         verify(conversationSessionService).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
-        verifyNoInteractions(sushiAgent, orderRepository);
+        verifyNoInteractions(aiConversationService, orderRepository);
     }
 
     @Test
     void shadowActivityFailureDoesNotPreventTheTextAgentResponse() {
         doThrow(new IllegalStateException("database unavailable"))
                 .when(conversationSessionService).recordInboundActivity(PHONE_NUMBER);
-        when(sushiAgent.chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("agent response");
+        when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("agent response");
 
         conversationManager.recordInboundMessage(PHONE_NUMBER);
         String response = conversationManager.handleTextMessage(PHONE_NUMBER, TEXT_MESSAGE);
@@ -71,18 +71,18 @@ class ConversationManagerTest {
         assertThat(response).isEqualTo("agent response");
         verify(conversationSessionService).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
-        verify(sushiAgent).chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE);
+        verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE);
         verifyNoInteractions(orderRepository);
     }
 
     @Test
     void textHandlingPreservesAgentArgumentsAndResponseWithoutAdditionalShadowWrites() {
-        when(sushiAgent.chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("agent response");
+        when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE)).thenReturn("agent response");
 
         String response = conversationManager.handleTextMessage(PHONE_NUMBER, TEXT_MESSAGE);
 
         assertThat(response).isEqualTo("agent response");
-        verify(sushiAgent).chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE);
+        verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE);
         verifyNoInteractions(conversationSessionService, orderRepository);
     }
 
@@ -92,7 +92,7 @@ class ConversationManagerTest {
         pendingOrder.setId(42L);
         when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenReturn(pendingOrder);
-        when(sushiAgent.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
+        when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
         String response = conversationManager.handleImageMessage(PHONE_NUMBER, RECEIPT_PATH);
 
@@ -103,14 +103,14 @@ class ConversationManagerTest {
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
         verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION");
         verify(orderRepository).save(pendingOrder);
-        verify(sushiAgent).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
+        verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
     @Test
     void imageHandlingWithoutPendingOrderContinuesToTheAgent() {
         when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenReturn(null);
-        when(sushiAgent.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
+        when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
         String response = conversationManager.handleImageMessage(PHONE_NUMBER, RECEIPT_PATH);
 
@@ -120,18 +120,18 @@ class ConversationManagerTest {
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
         verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION");
         verify(orderRepository, never()).save(org.mockito.ArgumentMatchers.any(OrderRecord.class));
-        verify(sushiAgent).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
+        verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
     @Test
     void nullImagePathSkipsReceiptPersistenceAndOrderRepositoryButStillInvokesTheAgent() {
-        when(sushiAgent.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
+        when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
         String response = conversationManager.handleImageMessage(PHONE_NUMBER, null);
 
         assertThat(response).isEqualTo("thanks");
         verifyNoInteractions(conversationSessionService, orderRepository);
-        verify(sushiAgent).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
+        verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
     @Test
@@ -142,7 +142,7 @@ class ConversationManagerTest {
                 .when(conversationSessionService).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenReturn(pendingOrder);
-        when(sushiAgent.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
+        when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
         String response = conversationManager.handleImageMessage(PHONE_NUMBER, RECEIPT_PATH);
 
@@ -152,7 +152,7 @@ class ConversationManagerTest {
         verify(conversationSessionService, never()).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
         verify(orderRepository).save(pendingOrder);
-        verify(sushiAgent).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
+        verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
     @Test
@@ -167,14 +167,14 @@ class ConversationManagerTest {
         verify(conversationSessionService).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         verify(conversationSessionService, never()).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
-        verify(sushiAgent, never()).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
+        verify(aiConversationService, never()).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
     @Test
     void audioResponseIsByteForByteUnchangedAndDoesNotUseTheAgentOrSession() {
         assertThat(conversationManager.handleAudioMessage(PHONE_NUMBER)).isEqualTo(AUDIO_RESPONSE);
 
-        verifyNoInteractions(sushiAgent, conversationSessionService, orderRepository);
+        verifyNoInteractions(aiConversationService, conversationSessionService, orderRepository);
     }
 
     @Test
@@ -182,6 +182,6 @@ class ConversationManagerTest {
         assertThat(conversationManager.handleUnsupportedMessage(PHONE_NUMBER, "video"))
                 .isEqualTo(UNSUPPORTED_MESSAGE_RESPONSE);
 
-        verifyNoInteractions(sushiAgent, conversationSessionService, orderRepository);
+        verifyNoInteractions(aiConversationService, conversationSessionService, orderRepository);
     }
 }

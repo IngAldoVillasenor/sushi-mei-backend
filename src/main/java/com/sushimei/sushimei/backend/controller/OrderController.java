@@ -1,6 +1,6 @@
 package com.sushimei.sushimei.backend.controller;
 
-import com.sushimei.sushimei.backend.agent.SushiAgent;
+import com.sushimei.sushimei.backend.agent.AiConversationService;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import com.sushimei.sushimei.backend.service.CartService;
@@ -20,15 +20,15 @@ public class OrderController {
 
     private final OrderRepository orderRepository;
 
-    private final SushiAgent sushiAgent;
+    private final AiConversationService aiConversationService;
 
     private final WhatsAppService whatsAppService;
 
     private final CartService cartService;
 
-    public OrderController(OrderRepository orderRepository, SushiAgent sushiAgent, WhatsAppService whatsAppService, CartService cartService) {
+    public OrderController(OrderRepository orderRepository, AiConversationService aiConversationService, WhatsAppService whatsAppService, CartService cartService) {
         this.orderRepository = orderRepository;
-        this.sushiAgent = sushiAgent;
+        this.aiConversationService = aiConversationService;
         this.whatsAppService = whatsAppService;
         this.cartService = cartService;
     }
@@ -78,7 +78,7 @@ public class OrderController {
                     "Discúlpate amablemente con el cliente, explícale la razón, infórmale que su carrito sigue guardado con los demás productos y pregúntale por qué desea sustituir el producto faltante.";
 
             // La IA genera la disculpa y sugerencia
-            String aiResponse = sushiAgent.chat(order.getPhoneNumber(), order.getPhoneNumber(), promptParaIA);
+            String aiResponse = aiConversationService.chat(order.getPhoneNumber(), order.getPhoneNumber(), promptParaIA);
 
             // Se la mandamos proactivamente por WhatsApp
             whatsAppService.sendMessage(order.getPhoneNumber(), aiResponse);

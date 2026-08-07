@@ -1,6 +1,6 @@
 package com.sushimei.sushimei.backend.controller;
 
-import com.sushimei.sushimei.backend.agent.SushiAgent;
+import com.sushimei.sushimei.backend.conversation.ConversationManager;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -10,11 +10,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/sushi")
 public class ChatController {
 
-    private final SushiAgent sushiAgent;
+    private final ConversationManager conversationManager;
 
-    // Inyección de dependencias por constructor (Best practice)
-    public ChatController(SushiAgent sushiAgent) {
-        this.sushiAgent = sushiAgent;
+    public ChatController(ConversationManager conversationManager) {
+        this.conversationManager = conversationManager;
     }
 
     @GetMapping("/chat")
@@ -22,6 +21,6 @@ public class ChatController {
             @RequestParam String telefono,
             @RequestParam String mensaje) {
 
-        return sushiAgent.chat(telefono, telefono, mensaje);
+        return conversationManager.handleTextMessage(telefono, mensaje);
     }
 }

@@ -1,6 +1,6 @@
 package com.sushimei.sushimei.backend.conversation;
 
-import com.sushimei.sushimei.backend.agent.SushiAgent;
+import com.sushimei.sushimei.backend.agent.AiConversationService;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import org.slf4j.Logger;
@@ -28,14 +28,14 @@ public class ConversationManager {
             "¡Hola! Por ahora solo puedo procesar mensajes de texto y fotografías de comprobantes. "
                     + "¿Me ayudas escribiendo tu mensaje? 🍣";
 
-    private final SushiAgent sushiAgent;
+    private final AiConversationService aiConversationService;
     private final ConversationSessionService conversationSessionService;
     private final OrderRepository orderRepository;
 
-    public ConversationManager(SushiAgent sushiAgent,
+    public ConversationManager(AiConversationService aiConversationService,
                                ConversationSessionService conversationSessionService,
                                OrderRepository orderRepository) {
-        this.sushiAgent = sushiAgent;
+        this.aiConversationService = aiConversationService;
         this.conversationSessionService = conversationSessionService;
         this.orderRepository = orderRepository;
     }
@@ -53,7 +53,14 @@ public class ConversationManager {
     }
 
     public String handleTextMessage(String phoneNumber, String text) {
-        return sushiAgent.chat(phoneNumber, phoneNumber, text);
+        return handleTextMessage(phoneNumber, phoneNumber, text);
+    }
+
+    /**
+     * Uses a caller-provided memory ID for non-WhatsApp callers while preserving phone-number tool safety.
+     */
+    public String handleTextMessage(String memoryId, String phoneNumber, String text) {
+        return aiConversationService.chat(memoryId, phoneNumber, text);
     }
 
     public String handleImageMessage(String phoneNumber, String savedReceiptPath) {
@@ -62,7 +69,7 @@ public class ConversationManager {
             associateReceiptWithPendingOrder(phoneNumber, savedReceiptPath);
         }
 
-        return sushiAgent.chat(phoneNumber, phoneNumber, IMAGE_RECEIPT_INSTRUCTION);
+        return aiConversationService.chat(phoneNumber, phoneNumber, IMAGE_RECEIPT_INSTRUCTION);
     }
 
     public String handleAudioMessage(String phoneNumber) {
