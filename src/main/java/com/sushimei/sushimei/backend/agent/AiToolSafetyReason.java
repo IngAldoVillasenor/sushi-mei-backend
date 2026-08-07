@@ -1,0 +1,9 @@
+package com.sushimei.sushimei.backend.agent;
+
+public enum AiToolSafetyReason {
+    ADD_NOT_EXPLICITLY_REQUESTED,
+    REMOVE_NOT_EXPLICITLY_REQUESTED,
+    CART_QUERY_NOT_REQUESTED,
+    CART_QUERY_ALREADY_PERFORMED,
+    LEGACY_ORDER_CONFIRMATION_DISABLED
+}

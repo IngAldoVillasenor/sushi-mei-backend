@@ -1,5 +1,7 @@
 package com.sushimei.sushimei.backend.tools;
 
+import com.sushimei.sushimei.backend.agent.AiToolSafetyException;
+import com.sushimei.sushimei.backend.agent.AiToolSafetyGuard;
 import com.sushimei.sushimei.backend.checkout.ActiveCartNotFoundException;
 import com.sushimei.sushimei.backend.checkout.EmptyCartException;
 import com.sushimei.sushimei.backend.checkout.ParallelMoney;
@@ -12,6 +14,7 @@ import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -25,13 +28,21 @@ public class OrderTools {
 
     private final OrderRepository orderRepository;
     private final CartService cartService;
+    private final AiToolSafetyGuard toolSafetyGuard;
 
     public OrderTools(OrderRepository orderRepository, CartService cartService) {
-        this.orderRepository = orderRepository;
-        this.cartService = cartService;
+        this(orderRepository, cartService, new AiToolSafetyGuard());
     }
 
-    @Tool("Agrega un platillo al carrito de compras. Úsalo SOLO cuando el cliente confirme explícitamente que quiere ordenar algo.")
+    @Autowired
+    public OrderTools(OrderRepository orderRepository, CartService cartService, AiToolSafetyGuard toolSafetyGuard) {
+        this.orderRepository = orderRepository;
+        this.cartService = cartService;
+        this.toolSafetyGuard = toolSafetyGuard;
+    }
+
+    @Tool("Agrega un platillo al carrito solo cuando el cliente pida claramente agregar ese producto. "
+            + "No la uses para saludos, preguntas de menú o precios. Para varios productos identificables, úsala una vez por cada producto.")
     public String addDishToCart(
             @P("El número de teléfono del cliente") String phoneNumber,
             @P("El nombre exacto del platillo que el usuario quiere ordenar") String dishName,
@@ -39,39 +50,68 @@ public class OrderTools {
             @P("El precio unitario del platillo (extraído del menú proporcionado)") double unitPrice) {
 
         try {
+            toolSafetyGuard.requireAddAllowed(dishName);
             cartService.addItem(phoneNumber, dishName, quantity, unitPrice);
-            return "Platillo agregado. El estado actual del carrito es:\n" + cartService.getCartContents(phoneNumber);
+            String cartContents = cartService.getCartContents(phoneNumber);
+            String response = "\u00a1Listo! Agregu\u00e9 " + quantity + " x " + dishName + " a tu carrito.\n" + cartContents;
+            toolSafetyGuard.recordAddSucceeded(response);
+            log.info("AI tool outcome=ADD_CART_ITEM result=SUCCESS");
+            return response;
+        } catch (AiToolSafetyException exception) {
+            toolSafetyGuard.recordAddBlocked();
+            return toolSafetyFailureResponse("ADD_CART_ITEM", exception);
         } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
-            return checkoutDataFailureResponse(exception);
+            toolSafetyGuard.recordAddFailed();
+            return checkoutDataFailureResponse("ADD_CART_ITEM", exception);
         }
     }
 
-    @Tool("Consulta los artículos del carrito. OBLIGATORIO usarla si el usuario pregunta por su orden o carrito.")
+    @Tool("Consulta el contenido actual y el total del carrito. Úsala solo cuando el cliente pregunte qué lleva, "
+            + "qué tiene en el carrito o cuánto es. No la uses para saludos, preguntas del menú ni automáticamente después de agregar o quitar productos.")
     public String checkCart(
             @P("El número de teléfono del cliente") String phoneNumber) {
 
-        System.out.println("Agent is executing checkCart.");
         try {
-            return cartService.getCartContents(phoneNumber);
+            toolSafetyGuard.requireCartQueryAllowed();
+            String cartContents = cartService.getCartContents(phoneNumber);
+            toolSafetyGuard.recordCartQuerySucceeded(cartContents);
+            log.info("AI tool outcome=CHECK_CART result=SUCCESS");
+            return cartContents;
+        } catch (AiToolSafetyException exception) {
+            return toolSafetyFailureResponse("CHECK_CART", exception);
         } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
-            return checkoutDataFailureResponse(exception);
+            return checkoutDataFailureResponse("CHECK_CART", exception);
         }
     }
 
-    @Tool("Elimina o resta un platillo del carrito de compras del usuario. Úsalo SOLO cuando el cliente pida explícitamente quitar, eliminar, cancelar o restar un producto de su orden.")
+    @Tool("Elimina o resta un platillo del carrito solo cuando el cliente pida claramente quitar, eliminar, cancelar o restar ese producto.")
     public String removeDishFromCart(
             @P("El número de teléfono del cliente") String phoneNumber,
             @P("El nombre EXACTO del platillo que el usuario quiere quitar, tal cual como aparece en la consulta del carrito") String dishName,
             @P("La cantidad numérica de platillos que desea restar o quitar") int quantity) {
 
         try {
-            return cartService.removeItem(phoneNumber, dishName, quantity);
+            toolSafetyGuard.requireRemoveAllowed(dishName);
+            String result = cartService.removeItem(phoneNumber, dishName, quantity);
+            if (result != null && result.startsWith("Error interno:")) {
+                toolSafetyGuard.recordRemoveFailed();
+                log.warn("AI tool outcome=REMOVE_CART_ITEM result=FAILURE reason=ITEM_NOT_FOUND");
+                return result;
+            }
+            String response = "\u00a1Listo! Quit\u00e9 " + quantity + " x " + dishName + " de tu carrito.\n" + result;
+            toolSafetyGuard.recordRemoveSucceeded(response);
+            log.info("AI tool outcome=REMOVE_CART_ITEM result=SUCCESS");
+            return response;
+        } catch (AiToolSafetyException exception) {
+            toolSafetyGuard.recordRemoveBlocked();
+            return toolSafetyFailureResponse("REMOVE_CART_ITEM", exception);
         } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
-            return checkoutDataFailureResponse(exception);
+            toolSafetyGuard.recordRemoveFailed();
+            return checkoutDataFailureResponse("REMOVE_CART_ITEM", exception);
         }
     }
 
-    @Tool("ÚSASE ÚNICAMENTE para finalizar la orden. ESTÁ ESTRICTAMENTE PROHIBIDO ejecutar esta herramienta si el cliente no te ha dado explícitamente el tipo de entrega, dirección/nombre y detalles de pago.")
+    @Tool("Operación heredada para finalizar una orden. No debe ser llamada por el agente conversacional hasta que exista un servicio determinista de finalización de pedidos.")
     public String confirmOrder(
             @P("El teléfono del cliente. (Ej. 524771234567)")
             String phoneNumber,
@@ -84,6 +124,13 @@ public class OrderTools {
 
             @P("OBLIGATORIO: Detalles del pago. Ej. 'Efectivo billete 500' o 'Transferencia (Comprobante pendiente)'. TIENES QUE PREGUNTARLO ANTES.")
             String paymentNotes) {
+
+        try {
+            toolSafetyGuard.requireLegacyOrderConfirmationBlocked();
+        } catch (AiToolSafetyException exception) {
+            toolSafetyGuard.recordConfirmationBlocked();
+            return toolSafetyFailureResponse("CONFIRM_ORDER", exception);
+        }
 
         if (deliveryType == null || deliveryType.trim().isEmpty()) {
             return "ERROR AL CONFIRMAR: No enviaste el tipo de entrega. Pregúntale al cliente si es para DOMICILIO o SUCURSAL y vuelve a intentarlo.";
@@ -122,7 +169,7 @@ public class OrderTools {
         } catch (ActiveCartNotFoundException | EmptyCartException exception) {
             return "Error: El carrito est\u00e1 vac\u00edo. Pide al cliente que agregue platillos antes de confirmar.";
         } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
-            return checkoutDataFailureResponse(exception);
+            return checkoutDataFailureResponse("CONFIRM_ORDER", exception);
         }
 
         // 1. Crear el registro oficial
@@ -142,7 +189,7 @@ public class OrderTools {
         // 2. Cerrar el carrito actual del cliente
         cartService.clearCart(phoneNumber);
 
-        System.out.println("✅ ORDEN CREADA EXITOSAMENTE: Ticket #" + savedOrder.getId() + " | Tipo: " + deliveryType.toUpperCase());
+        log.info("AI tool outcome=CONFIRM_ORDER result=SUCCESS");
 
         // 3. Respuesta dinámica dependiendo del tipo de entrega
         if (deliveryType.equalsIgnoreCase("SUCURSAL")) {
@@ -154,13 +201,23 @@ public class OrderTools {
         }
     }
 
-    private String checkoutDataFailureResponse(RuntimeException exception) {
+    private String toolSafetyFailureResponse(String toolName, AiToolSafetyException exception) {
+        log.warn("AI tool outcome={} result=BLOCKED reason={}", toolName, exception.getReason());
+        return switch (exception.getReason()) {
+            case ADD_NOT_EXPLICITLY_REQUESTED -> "No agregues productos todavía. Pide al cliente que indique el nombre exacto del platillo o bebida.";
+            case REMOVE_NOT_EXPLICITLY_REQUESTED -> "No quites productos todavía. Pide al cliente que indique el nombre exacto del producto que desea quitar.";
+            case CART_QUERY_NOT_REQUESTED, CART_QUERY_ALREADY_PERFORMED -> "El cliente no solicitó consultar el carrito. Responde sin usar herramientas.";
+            case LEGACY_ORDER_CONFIRMATION_DISABLED -> "No confirmes ni declares una orden creada. La finalización de pedidos se procesa por un flujo separado.";
+        };
+    }
+
+    private String checkoutDataFailureResponse(String toolName, RuntimeException exception) {
         if (exception instanceof MonetaryCompatibilityException monetaryFailure) {
-            log.warn("Checkout monetary integrity failure: {}", monetaryFailure.getReason());
+            log.warn("AI tool outcome={} result=FAILURE reason={}", toolName, monetaryFailure.getReason());
         } else if (exception instanceof InvalidCartItemException cartItemFailure) {
-            log.warn("Checkout cart-item integrity failure: {}", cartItemFailure.getReason());
+            log.warn("AI tool outcome={} result=FAILURE reason={}", toolName, cartItemFailure.getReason());
         } else {
-            log.warn("Checkout data validation failure: {}", exception.getClass().getSimpleName());
+            log.warn("AI tool outcome={} result=FAILURE reason={}", toolName, exception.getClass().getSimpleName());
         }
         return CHECKOUT_DATA_FAILURE_RESPONSE;
     }

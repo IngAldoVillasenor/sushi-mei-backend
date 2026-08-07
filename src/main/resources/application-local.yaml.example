@@ -36,3 +36,8 @@ rag:
     min-score: ${RAG_MIN_SCORE:0.0}
   memory:
     max-messages: ${CHAT_MEMORY_MAX_MESSAGES:20}
+
+# Development-only harness. It is also guarded by the local Spring profile and never sends WhatsApp messages.
+development:
+  ai-harness:
+    enabled: ${DEV_AI_HARNESS_ENABLED:false}

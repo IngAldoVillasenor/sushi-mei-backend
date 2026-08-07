@@ -50,3 +50,7 @@ rag:
 
 server:
   address: 0.0.0.0
+
+development:
+  ai-harness:
+    enabled: ${DEV_AI_HARNESS_ENABLED:false}

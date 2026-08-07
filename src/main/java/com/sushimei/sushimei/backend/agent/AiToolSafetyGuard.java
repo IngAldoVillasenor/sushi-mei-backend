@@ -1,0 +1,287 @@
+package com.sushimei.sushimei.backend.agent;
+
+import org.springframework.stereotype.Component;
+
+import java.text.Normalizer;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.function.Supplier;
+
+/**
+ * Per-turn guard for AI-initiated cart tools. It is intentionally not a checkout state machine.
+ */
+@Component
+public class AiToolSafetyGuard {
+
+    private static final Set<String> ADD_ACTIONS = Set.of(
+            "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye");
+    private static final Set<String> REMOVE_ACTIONS = Set.of(
+            "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta", "restar", "saca", "sacar");
+    private static final Set<String> SIMPLE_GREETING_TOKENS = Set.of(
+            "hola", "buenas", "buenos", "dias", "tardes", "noches");
+    private static final Set<String> AMBIGUOUS_REFERENCE_TOKENS = Set.of(
+            "ese", "esa", "esto", "esta", "melo", "lo", "la");
+    private static final Set<String> NON_PRODUCT_TOKENS = Set.of(
+            "a", "al", "con", "de", "del", "el", "ella", "ellos", "esa", "ese", "esto", "la", "las", "lo", "los",
+            "me", "mi", "para", "por", "que", "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega",
+            "agregame", "anade", "incluye", "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta",
+            "restar", "saca", "sacar", "tambien", "un", "una", "unos", "unas", "y", "orden", "ordenes", "pedido",
+            "platillo", "platillos", "producto", "productos", "roll", "rollo", "rollos", "bebida", "bebidas", "refresco",
+            "refrescos", "sushi", "comida", "algo", "eso", "esta", "este");
+
+    private final ThreadLocal<TurnContext> activeTurn = new ThreadLocal<>();
+
+    public <T> T withinTextTurn(String message, Supplier<T> operation) {
+        return executeTextTurn(message, operation).value();
+    }
+
+    public <T> AiToolTurnResult<T> executeTextTurn(String message, Supplier<T> operation) {
+        TurnContext previous = activeTurn.get();
+        TurnContext current = new TurnContext(normalize(message));
+        activeTurn.set(current);
+        try {
+            return new AiToolTurnResult<>(operation.get(), current.mutationOutcome(), current.authoritativeToolResponse());
+        } finally {
+            if (previous == null) {
+                activeTurn.remove();
+            } else {
+                activeTurn.set(previous);
+            }
+        }
+    }
+
+    public void requireAddAllowed(String dishName) {
+        TurnContext context = activeTurn.get();
+        if (context == null) {
+            return;
+        }
+        if (!containsAnyToken(context.messageTokens(), ADD_ACTIONS) || !hasExplicitDishReference(context.messageTokens(), dishName)) {
+            throw new AiToolSafetyException(AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+        }
+    }
+
+    public void requireRemoveAllowed(String dishName) {
+        TurnContext context = activeTurn.get();
+        if (context == null) {
+            return;
+        }
+        if (!containsAnyToken(context.messageTokens(), REMOVE_ACTIONS) || !hasExplicitDishReference(context.messageTokens(), dishName)) {
+            throw new AiToolSafetyException(AiToolSafetyReason.REMOVE_NOT_EXPLICITLY_REQUESTED);
+        }
+    }
+
+    public void requireCartQueryAllowed() {
+        TurnContext context = activeTurn.get();
+        if (context == null) {
+            return;
+        }
+        if (!isCurrentCartQuery(context.normalizedMessage())) {
+            throw new AiToolSafetyException(AiToolSafetyReason.CART_QUERY_NOT_REQUESTED);
+        }
+        if (context.cartQueryPerformed()) {
+            throw new AiToolSafetyException(AiToolSafetyReason.CART_QUERY_ALREADY_PERFORMED);
+        }
+        context.markCartQueryPerformed();
+    }
+
+    public void requireLegacyOrderConfirmationBlocked() {
+        if (activeTurn.get() != null) {
+            throw new AiToolSafetyException(AiToolSafetyReason.LEGACY_ORDER_CONFIRMATION_DISABLED);
+        }
+    }
+
+    public void recordAddSucceeded(String response) {
+        recordAuthoritativeToolResponse(AiMutationTurnOutcome.ADD_SUCCEEDED, response);
+    }
+
+    public void recordRemoveSucceeded(String response) {
+        recordAuthoritativeToolResponse(AiMutationTurnOutcome.REMOVE_SUCCEEDED, response);
+    }
+
+    public void recordCartQuerySucceeded(String response) {
+        recordAuthoritativeToolResponse(AiMutationTurnOutcome.CART_QUERY_SUCCEEDED, response);
+    }
+
+    public void recordAddBlocked() {
+        recordFailureOrBlockedOutcome(AiMutationTurnOutcome.ADD_BLOCKED);
+    }
+
+    public void recordRemoveBlocked() {
+        recordFailureOrBlockedOutcome(AiMutationTurnOutcome.REMOVE_BLOCKED);
+    }
+
+    public void recordAddFailed() {
+        recordFailureOrBlockedOutcome(AiMutationTurnOutcome.ADD_FAILED);
+    }
+
+    public void recordRemoveFailed() {
+        recordFailureOrBlockedOutcome(AiMutationTurnOutcome.REMOVE_FAILED);
+    }
+
+    public void recordConfirmationBlocked() {
+        recordFailureOrBlockedOutcome(AiMutationTurnOutcome.CONFIRMATION_BLOCKED);
+    }
+
+    static boolean isFinishOrderIntent(String message) {
+        String normalized = normalize(message);
+        return normalized.contains("ya seria todo")
+                || normalized.contains("eso seria todo")
+                || normalized.contains("seria todo")
+                || normalized.contains("ya no quiero mas")
+                || normalized.contains("ya termine")
+                || normalized.contains("ya acabamos");
+    }
+
+    static boolean isSimpleGreeting(String message) {
+        Set<String> tokens = tokens(message);
+        return !tokens.isEmpty() && SIMPLE_GREETING_TOKENS.containsAll(tokens);
+    }
+
+    static boolean isAmbiguousAddPronounRequest(String message) {
+        Set<String> tokens = tokens(message);
+        return tokens.stream().anyMatch(Set.of("agregamelo", "ponmelo", "damelo")::contains)
+                || (containsAnyToken(tokens, ADD_ACTIONS) && containsAmbiguousReference(tokens)
+                && !hasPotentialProductToken(tokens));
+    }
+
+    static boolean isAmbiguousRemovePronounRequest(String message) {
+        Set<String> tokens = tokens(message);
+        return tokens.stream().anyMatch(Set.of("quitalo", "quitala", "eliminalo", "sacalo")::contains)
+                || (containsAnyToken(tokens, REMOVE_ACTIONS) && containsAmbiguousReference(tokens)
+                && !hasPotentialProductToken(tokens));
+    }
+
+    static boolean isStandaloneAmbiguousReference(String message) {
+        Set<String> tokens = tokens(message);
+        return !tokens.isEmpty()
+                && tokens.stream().allMatch(token -> Set.of("ese", "esa", "esto", "esta", "por", "favor").contains(token));
+    }
+
+    private static boolean hasPotentialProductToken(Set<String> messageTokens) {
+        return messageTokens.stream().anyMatch(token -> !NON_PRODUCT_TOKENS.contains(token)
+                && token.length() >= 3
+                && !token.chars().allMatch(Character::isDigit));
+    }
+
+    static boolean hasExplicitDishReference(Set<String> messageTokens, String dishName) {
+        return dishTokens(dishName).stream().anyMatch(messageTokens::contains);
+    }
+
+    static Set<String> dishTokens(String value) {
+        Set<String> tokens = new HashSet<>(tokens(value));
+        tokens.removeAll(NON_PRODUCT_TOKENS);
+        tokens.removeIf(token -> token.length() < 3 || token.chars().allMatch(Character::isDigit));
+        return tokens;
+    }
+
+    static Set<String> tokens(String value) {
+        if (value == null) {
+            return Set.of();
+        }
+        return Arrays.stream(normalize(value).split(" "))
+                .filter(token -> !token.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    static String normalize(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim();
+        return normalized.replaceAll("\\s+", " ");
+    }
+
+    static boolean isCurrentCartQuery(String normalizedMessage) {
+        return normalizedMessage.contains("que llevo")
+                || normalizedMessage.contains("que tengo")
+                || normalizedMessage.contains("cuanto es")
+                || normalizedMessage.contains("cuanto llevo")
+                || normalizedMessage.contains("mi carrito")
+                || normalizedMessage.contains("el carrito")
+                || normalizedMessage.contains("mi pedido")
+                || normalizedMessage.contains("mi orden")
+                || tokens(normalizedMessage).contains("total");
+    }
+
+    private static boolean containsAnyToken(Set<String> messageTokens, Set<String> expectedTokens) {
+        return expectedTokens.stream().anyMatch(messageTokens::contains);
+    }
+
+    private static boolean containsAmbiguousReference(Set<String> messageTokens) {
+        return messageTokens.stream().anyMatch(AMBIGUOUS_REFERENCE_TOKENS::contains);
+    }
+
+    private void recordAuthoritativeToolResponse(AiMutationTurnOutcome outcome, String response) {
+        TurnContext context = activeTurn.get();
+        if (context == null || response == null || response.isBlank()) {
+            return;
+        }
+        if (context.mutationOutcome() == AiMutationTurnOutcome.NONE || context.mutationOutcome().isSuccessfulCartOperation()) {
+            context.setMutationOutcome(outcome);
+            context.appendAuthoritativeToolResponse(response);
+        }
+    }
+
+    private void recordFailureOrBlockedOutcome(AiMutationTurnOutcome outcome) {
+        TurnContext context = activeTurn.get();
+        if (context != null && (context.mutationOutcome() == AiMutationTurnOutcome.NONE
+                || context.mutationOutcome().isSuccessfulCartOperation())) {
+            context.setMutationOutcome(outcome);
+        }
+    }
+
+    private static final class TurnContext {
+        private final String normalizedMessage;
+        private final Set<String> messageTokens;
+        private boolean cartQueryPerformed;
+        private AiMutationTurnOutcome mutationOutcome = AiMutationTurnOutcome.NONE;
+        private String authoritativeToolResponse;
+
+        private TurnContext(String normalizedMessage) {
+            this.normalizedMessage = normalizedMessage;
+            this.messageTokens = tokens(normalizedMessage);
+        }
+
+        private String normalizedMessage() {
+            return normalizedMessage;
+        }
+
+        private Set<String> messageTokens() {
+            return messageTokens;
+        }
+
+        private boolean cartQueryPerformed() {
+            return cartQueryPerformed;
+        }
+
+        private void markCartQueryPerformed() {
+            cartQueryPerformed = true;
+        }
+
+        private AiMutationTurnOutcome mutationOutcome() {
+            return mutationOutcome;
+        }
+
+        private void setMutationOutcome(AiMutationTurnOutcome mutationOutcome) {
+            this.mutationOutcome = mutationOutcome;
+        }
+
+        private String authoritativeToolResponse() {
+            return authoritativeToolResponse;
+        }
+
+        private void appendAuthoritativeToolResponse(String response) {
+            if (authoritativeToolResponse == null) {
+                authoritativeToolResponse = response;
+            } else {
+                authoritativeToolResponse += "\n\n" + response;
+            }
+        }
+    }
+}

@@ -1,5 +1,8 @@
 package com.sushimei.sushimei.backend.configuration;
 
+import com.sushimei.sushimei.backend.agent.ConversationRetrievalPolicy;
+import com.sushimei.sushimei.backend.agent.SelectiveContentRetriever;
+
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -30,7 +33,8 @@ public class RagConfiguration {
     @Bean
     public ContentRetriever contentRetriever(EmbeddingStore<TextSegment> embeddingStore,
                                              EmbeddingModel embeddingModel,
-                                             RagProperties ragProperties) {
+                                             RagProperties ragProperties,
+                                             ConversationRetrievalPolicy retrievalPolicy) {
         EmbeddingStoreContentRetriever.EmbeddingStoreContentRetrieverBuilder builder = EmbeddingStoreContentRetriever.builder()
                 .embeddingStore(embeddingStore)
                 .embeddingModel(embeddingModel)
@@ -40,7 +44,7 @@ public class RagConfiguration {
             builder.minScore(ragProperties.retrieval().minScore());
         }
 
-        return builder.build();
+        return new SelectiveContentRetriever(builder.build(), retrievalPolicy);
     }
 
     @Bean
