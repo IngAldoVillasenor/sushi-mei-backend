@@ -36,16 +36,13 @@ public class CartService {
 
     // ACTUALIZADO: Ahora busca el carrito asociado específicamente al número de WhatsApp
     private Cart getOrCreateActiveCart(String phoneNumber) {
-        // Asegúrate de agregar este método a tu CartRepository:
-        // Cart findByPhoneNumberAndStatus(String phoneNumber, String status);
-        Cart activeCart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
-        if (activeCart == null) {
-            activeCart = new Cart();
-            activeCart.setPhoneNumber(phoneNumber);
-            activeCart.setStatus("OPEN");
-            activeCart = cartRepository.save(activeCart);
-        }
-        return activeCart;
+        return cartRepository.findOpenCartByPhoneNumberForUpdate(phoneNumber)
+                .orElseGet(() -> {
+                    Cart activeCart = new Cart();
+                    activeCart.setPhoneNumber(phoneNumber);
+                    activeCart.setStatus("OPEN");
+                    return cartRepository.save(activeCart);
+                });
     }
 
     @Transactional
@@ -153,11 +150,10 @@ public class CartService {
 
     @Transactional
     public void clearCart(String phoneNumber) {
-        Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
-        if (cart != null) {
-            cart.setStatus("CLOSED"); // Cambiamos el estado para que el próximo pedido genere un carrito nuevo
+        cartRepository.findOpenCartByPhoneNumberForUpdate(phoneNumber).ifPresent(cart -> {
+            cart.setStatus("CLOSED");
             cartRepository.save(cart);
-        }
+        });
     }
 
     @Transactional

@@ -20,6 +20,14 @@ public interface CartRepository extends JpaRepository<Cart, Long> {
     List<Cart> findAllByPhoneNumberAndStatusOrderByIdAsc(String phoneNumber, String status);
 
     /**
+     * Locks an already-existing OPEN cart before a legacy cart mutation. An
+     * absent row intentionally remains unlocked and follows legacy creation.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cart from Cart cart where cart.phoneNumber = :phoneNumber and cart.status = 'OPEN'")
+    Optional<Cart> findOpenCartByPhoneNumberForUpdate(@Param("phoneNumber") String phoneNumber);
+
+    /**
      * Locks one known cart identity for deterministic checkout completion. The
      * caller must still validate its owner and current status.
      */
