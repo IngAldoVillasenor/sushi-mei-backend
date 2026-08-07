@@ -122,14 +122,15 @@ Read-only production profiling verified all historical monetary values before th
 
 The legacy floating-point columns and legacy reads remain temporarily for compatibility until a separately verified cutover. PostgreSQL V3 owns `public.checkout_money_java_double_to_numeric(double precision)`: it fixes `extra_float_digits` to shortest-precise output and `search_path` to `pg_catalog`, so its schema-qualified use in the agreement checks is independent of caller-session configuration. The helper remains only until a later migration first removes the agreement checks and legacy floating-point columns after verified cutover. Phase 5A2b2 introduces neither structured order lines nor source-cart idempotency nor atomic checkout behavior.
 
-## Phase 5A2c: structured orders and idempotency
+## Phase 5A2c: structured order foundations
 
-Phase 5A2c will add structured order lines, nullable historical source-cart identity, a unique idempotency constraint for non-null source carts, and order-specific fulfillment and payment metadata. Legacy `orderDetails` remains compatible during that transition.
+Phase 5A2c adds `V5__add_structured_order_foundations.sql` for PostgreSQL and H2. It introduces immutable `order_lines` snapshots with exact `NUMERIC(19,2)` unit and line totals, source cart-item provenance, line ordering, and database checks for positive values and exact line-total arithmetic. Lines do not reference `cart_items`: an order must retain historical evidence after a cart changes, reopens, or is otherwise managed by legacy behavior.
+
+`orders.source_cart_id` is nullable for historical rows and unique when present. It is deliberately not a cart foreign key; it is a provenance and idempotency boundary for future deterministic completion without coupling an immutable order to legacy cart lifecycle operations. Order-specific nullable metadata now includes `OrderSource` (`WHATSAPP_AI`, `ANDROID_MANUAL`, `COUNTER`), `OrderFulfillmentType`, `OrderPaymentMethod`, pickup name, and exact cash denomination. These types remain independent from conversation-domain enums. The legacy `orderDetails`, legacy delivery/payment fields, legacy `totalAmount`, and exact `totalAmountAmount` remain compatible and no production flow writes the new fields yet.
 
 ## Phase 5B: atomic deterministic checkout completion
 
-Phase 5B will atomically use the validated cart snapshot to create the real order and its lines, close the source cart, and confirm the conversation session. It must enforce source-cart idempotency and leave no split-brain state between conversation confirmation and `OrderRecord` creation.
-
+Phase 5B will atomically use the validated cart snapshot to create the structured `OrderRecord` and order lines, close the exact source cart, and confirm the `ConversationSession`. It must enforce source-cart idempotency and leave no split-brain state between conversation confirmation and real order creation. Production typed-intent routing remains disconnected until that atomic service exists and is tested.
 ## Future phases
 
 ### Deterministic checkout completion (next phase)

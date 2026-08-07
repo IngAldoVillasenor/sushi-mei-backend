@@ -28,10 +28,19 @@ class LegacyMoneyJsonCompatibilityTest {
         OrderRecord order = new OrderRecord();
         order.setTotalAmount(10.5d);
         order.setTotalAmountAmount(new BigDecimal("10.50"));
+        order.setSourceCartId(99L);
+        order.setOrderSource(OrderSource.WHATSAPP_AI);
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setPaymentMethod(OrderPaymentMethod.CASH);
+        order.setPickupName("Ana");
+        order.setCashDenomination(new BigDecimal("100.00"));
+        order.addOrderLine(OrderLineRecord.create(10L, 1, "California Roll", 1,
+                new BigDecimal("79.00"), new BigDecimal("79.00")));
 
         String json = objectMapper.writeValueAsString(order);
 
         assertThat(json).contains("totalAmount");
-        assertThat(json).doesNotContain("totalAmountAmount");
+        assertThat(json).doesNotContain("totalAmountAmount", "sourceCartId", "orderSource", "fulfillmentType",
+                "paymentMethod", "pickupName", "cashDenomination", "orderLines");
     }
 }

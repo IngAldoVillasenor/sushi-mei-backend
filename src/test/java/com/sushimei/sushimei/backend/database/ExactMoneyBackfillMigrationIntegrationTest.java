@@ -28,6 +28,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V2_SCRIPT = "V2__add_parallel_numeric_money_columns.sql";
     private static final String V3_SCRIPT = "V3__backfill_and_constrain_numeric_money.sql";
     private static final String V4_SCRIPT = "V4__add_whatsapp_inbound_message_idempotency.sql";
+    private static final String V5_SCRIPT = "V5__add_structured_order_foundations.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -52,7 +53,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("4");
+        assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("5");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -108,7 +111,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("4");
+        assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("5");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))
@@ -120,6 +125,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
     }
 
     @Test
