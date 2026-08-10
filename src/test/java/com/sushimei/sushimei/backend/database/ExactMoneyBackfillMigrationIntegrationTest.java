@@ -31,6 +31,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V5_SCRIPT = "V5__add_structured_order_foundations.sql";
     private static final String V6_SCRIPT = "V6__add_operational_menu_catalog.sql";
     private static final String V7_SCRIPT = "V7__add_configurable_catalog_domain.sql";
+    private static final String V8_SCRIPT = "V8__add_temporal_promotions.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -61,7 +62,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 7)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("7");
+        assertSqlMigration(jdbcTemplate, 8, "SQL", V8_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 8)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("8");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -123,7 +126,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 7)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("7");
+        assertSqlMigration(jdbcTemplate, 8, "SQL", V8_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 8)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("8");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))
@@ -333,6 +338,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.catalog_tags", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_groups", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_rules", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_weekdays", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_targets", Integer.class)).isZero();
     }
 
     private void assertRejected(ThrowingCallable action) {

@@ -1,0 +1,17 @@
+package com.sushimei.sushimei.backend.promotion;
+
+import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+
+import java.util.List;
+
+public record PromotionRewardConfigurationRequest(
+        @NotNull @Min(1) Integer rewardOrdinal,
+        List<@NotNull @Valid MenuQuoteGroupRequest> groups
+) {
+    public PromotionRewardConfigurationRequest {
+        groups = List.copyOf(groups == null ? List.of() : groups);
+    }
+}
