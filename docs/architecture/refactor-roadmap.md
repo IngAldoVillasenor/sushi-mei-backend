@@ -140,15 +140,25 @@ Production routing remains deliberately disconnected: no WhatsApp, AI, `OrderToo
 Phase 5B2 makes legacy `CartService.addItem`, `removeItem`, and `clearCart` acquire `PESSIMISTIC_WRITE` on an already-existing `OPEN` cart before inspecting or mutating it. This uses the same physical cart-row locking protocol as `OrderService`, so a checkout and a cart mutation serialize once both identify the same persisted cart. If checkout closes the cart first, the mutation lookup finds no `OPEN` row and follows the existing legacy new-cart behavior instead of appending to the closed source cart.
 
 No row lock exists for an absent cart. Concurrent first-`OPEN`-cart creation for one phone remains deferred, and `CartSnapshotService` retains its multiple-active-cart fail-safe. A later production-hardening phase should add a database-enforced one-open-cart-per-customer invariant if multi-channel traffic requires it. Legacy reopen/rejection still has its separate source-cart-identity limitation, and production checkout routing remains disconnected.
+
+## Phase 6A: operational catalog API
+
+Phase 6A introduces menu_items as the operational source of truth for future deterministic ordering and Android ERP/POS integrations. It stores exact positive BigDecimal prices at NUMERIC(19,2), uses active for catalog membership and available for temporary sellability, supports soft deletion (active=false, available=false), and protects ERP updates with optimistic versioning. The DTO-only REST API under /api/v1/menu/items never exposes its JPA entity.
+
+menu_embeddings remains a LangChain4j-owned AI retrieval artifact. It is not written, read, or synchronized by this catalog API, so AI menu answers do not automatically reflect catalog CRUD changes. A later explicit projection/synchronization design is required before AI can rely on operational catalog changes.
+
+No manual-order endpoint or production checkout routing is added here. order_lines.source_cart_item_id remains NOT NULL because existing deterministic lines originate from persisted cart items; Android manual orders must not fabricate a cart or conversation session to satisfy it. Phase 6B must evolve line provenance for trusted cart-less manual orders and resolve final prices server-side from menu_items.
+
+Write endpoints are not safe for unrestricted public internet exposure until an ERP/POS authentication and authorization boundary is implemented. Native Android does not require new browser CORS configuration.
 ## Future phases
 
-### Deterministic checkout completion (next phase)
+### Trusted manual-order completion and production routing
 
-Move validated order creation, cart closure, payment gating, and explicit confirmation into deterministic application services. The system will reject invalid transitions regardless of an LLM response.
+Phase 5B1 already provides the internal deterministic checkout core. Future work must add trusted adapters, cart-less manual-order provenance, server-side catalog price resolution, production routing, rejection/revision handling, and response generation without making an LLM operational truth.
 
-### Safe catalog and price resolution
+### Deterministic catalog integration
 
-Resolve product identifiers, variants, availability, quantities, and prices using controlled catalog data. The LLM may suggest an intent or candidate item, but the server will verify the item and determine the final price.
+Phase 6A establishes the operational catalog. Future order services must resolve product identity, variants, availability, quantities, and final prices from that controlled data. The LLM may suggest an intent or candidate item, but the server will verify the item and determine the final price.
 
 ### Provider abstraction
 

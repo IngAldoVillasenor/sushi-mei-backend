@@ -29,6 +29,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V3_SCRIPT = "V3__backfill_and_constrain_numeric_money.sql";
     private static final String V4_SCRIPT = "V4__add_whatsapp_inbound_message_idempotency.sql";
     private static final String V5_SCRIPT = "V5__add_structured_order_foundations.sql";
+    private static final String V6_SCRIPT = "V6__add_operational_menu_catalog.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -55,7 +56,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("5");
+        assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("6");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -113,7 +116,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("5");
+        assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("6");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))
@@ -126,6 +131,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
     }
 
     @Test
@@ -317,6 +323,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.conversation_sessions", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.carts", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.whatsapp_inbound_messages", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items", Integer.class)).isZero();
     }
 
     private void assertRejected(ThrowingCallable action) {
