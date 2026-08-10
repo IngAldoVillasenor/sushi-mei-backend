@@ -33,6 +33,17 @@ public class CheckoutMoney {
         return normalizePositiveAmount(amount);
     }
 
+    /**
+     * Exact catalog configuration amount. Unlike catalog prices, a configured
+     * fixed surcharge may intentionally be zero.
+     */
+    public BigDecimal normalizeNonNegativeNumericAmount(BigDecimal amount) {
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("Amount must not be negative.");
+        }
+        return normalizeExact(amount, IllegalArgumentException::new);
+    }
+
     public int requirePositiveQuantity(Integer quantity) {
         if (quantity == null || quantity <= 0) {
             throw new IllegalArgumentException("Quantity must be positive.");

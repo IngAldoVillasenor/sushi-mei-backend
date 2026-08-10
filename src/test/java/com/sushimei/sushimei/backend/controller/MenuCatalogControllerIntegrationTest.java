@@ -59,7 +59,7 @@ class MenuCatalogControllerIntegrationTest {
     void createUsesDefaultsNormalizesExactPriceAndReturnsOnlyTheDtoContract() throws Exception {
         CatalogItemView created = create(new CreateMenuItemRequest(
                 "  California Roll  ", "  Surimi y aguacate  ", "  Rollos  ",
-                new BigDecimal("79.5"), null, null));
+                new BigDecimal("79.5"), null, null, null));
 
         assertThat(created.name()).isEqualTo("California Roll");
         assertThat(created.description()).isEqualTo("Surimi y aguacate");
@@ -124,7 +124,7 @@ class MenuCatalogControllerIntegrationTest {
 
         UpdateMenuItemRequest update = new UpdateMenuItemRequest(
                 "California Especial", "Aguacate", "Rollos", new BigDecimal("80.50"),
-                true, false, 3, created.version());
+                true, false, true, 3, created.version());
 
         CatalogItemView updated = update(created.id(), update);
 
@@ -171,7 +171,7 @@ class MenuCatalogControllerIntegrationTest {
 
         CatalogItemView reactivated = update(created.id(), new UpdateMenuItemRequest(
                 archived.name(), archived.description(), archived.category(), archived.price(),
-                true, true, archived.displayOrder(), archived.version()));
+                true, true, true, archived.displayOrder(), archived.version()));
 
         assertThat(reactivated.active()).isTrue();
         assertThat(reactivated.available()).isTrue();
@@ -278,6 +278,7 @@ class MenuCatalogControllerIntegrationTest {
                 category,
                 new BigDecimal(price),
                 available,
+                true,
                 displayOrder);
     }
 

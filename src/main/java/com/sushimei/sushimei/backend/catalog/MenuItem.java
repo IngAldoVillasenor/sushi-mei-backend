@@ -2,15 +2,21 @@ package com.sushimei.sushimei.backend.catalog;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Operational menu data. This aggregate is intentionally separate from
@@ -42,8 +48,18 @@ public class MenuItem {
     @Column(nullable = false)
     private boolean available;
 
+    @Column(name = "standalone_orderable", nullable = false)
+    private boolean standaloneOrderable;
+
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "menu_item_tags",
+            joinColumns = @JoinColumn(name = "menu_item_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id"))
+    private Set<CatalogTag> tags = new LinkedHashSet<>();
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -64,6 +80,7 @@ public class MenuItem {
                            String category,
                            BigDecimal priceAmount,
                            boolean available,
+                           boolean standaloneOrderable,
                            int displayOrder,
                            Instant now) {
         MenuItem item = new MenuItem();
@@ -73,6 +90,7 @@ public class MenuItem {
         item.priceAmount = Objects.requireNonNull(priceAmount, "priceAmount must not be null");
         item.active = true;
         item.available = available;
+        item.standaloneOrderable = standaloneOrderable;
         item.displayOrder = displayOrder;
         item.createdAt = Objects.requireNonNull(now, "now must not be null");
         item.updatedAt = now;
@@ -85,6 +103,7 @@ public class MenuItem {
                 BigDecimal priceAmount,
                 boolean active,
                 boolean available,
+                boolean standaloneOrderable,
                 int displayOrder,
                 Instant now) {
         this.name = Objects.requireNonNull(name, "name must not be null");
@@ -93,14 +112,25 @@ public class MenuItem {
         this.priceAmount = Objects.requireNonNull(priceAmount, "priceAmount must not be null");
         this.active = active;
         this.available = available;
+        this.standaloneOrderable = standaloneOrderable;
         this.displayOrder = displayOrder;
+        this.updatedAt = Objects.requireNonNull(now, "now must not be null");
+    }
+
+    void replaceTags(Set<CatalogTag> newTags, Instant now) {
+        tags.clear();
+        tags.addAll(Objects.requireNonNull(newTags, "newTags must not be null"));
+        touch(now);
+    }
+
+    void touch(Instant now) {
         this.updatedAt = Objects.requireNonNull(now, "now must not be null");
     }
 
     void archive(Instant now) {
         this.active = false;
         this.available = false;
-        this.updatedAt = Objects.requireNonNull(now, "now must not be null");
+        touch(now);
     }
 
     public Long getId() {
@@ -131,8 +161,16 @@ public class MenuItem {
         return available;
     }
 
+    public boolean isStandaloneOrderable() {
+        return standaloneOrderable;
+    }
+
     public int getDisplayOrder() {
         return displayOrder;
+    }
+
+    public Set<CatalogTag> getTags() {
+        return Set.copyOf(tags);
     }
 
     public Instant getCreatedAt() {

@@ -13,6 +13,7 @@ public record CreateMenuItemRequest(
         @NotBlank @Size(max = 120) String category,
         @NotNull @DecimalMin(value = "0.00", inclusive = false) BigDecimal price,
         Boolean available,
+        Boolean standaloneOrderable,
         Integer displayOrder
 ) {
 }
