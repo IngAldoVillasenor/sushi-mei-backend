@@ -159,6 +159,13 @@ Selection rules target either one item or one tag and use the stable technical a
 The operational configuration endpoint returns resolved selectable options and price adjustments, while the separate definition endpoint exposes raw tags, groups, rules, and algorithms only to ERP configuration editors. Android and future WhatsApp adapters must reuse this resolver rather than duplicate catalog pricing. menu_embeddings remains AI-only and is not synchronized by this phase.
 
 Ingredients, special instructions, and external WhatsApp catalog references remain deferred. No manual order is created: Phase 6B must first evolve the NOT NULL order_lines.source_cart_item_id provenance for trusted cart-less orders, then resolve catalog prices and save historical configuration snapshots. Delivery-fee automation is also deferred. Management write APIs still require authentication and authorization before any unrestricted public exposure.
+## Phase 6A3: temporal promotion engine
+
+Phase 6A3 adds a data-managed temporal promotion aggregate. Promotions may contain one or more catalog item or active catalog tag targets, and apply only to root order-entry lines, and use a stable technical benefit algorithm: `FIXED_UNIT_PRICE` or `BUY_X_GET_Y_SAME_ITEM`. The business date is derived once per quote from the injected `Clock` in `America/Mexico_City`; validity dates and ISO weekdays determine applicability. Active matching promotions never stack: the uniquely highest priority wins, while a highest-priority tie is a deterministic configuration conflict.
+
+The quote endpoint derives all promotion effects itself. A fixed-unit-price promotion changes only the root base charge, leaving configuration adjustments charged. A buy-X-get-Y-same-item promotion generates separately configurable reward units of the same root menu item with a charged base of zero; it does not flatten rewards into paid quantity or represent them primarily as a discount. Reward requests carry only a source-line correlation key, ordinal, and nested configuration; never a customer-supplied price, item, or promotion identity. Nested selections inside configurable products are not independently promotion eligible.
+
+Quotes are current-catalog calculations, not reservations. They remain isolated from orders, carts, WhatsApp, AI/RAG, and checkout completion. Ingredients, external catalog references, manual order creation, historical configuration snapshots, delivery pricing, and authentication/authorization for management writes remain deferred.
 ## Future phases
 
 ### Trusted manual-order completion and production routing

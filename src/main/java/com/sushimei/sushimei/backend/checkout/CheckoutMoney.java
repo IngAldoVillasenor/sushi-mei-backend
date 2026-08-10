@@ -44,6 +44,16 @@ public class CheckoutMoney {
         return normalizeExact(amount, IllegalArgumentException::new);
     }
 
+    /**
+     * Exact signed amount for deterministic price adjustments such as a fixed-base promotion.
+     */
+    public BigDecimal normalizeSignedNumericAmount(BigDecimal amount) {
+        if (amount == null) {
+            throw new IllegalArgumentException("Amount must not be null.");
+        }
+        return normalizeExact(amount, IllegalArgumentException::new);
+    }
+
     public int requirePositiveQuantity(Integer quantity) {
         if (quantity == null || quantity <= 0) {
             throw new IllegalArgumentException("Quantity must be positive.");

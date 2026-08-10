@@ -1,0 +1,10 @@
+package com.sushimei.sushimei.backend.promotion;
+
+public enum PromotionError {
+    PROMOTION_NOT_FOUND,
+    PROMOTION_VERSION_CONFLICT,
+    INVALID_PROMOTION,
+    PROMOTION_CONFIGURATION_CONFLICT,
+    PROMOTION_QUOTE_INVALID,
+    PROMOTION_REWARD_INVALID
+}
