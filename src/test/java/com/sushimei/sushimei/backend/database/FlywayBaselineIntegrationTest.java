@@ -44,6 +44,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V4_SCRIPT = "V4__add_whatsapp_inbound_message_idempotency.sql";
     private static final String V5_SCRIPT = "V5__add_structured_order_foundations.sql";
     private static final String V6_SCRIPT = "V6__add_operational_menu_catalog.sql";
+    private static final String V7_SCRIPT = "V7__add_configurable_catalog_domain.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -73,7 +74,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
         assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
         assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("6");
+        assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("7");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -84,6 +86,10 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "WHATSAPP_INBOUND_MESSAGES");
         assertTableExists(jdbcTemplate, "ORDER_LINES");
         assertTableExists(jdbcTemplate, "MENU_ITEMS");
+        assertTableExists(jdbcTemplate, "CATALOG_TAGS");
+        assertTableExists(jdbcTemplate, "MENU_ITEM_TAGS");
+        assertTableExists(jdbcTemplate, "MENU_SELECTION_GROUPS");
+        assertTableExists(jdbcTemplate, "MENU_SELECTION_RULES");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
         assertThat(constraintCount(jdbcTemplate, "CART_ITEMS", "FOREIGN KEY")).isEqualTo(1);
@@ -115,11 +121,12 @@ class FlywayBaselineIntegrationTest {
         assertColumnPresent(jdbcTemplate, "ORDERS", "SOURCE_CART_ID");
         assertColumnLength(jdbcTemplate, "ORDERS", "TRANSFER_RECEIPT_PATH", 1024);
         assertOperationalMenuCatalogSchema(jdbcTemplate);
+        assertConfigurableCatalogSchema(jdbcTemplate);
         assertNoBaselineData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV6AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV7AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -131,7 +138,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
         assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
         assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("6");
+        assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("7");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -140,9 +148,34 @@ class FlywayBaselineIntegrationTest {
         assertThat(identityValue(jdbcTemplate, "ORDER_LINES", "ID")).isEqualTo("YES");
         assertThat(identityValue(jdbcTemplate, "MENU_ITEMS", "ID")).isEqualTo("YES");
         assertOperationalMenuCatalogSchema(jdbcTemplate);
+        assertConfigurableCatalogSchema(jdbcTemplate);
         assertNoBaselineData(jdbcTemplate);
     }
 
+    @Test
+    void v7BackfillsExistingMenuItemsToStandaloneOrderableWithoutLeavingADefault() {
+        JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
+        Flyway.configure().dataSource(isolatedDataSource).locations(H2_MIGRATION_LOCATION)
+                .defaultSchema("PUBLIC").schemas("PUBLIC").baselineOnMigrate(false)
+                .baselineVersion(MigrationVersion.fromVersion("1")).cleanDisabled(true)
+                .validateMigrationNaming(true).target(MigrationVersion.fromVersion("6")).load().migrate();
+        jdbcTemplate.update("""
+                insert into public.menu_items (
+                    name, category, price_amount, active, available, display_order, created_at, updated_at, version
+                ) values ('Legacy menu item', 'Legacy', 10.00, true, true, 0, current_timestamp, current_timestamp, 0)
+                """);
+
+        newFlyway(isolatedDataSource).migrate();
+
+        assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
+        assertThat(jdbcTemplate.queryForObject("select standalone_orderable from public.menu_items", Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                select column_default
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = 'MENU_ITEMS' and column_name = 'STANDALONE_ORDERABLE'
+                """, String.class)).isNull();
+    }
     @Test
     void menuCatalogConstraintsRejectInvalidPersistedValues() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
@@ -206,13 +239,15 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 4, "SQL", V4_SCRIPT);
         assertSqlMigration(jdbcTemplate, 5, "SQL", V5_SCRIPT);
         assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("6");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 3);
+        assertThat(historyCount(jdbcTemplate, 7)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("7");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 7);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -225,11 +260,15 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select source_cart_id from public.orders", Long.class)).isNull();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_lines", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.catalog_tags", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_groups", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_rules", Integer.class)).isZero();
         assertThat(isolatedFlyway.migrate().migrationsExecuted).isZero();
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 5)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 7)).isEqualTo(1);
         assertTableExists(jdbcTemplate, "CART");
         assertTableExists(jdbcTemplate, "CART_ITEMS");
         assertTableExists(jdbcTemplate, "ORDERS");
@@ -238,7 +277,12 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "WHATSAPP_INBOUND_MESSAGES");
         assertTableExists(jdbcTemplate, "ORDER_LINES");
         assertTableExists(jdbcTemplate, "MENU_ITEMS");
+        assertTableExists(jdbcTemplate, "CATALOG_TAGS");
+        assertTableExists(jdbcTemplate, "MENU_ITEM_TAGS");
+        assertTableExists(jdbcTemplate, "MENU_SELECTION_GROUPS");
+        assertTableExists(jdbcTemplate, "MENU_SELECTION_RULES");
         assertOperationalMenuCatalogSchema(jdbcTemplate);
+        assertConfigurableCatalogSchema(jdbcTemplate);
     }
 
     private void insertMenuItem(JdbcTemplate jdbcTemplate,
@@ -251,8 +295,8 @@ class FlywayBaselineIntegrationTest {
                                 String updatedAtExpression) {
         jdbcTemplate.update("""
                 insert into public.menu_items (
-                    name, category, price_amount, active, available, display_order, created_at, updated_at, version
-                ) values (?, ?, ?, true, true, ?, %s, %s, ?)
+                    name, category, price_amount, active, available, standalone_orderable, display_order, created_at, updated_at, version
+                ) values (?, ?, ?, true, true, true, ?, %s, %s, ?)
                 """.formatted(createdAtExpression, updatedAtExpression),
                 name, category, new BigDecimal(price), displayOrder, version);
     }
@@ -438,6 +482,19 @@ class FlywayBaselineIntegrationTest {
                 where table_schema = 'PUBLIC' and table_name = 'MENU_ITEMS' and column_name = 'PRICE_AMOUNT'
                 """, String.class)).isEqualTo("NO");
     }
+    private void assertConfigurableCatalogSchema(JdbcTemplate jdbcTemplate) {
+        assertColumnPresent(jdbcTemplate, "MENU_ITEMS", "STANDALONE_ORDERABLE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select is_nullable
+                from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = 'MENU_ITEMS' and column_name = 'STANDALONE_ORDERABLE'
+                """, String.class)).isEqualTo("NO");
+        assertThat(namedConstraintExists(jdbcTemplate, "CATALOG_TAGS", "CATALOG_TAGS_CODE_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "MENU_ITEM_TAGS", "MENU_ITEM_TAGS_PKEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "MENU_SELECTION_RULES", "MENU_SELECTION_RULES_TARGET_XOR_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "MENU_SELECTION_RULES",
+                "MENU_SELECTION_RULES_PRICE_PARAMETERS_CHECK")).isTrue();
+    }
     private void assertStructuredOrderConstraints(JdbcTemplate jdbcTemplate) {
         assertThat(namedConstraintExists(jdbcTemplate, "ORDERS", "ORDERS_SOURCE_CART_ID_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "ORDERS", "ORDERS_ORDER_SOURCE_CHECK")).isTrue();
@@ -520,6 +577,9 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.whatsapp_inbound_messages", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_lines", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.catalog_tags", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_groups", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_rules", Integer.class)).isZero();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

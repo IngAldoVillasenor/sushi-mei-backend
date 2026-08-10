@@ -15,6 +15,7 @@ public record UpdateMenuItemRequest(
         @NotNull @DecimalMin(value = "0.00", inclusive = false) BigDecimal price,
         @NotNull Boolean active,
         @NotNull Boolean available,
+        @NotNull Boolean standaloneOrderable,
         @NotNull @Min(0) Integer displayOrder,
         @NotNull @Min(0) Long version
 ) {

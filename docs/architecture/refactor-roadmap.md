@@ -150,6 +150,15 @@ menu_embeddings remains a LangChain4j-owned AI retrieval artifact. It is not wri
 No manual-order endpoint or production checkout routing is added here. order_lines.source_cart_item_id remains NOT NULL because existing deterministic lines originate from persisted cart items; Android manual orders must not fabricate a cart or conversation session to satisfy it. Phase 6B must evolve line provenance for trusted cart-less manual orders and resolve final prices server-side from menu_items.
 
 Write endpoints are not safe for unrestricted public internet exposure until an ERP/POS authentication and authorization boundary is implemented. Native Android does not require new browser CORS configuration.
+## Phase 6A2: configurable catalog and deterministic quotes
+
+Phase 6A2 makes menu configuration operational catalog data. A menu item has a standalone-orderable flag, zero or more data-managed tags, and zero or more active selection groups. Tags and groups are not restaurant-product Java enums: promotions, trays, boxes, roll classes, modifiers, quantities, and eligibility remain database configuration.
+
+Selection rules target either one item or one tag and use the stable technical algorithms INCLUDED, PRICE_DIFFERENCE, FULL_ITEM_PRICE, or FIXED_SURCHARGE. The backend selects the uniquely highest-priority matching active rule; an unmatched or tied rule is rejected deterministically. All prices and adjustments use exact BigDecimal NUMERIC(19,2) arithmetic. The quote engine validates cardinality, duplicate policy, availability, nested configuration, cycles, and depth before returning an immutable resolved quote. A quote is computed from current catalog state only; it is not a reservation or a price guarantee, and future order creation must re-resolve it transactionally.
+
+The operational configuration endpoint returns resolved selectable options and price adjustments, while the separate definition endpoint exposes raw tags, groups, rules, and algorithms only to ERP configuration editors. Android and future WhatsApp adapters must reuse this resolver rather than duplicate catalog pricing. menu_embeddings remains AI-only and is not synchronized by this phase.
+
+Ingredients, special instructions, and external WhatsApp catalog references remain deferred. No manual order is created: Phase 6B must first evolve the NOT NULL order_lines.source_cart_item_id provenance for trusted cart-less orders, then resolve catalog prices and save historical configuration snapshots. Delivery-fee automation is also deferred. Management write APIs still require authentication and authorization before any unrestricted public exposure.
 ## Future phases
 
 ### Trusted manual-order completion and production routing

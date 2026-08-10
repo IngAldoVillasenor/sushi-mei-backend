@@ -31,10 +31,15 @@ public class MenuCatalogService {
     }
 
     @Transactional(readOnly = true)
-    public List<MenuItemResponse> list(boolean includeInactive) {
-        List<MenuItem> items = includeInactive
-                ? menuCatalogRepository.findAllByOrderByCategoryAscDisplayOrderAscNameAscIdAsc()
-                : menuCatalogRepository.findByActiveTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+    public List<MenuItemResponse> list(boolean includeInactive, boolean standaloneOnly) {
+        List<MenuItem> items;
+        if (standaloneOnly) {
+            items = menuCatalogRepository.findByActiveTrueAndStandaloneOrderableTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+        } else if (includeInactive) {
+            items = menuCatalogRepository.findAllByOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+        } else {
+            items = menuCatalogRepository.findByActiveTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+        }
         return items.stream().map(MenuItemResponse::from).toList();
     }
 
@@ -55,6 +60,7 @@ public class MenuCatalogService {
                 normalizeRequiredText(request.category(), MAX_CATEGORY_LENGTH),
                 normalizePrice(request.price()),
                 request.available() == null || request.available(),
+                request.standaloneOrderable() == null || request.standaloneOrderable(),
                 normalizeDisplayOrder(request.displayOrder(), 0),
                 now);
         return MenuItemResponse.from(menuCatalogRepository.saveAndFlush(item));
@@ -77,6 +83,7 @@ public class MenuCatalogService {
                 normalizePrice(request.price()),
                 requireBoolean(request.active()),
                 requireBoolean(request.available()),
+                requireBoolean(request.standaloneOrderable()),
                 normalizeDisplayOrder(request.displayOrder(), null),
                 now);
         menuCatalogRepository.flush();
