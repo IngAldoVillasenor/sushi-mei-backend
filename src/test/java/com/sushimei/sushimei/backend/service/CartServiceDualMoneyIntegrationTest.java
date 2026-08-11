@@ -30,7 +30,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(CartServiceDualMoneyIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, CartServiceDualMoneyIntegrationTest.TestInfrastructureConfiguration.class})
 class CartServiceDualMoneyIntegrationTest {
 
     @Autowired

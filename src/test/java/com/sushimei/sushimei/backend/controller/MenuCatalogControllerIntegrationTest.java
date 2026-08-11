@@ -32,11 +32,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.security.test.context.support.WithMockUser;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(MenuCatalogControllerIntegrationTest.TestInfrastructureConfiguration.class)
+@WithMockUser(roles = "OWNER")
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, MenuCatalogControllerIntegrationTest.TestInfrastructureConfiguration.class})
 class MenuCatalogControllerIntegrationTest {
 
     private static final String BASE_PATH = "/api/v1/menu/items";
@@ -299,5 +301,21 @@ class MenuCatalogControllerIntegrationTest {
         ChatMemoryProvider chatMemoryProvider() {
             return memoryId -> MessageWindowChatMemory.withMaxMessages(20);
         }
+    }
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder get(String path, Object... variables) {
+        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path, variables)
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("test-owner").roles("OWNER"));
+    }
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder post(String path, Object... variables) {
+        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path, variables)
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("test-owner").roles("OWNER"));
+    }
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder put(String path, Object... variables) {
+        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path, variables)
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("test-owner").roles("OWNER"));
+    }
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder delete(String path, Object... variables) {
+        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(path, variables)
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("test-owner").roles("OWNER"));
     }
 }

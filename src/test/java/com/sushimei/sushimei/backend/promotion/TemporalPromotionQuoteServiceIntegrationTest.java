@@ -44,7 +44,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(TemporalPromotionQuoteServiceIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, TemporalPromotionQuoteServiceIntegrationTest.TestInfrastructureConfiguration.class})
 class TemporalPromotionQuoteServiceIntegrationTest {
 
     private static final Instant MONDAY = Instant.parse("2026-08-10T18:00:00Z");

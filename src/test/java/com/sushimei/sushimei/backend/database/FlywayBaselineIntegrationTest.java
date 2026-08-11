@@ -34,7 +34,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(FlywayBaselineIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, FlywayBaselineIntegrationTest.TestInfrastructureConfiguration.class})
 class FlywayBaselineIntegrationTest {
 
     private static final String H2_MIGRATION_LOCATION = "classpath:db/migration/h2";
@@ -46,6 +46,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V6_SCRIPT = "V6__add_operational_menu_catalog.sql";
     private static final String V7_SCRIPT = "V7__add_configurable_catalog_domain.sql";
     private static final String V8_SCRIPT = "V8__add_temporal_promotions.sql";
+    private static final String V9_SCRIPT = "V9__add_application_security.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -77,7 +78,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
         assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
         assertSqlMigration(jdbcTemplate, 8, "SQL", V8_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("8");
+        assertSqlMigration(jdbcTemplate, 9, "SQL", V9_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("9");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -95,6 +97,10 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "PROMOTIONS");
         assertTableExists(jdbcTemplate, "PROMOTION_WEEKDAYS");
         assertTableExists(jdbcTemplate, "PROMOTION_TARGETS");
+        assertTableExists(jdbcTemplate, "APP_USERS");
+        assertTableExists(jdbcTemplate, "AUTH_SESSIONS");
+        assertTableExists(jdbcTemplate, "AUTH_REFRESH_TOKEN_HISTORY");
+        assertTableExists(jdbcTemplate, "SECURITY_AUDIT_EVENTS");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
         assertThat(constraintCount(jdbcTemplate, "CART_ITEMS", "FOREIGN KEY")).isEqualTo(1);
@@ -128,6 +134,7 @@ class FlywayBaselineIntegrationTest {
         assertOperationalMenuCatalogSchema(jdbcTemplate);
         assertConfigurableCatalogSchema(jdbcTemplate);
         assertTemporalPromotionSchema(jdbcTemplate);
+        assertSecuritySchema(jdbcTemplate);
         assertNoBaselineData(jdbcTemplate);
     }
 
@@ -146,7 +153,7 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 6, "SQL", V6_SCRIPT);
         assertSqlMigration(jdbcTemplate, 7, "SQL", V7_SCRIPT);
         assertSqlMigration(jdbcTemplate, 8, "SQL", V8_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("8");
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("9");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -157,6 +164,7 @@ class FlywayBaselineIntegrationTest {
         assertOperationalMenuCatalogSchema(jdbcTemplate);
         assertConfigurableCatalogSchema(jdbcTemplate);
         assertTemporalPromotionSchema(jdbcTemplate);
+        assertSecuritySchema(jdbcTemplate);
         assertNoBaselineData(jdbcTemplate);
     }
 
@@ -256,8 +264,8 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 6)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 7)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 8)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("8");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 10);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("9");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 14);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -298,9 +306,14 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "PROMOTIONS");
         assertTableExists(jdbcTemplate, "PROMOTION_WEEKDAYS");
         assertTableExists(jdbcTemplate, "PROMOTION_TARGETS");
+        assertTableExists(jdbcTemplate, "APP_USERS");
+        assertTableExists(jdbcTemplate, "AUTH_SESSIONS");
+        assertTableExists(jdbcTemplate, "AUTH_REFRESH_TOKEN_HISTORY");
+        assertTableExists(jdbcTemplate, "SECURITY_AUDIT_EVENTS");
         assertOperationalMenuCatalogSchema(jdbcTemplate);
         assertConfigurableCatalogSchema(jdbcTemplate);
         assertTemporalPromotionSchema(jdbcTemplate);
+        assertSecuritySchema(jdbcTemplate);
     }
 
     private void insertMenuItem(JdbcTemplate jdbcTemplate,
@@ -613,6 +626,12 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_targets", Integer.class)).isZero();
     }
 
+    private void assertSecuritySchema(JdbcTemplate jdbcTemplate) {
+        assertThat(namedConstraintExists(jdbcTemplate, "APP_USERS", "APP_USERS_ROLE_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "APP_USERS", "APP_USERS_FAILED_LOGIN_ATTEMPTS_NONNEGATIVE_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "AUTH_SESSIONS", "AUTH_SESSIONS_ABSOLUTE_EXPIRES_AFTER_CREATED_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "AUTH_REFRESH_TOKEN_HISTORY", "AUTH_REFRESH_TOKEN_HISTORY_TOKEN_HASH_KEY")).isTrue();
+    }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
 

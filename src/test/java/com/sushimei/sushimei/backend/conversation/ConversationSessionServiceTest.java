@@ -27,7 +27,7 @@ import static org.mockito.Mockito.mock;
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
-@Import({ConversationSessionServiceTest.TestInfrastructureConfiguration.class,
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, ConversationSessionServiceTest.TestInfrastructureConfiguration.class,
         ConversationSessionServiceTest.FixedClockConfiguration.class})
 class ConversationSessionServiceTest {
 

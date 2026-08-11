@@ -15,7 +15,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(SushimeiBackendApplicationTests.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, SushimeiBackendApplicationTests.TestInfrastructureConfiguration.class})
 class SushimeiBackendApplicationTests {
 
     @Test

@@ -27,7 +27,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(InboundMessageIdempotencyServiceIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, InboundMessageIdempotencyServiceIntegrationTest.TestInfrastructureConfiguration.class})
 class InboundMessageIdempotencyServiceIntegrationTest {
 
     @Autowired

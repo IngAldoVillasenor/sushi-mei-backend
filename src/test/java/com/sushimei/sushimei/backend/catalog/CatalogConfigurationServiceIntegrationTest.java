@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(CatalogConfigurationServiceIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, CatalogConfigurationServiceIntegrationTest.TestInfrastructureConfiguration.class})
 class CatalogConfigurationServiceIntegrationTest {
 
     @Autowired private MenuCatalogService menuCatalogService;
