@@ -1,0 +1,1 @@
+package com.sushimei.sushimei.backend.security; public record SecurityApiError(String code,String message) { }

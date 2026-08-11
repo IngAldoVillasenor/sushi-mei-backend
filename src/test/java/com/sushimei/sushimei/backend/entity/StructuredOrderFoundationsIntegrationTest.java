@@ -27,7 +27,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(StructuredOrderFoundationsIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, StructuredOrderFoundationsIntegrationTest.TestInfrastructureConfiguration.class})
 @Transactional
 class StructuredOrderFoundationsIntegrationTest {
 

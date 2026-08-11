@@ -24,7 +24,7 @@ import static org.mockito.Mockito.mock;
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
-@Import(ConversationSessionRepositoryTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, ConversationSessionRepositoryTest.TestInfrastructureConfiguration.class})
 class ConversationSessionRepositoryTest {
 
     private static final Instant CREATED_AT = Instant.parse("2026-01-15T10:15:30Z");

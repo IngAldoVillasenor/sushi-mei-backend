@@ -54,3 +54,17 @@ server:
 development:
   ai-harness:
     enabled: ${DEV_AI_HARNESS_ENABLED:false}
+sushimei:
+  security:
+    jwt:
+      private-key-location: ${SUSHIMEI_JWT_PRIVATE_KEY_LOCATION:}
+      public-key-location: ${SUSHIMEI_JWT_PUBLIC_KEY_LOCATION:}
+      key-id: ${SUSHIMEI_JWT_KEY_ID:sushi-mei-primary}
+      issuer: ${SUSHIMEI_JWT_ISSUER:urn:sushi-mei:auth}
+      audience: ${SUSHIMEI_JWT_AUDIENCE:urn:sushi-mei:api}
+      access-token-ttl: ${SUSHIMEI_JWT_ACCESS_TOKEN_TTL:15m}
+    session-ttl: ${SUSHIMEI_SESSION_TTL:15d}
+    bcrypt-strength: ${SUSHIMEI_BCRYPT_STRENGTH:12}
+    bootstrap-owner-username: ${SUSHIMEI_BOOTSTRAP_OWNER_USERNAME:}
+    bootstrap-owner-password: ${SUSHIMEI_BOOTSTRAP_OWNER_PASSWORD:}
+    bootstrap-owner-display-name: ${SUSHIMEI_BOOTSTRAP_OWNER_DISPLAY_NAME:Owner}

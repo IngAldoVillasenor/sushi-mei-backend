@@ -41,3 +41,12 @@ rag:
     min-score: 0.0
   memory:
     max-messages: 20
+sushimei:
+  security:
+    jwt:
+      key-id: test-key
+      issuer: urn:sushi-mei:test-auth
+      audience: urn:sushi-mei:test-api
+      access-token-ttl: 15m
+    session-ttl: 15d
+    bcrypt-strength: 4

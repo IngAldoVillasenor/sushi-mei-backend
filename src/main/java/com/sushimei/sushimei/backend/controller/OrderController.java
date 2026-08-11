@@ -15,7 +15,6 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/orders")
-@CrossOrigin(origins = "*") // CRÍTICO: Permite que tu frontend local consuma esta API sin errores de CORS
 public class OrderController {
 
     private final OrderRepository orderRepository;

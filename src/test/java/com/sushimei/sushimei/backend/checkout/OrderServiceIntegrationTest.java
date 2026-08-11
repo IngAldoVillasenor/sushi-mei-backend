@@ -40,7 +40,7 @@ import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import({OrderServiceIntegrationTest.TestInfrastructureConfiguration.class,
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, OrderServiceIntegrationTest.TestInfrastructureConfiguration.class,
         OrderServiceIntegrationTest.FixedClockConfiguration.class})
 class OrderServiceIntegrationTest {
 

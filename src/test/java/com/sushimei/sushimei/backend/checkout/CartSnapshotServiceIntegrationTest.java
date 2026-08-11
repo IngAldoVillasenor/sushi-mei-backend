@@ -27,7 +27,7 @@ import static org.mockito.Mockito.mock;
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
-@Import(CartSnapshotServiceIntegrationTest.TestInfrastructureConfiguration.class)
+@Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class, CartSnapshotServiceIntegrationTest.TestInfrastructureConfiguration.class})
 class CartSnapshotServiceIntegrationTest {
 
     @Autowired

@@ -1,0 +1,1 @@
+package com.sushimei.sushimei.backend.security; import jakarta.validation.constraints.*; public record ChangePasswordRequest(@NotNull String currentPassword,@NotNull String newPassword) { }
