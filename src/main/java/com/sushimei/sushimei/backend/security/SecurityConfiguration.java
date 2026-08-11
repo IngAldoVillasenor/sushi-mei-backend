@@ -64,6 +64,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/api/v1/menu/items/**").authenticated()
                         .requestMatchers("/api/v1/menu/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/v1/promotions/**").hasAnyRole("OWNER", "MANAGER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/orders/active", "/api/v1/orders/*")
+                        .hasAnyRole("OWNER", "MANAGER", "CASHIER", "KITCHEN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/orders")
                         .hasAnyRole("OWNER", "MANAGER", "CASHIER")
                         .requestMatchers("/api/orders/*/validate-payment").hasAnyRole("OWNER", "MANAGER", "CASHIER")

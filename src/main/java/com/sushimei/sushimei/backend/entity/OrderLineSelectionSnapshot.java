@@ -85,6 +85,7 @@ public class OrderLineSelectionSnapshot {
     }
 
     public Long getId() { return id; }
+    public Long getOrderLineId() { return orderLine == null ? null : orderLine.getId(); }
     public OrderLineSelectionSnapshot getParentSelection() { return parentSelection; }
     public Long getGroupId() { return groupId; }
     public String getGroupName() { return groupName; }

@@ -22,6 +22,24 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
 
     List<OrderRecord> findByStatusInOrderByCreatedAtAscIdAsc(List<String> statuses);
 
+    /**
+     * Lightweight summary support: returns only identifiers for orders that have persisted structured lines.
+     * It deliberately does not initialize the line graph.
+     */
+    @Query("select distinct orderRecord.id from OrderRecord orderRecord join orderRecord.orderLines orderLine "
+            + "where orderRecord.id in :orderIds")
+    List<Long> findIdsWithOrderLines(@Param("orderIds") List<Long> orderIds);
+
+    /**
+     * Loads a single order and its line/source-line evidence. Selection snapshots are loaded separately
+     * in one bulk query to avoid Hibernate's multiple-bag fetch limitation.
+     */
+    @Query("select distinct orderRecord from OrderRecord orderRecord "
+            + "left join fetch orderRecord.orderLines orderLine "
+            + "left join fetch orderLine.sourcePaidLine "
+            + "where orderRecord.id = :id")
+    Optional<OrderRecord> findOperationalDetailById(@Param("id") Long id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select orderRecord from OrderRecord orderRecord where orderRecord.id = :id")
     Optional<OrderRecord> findByIdForUpdate(@Param("id") Long id);
