@@ -12,15 +12,15 @@ import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
-import lombok.AccessLevel;
-import lombok.Data;
-import lombok.Setter;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.Data;
+import lombok.Setter;
 
 @Data
 @Entity
@@ -32,7 +32,6 @@ public class OrderRecord {
     private Long id;
 
     private String phoneNumber;
-
     private String deliveryType;
 
     @Column(length = 500)
@@ -52,15 +51,21 @@ public class OrderRecord {
     @Column(name = "total_amount_amount", precision = 19, scale = 2)
     private BigDecimal totalAmountAmount;
 
-    /**
-     * Nullable provenance for historical-order compatibility. There is
-     * intentionally no cart foreign key: a structured order must outlive later
-     * cart lifecycle changes while the unique database constraint remains the
-     * idempotency boundary for non-null values.
-     */
     @JsonIgnore
     @Column(name = "source_cart_id")
     private Long sourceCartId;
+
+    @JsonIgnore
+    @Column(name = "client_request_id")
+    private UUID clientRequestId;
+
+    @JsonIgnore
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId;
+
+    @JsonIgnore
+    @Column(name = "request_fingerprint", length = 64)
+    private String requestFingerprint;
 
     @JsonIgnore
     @Enumerated(EnumType.STRING)
@@ -92,7 +97,6 @@ public class OrderRecord {
     private List<OrderLineRecord> orderLines = new ArrayList<>();
 
     private String status;
-
     private LocalDateTime createdAt;
 
     public void addOrderLine(OrderLineRecord line) {

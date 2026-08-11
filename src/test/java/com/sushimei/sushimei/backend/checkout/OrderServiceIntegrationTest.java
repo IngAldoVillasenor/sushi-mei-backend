@@ -113,6 +113,12 @@ class OrderServiceIntegrationTest {
                 "select line_position from public.order_lines where order_id = ? order by line_position",
                 Integer.class, order.getId());
         assertThat(sourceItemIds).containsExactlyElementsOf(cart.getItems().stream().map(CartItem::getId).sorted().toList());
+        assertThat(jdbcTemplate.queryForList(
+                "select line_kind from public.order_lines where order_id = ? order by line_position",
+                String.class, order.getId())).containsOnly("PAID");
+        assertThat(jdbcTemplate.queryForList(
+                "select source_menu_item_id from public.order_lines where order_id = ? order by line_position",
+                Long.class, order.getId())).containsOnlyNulls();
         assertThat(positions).containsExactly(1, 2);
         assertThat(jdbcTemplate.queryForList(
                 "select line_total_amount from public.order_lines where order_id = ? order by line_position",
