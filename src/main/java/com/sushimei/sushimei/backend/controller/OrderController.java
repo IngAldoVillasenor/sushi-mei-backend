@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.controller;
 
 import com.sushimei.sushimei.backend.agent.AiConversationService;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
+import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import com.sushimei.sushimei.backend.service.CartService;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
@@ -64,6 +65,12 @@ public class OrderController {
 
         if (orderOpt.isPresent()) {
             OrderRecord order = orderOpt.get();
+
+            // Cart-less POS orders have no conversation/cart identity. They must never enter
+            // the legacy customer-notification and cart-reopen rejection workflow.
+            if (order.getOrderSource() == OrderSource.ANDROID_MANUAL) {
+                return ResponseEntity.status(409).body("La orden POS requiere el flujo operativo correspondiente.");
+            }
 
             // 1. Cancelamos la orden actual
             order.setStatus("CANCELLED_CLARIFICATION");

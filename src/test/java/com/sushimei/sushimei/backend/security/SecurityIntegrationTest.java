@@ -284,6 +284,34 @@ class SecurityIntegrationTest {
         mockMvc.perform(post("/api/v1/menu/items").with(user("manager").roles("MANAGER"))).andExpect(status().isBadRequest());
         mockMvc.perform(post("/api/v1/promotions/quote").with(user("cashier").roles("CASHIER"))).andExpect(status().isBadRequest());
         mockMvc.perform(post("/api/v1/promotions").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
+        createUser("manual-cashier", "una frase larga segura 123", ApplicationRole.CASHIER);
+        createUser("manual-manager", "una frase larga segura 123", ApplicationRole.MANAGER);
+        createUser("manual-owner", "una frase larga segura 123", ApplicationRole.OWNER);
+        String cashierToken = login("manual-cashier", "una frase larga segura 123", "manual-cashier-device")
+                .required("accessToken").asText();
+        String managerToken = login("manual-manager", "una frase larga segura 123", "manual-manager-device")
+                .required("accessToken").asText();
+        String ownerToken = login("manual-owner", "una frase larga segura 123", "manual-owner-device")
+                .required("accessToken").asText();
+        String manualOrder = """
+                {"requestId":"00000000-0000-0000-0000-000000000123","fulfillmentType":"PICKUP",
+                "paymentMethod":"CASH","pickupName":"Ana","cashDenomination":100.00,
+                "lines":[{"lineKey":"line","menuItemId":99999,"quantity":1,"groups":[],"rewardConfigurations":[]}]}
+                """;
+        mockMvc.perform(post("/api/v1/orders").contentType(MediaType.APPLICATION_JSON).content(manualOrder))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/orders").with(user("kitchen").roles("KITCHEN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(manualOrder))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + cashierToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(manualOrder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(manualOrder))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(manualOrder))
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/orders/active").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/1/prepare").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isNotFound());
         mockMvc.perform(put("/api/orders/1/validate-payment").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isForbidden());

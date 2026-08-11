@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
@@ -16,4 +17,6 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
     List<OrderRecord> findByStatusInOrderByCreatedAtAsc(List<String> statuses);
 
     Optional<OrderRecord> findBySourceCartId(Long sourceCartId);
+
+    Optional<OrderRecord> findByClientRequestId(UUID clientRequestId);
 }
