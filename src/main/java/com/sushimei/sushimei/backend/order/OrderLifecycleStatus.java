@@ -7,11 +7,12 @@ public enum OrderLifecycleStatus {
     PENDING_VALIDATION,
     PENDING,
     PREPARING,
+    READY,
     COMPLETED,
     CANCELLED_CLARIFICATION;
 
     private static final List<String> ACTIVE_PERSISTED_VALUES = List.of(
-            PENDING_VALIDATION.name(), PENDING.name(), PREPARING.name());
+            PENDING_VALIDATION.name(), PENDING.name(), PREPARING.name(), READY.name());
 
     public static OrderLifecycleStatus fromPersisted(String value) {
         if (value == null) {

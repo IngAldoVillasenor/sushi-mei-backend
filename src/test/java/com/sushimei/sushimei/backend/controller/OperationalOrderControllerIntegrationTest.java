@@ -84,9 +84,13 @@ class OperationalOrderControllerIntegrationTest {
         mockMvc.perform(get("/api/v1/orders/{id}", order.getId()).with(user("cashier").roles("CASHIER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(order.getId()))
+                .andExpect(jsonPath("$.createdAt").value("2026-08-11T12:01:00Z"))
                 .andExpect(jsonPath("$.legacyOrderDetails").value("Detalle operativo"))
                 .andExpect(jsonPath("$.requestFingerprint").doesNotExist())
                 .andExpect(jsonPath("$.orderLines").doesNotExist());
+        mockMvc.perform(get("/api/v1/orders/active").with(user("cashier").roles("CASHIER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].createdAt").value("2026-08-11T12:01:00Z"));
         mockMvc.perform(get("/api/v1/orders/{id}", 999999L).with(user("manager").roles("MANAGER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));

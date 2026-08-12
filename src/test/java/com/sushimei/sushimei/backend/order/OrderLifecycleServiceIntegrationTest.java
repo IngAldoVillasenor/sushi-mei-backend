@@ -52,21 +52,29 @@ class OrderLifecycleServiceIntegrationTest {
     }
 
     @Test
-    void pendingPreparesThenPreparingCompletes() {
+    void pendingPreparesThenReadyCompletes() {
         OrderRecord order = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 1);
 
         assertThat(orderLifecycleService.prepare(order.getId()).currentStatus()).isEqualTo(OrderLifecycleStatus.PREPARING);
+        assertThat(orderLifecycleService.ready(order.getId()).currentStatus()).isEqualTo(OrderLifecycleStatus.READY);
         assertThat(orderLifecycleService.complete(order.getId()).currentStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED);
         assertThat(orderRepository.findById(order.getId()).orElseThrow().getStatus()).isEqualTo("COMPLETED");
     }
 
     @Test
-    void pendingValidationCannotPrepareAndPendingCannotComplete() {
+    void skippedAndRepeatedReadyTransitionsAreRejected() {
         OrderRecord pendingValidation = order(OrderLifecycleStatus.PENDING_VALIDATION, OrderPaymentMethod.TRANSFER, 1);
         OrderRecord pending = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 2);
+        OrderRecord preparing = order(OrderLifecycleStatus.PREPARING, OrderPaymentMethod.CASH, 3);
+        OrderRecord ready = order(OrderLifecycleStatus.READY, OrderPaymentMethod.CASH, 4);
+        OrderRecord completed = order(OrderLifecycleStatus.COMPLETED, OrderPaymentMethod.CASH, 5);
 
         assertError(() -> orderLifecycleService.prepare(pendingValidation.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
         assertError(() -> orderLifecycleService.complete(pending.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.ready(pending.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.complete(preparing.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.ready(ready.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.ready(completed.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
         assertThat(pendingValidation.getStatus()).isEqualTo("PENDING_VALIDATION");
         assertThat(pending.getStatus()).isEqualTo("PENDING");
     }
@@ -79,6 +87,7 @@ class OrderLifecycleServiceIntegrationTest {
         assertError(() -> orderLifecycleService.prepare(completed.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
         assertError(() -> orderLifecycleService.prepare(cancelled.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
         assertError(() -> orderLifecycleService.complete(completed.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.ready(completed.getId()), OrderLifecycleError.ORDER_INVALID_TRANSITION);
     }
 
     @Test
@@ -118,11 +127,12 @@ class OrderLifecycleServiceIntegrationTest {
     void activeOrdersAreOldestFirstAndUseTheTypedProjection() {
         OrderRecord newer = order(OrderLifecycleStatus.PREPARING, OrderPaymentMethod.CASH, 2);
         OrderRecord older = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 1);
-        order(OrderLifecycleStatus.COMPLETED, OrderPaymentMethod.CASH, 3);
+        OrderRecord ready = order(OrderLifecycleStatus.READY, OrderPaymentMethod.CASH, 3);
+        order(OrderLifecycleStatus.COMPLETED, OrderPaymentMethod.CASH, 4);
 
         List<ActiveOrderResponse> active = orderLifecycleService.activeOrders();
 
-        assertThat(active).extracting(ActiveOrderResponse::id).containsExactly(older.getId(), newer.getId());
+        assertThat(active).extracting(ActiveOrderResponse::id).containsExactly(older.getId(), newer.getId(), ready.getId());
         assertThat(active).allMatch(response -> response instanceof ActiveOrderResponse);
     }
 

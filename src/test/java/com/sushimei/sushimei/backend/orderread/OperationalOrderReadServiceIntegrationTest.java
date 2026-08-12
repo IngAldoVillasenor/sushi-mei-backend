@@ -17,6 +17,7 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -67,19 +68,21 @@ class OperationalOrderReadServiceIntegrationTest {
         OrderRecord legacy = legacyOrder("PENDING", 9);
         OrderRecord manual = manualOrder("PENDING_VALIDATION", 10, null);
         OrderRecord preparing = legacyOrder("PREPARING", 11);
-        legacyOrder("COMPLETED", 12);
-        legacyOrder("CANCELLED_CLARIFICATION", 13);
+        OrderRecord ready = legacyOrder("READY", 12);
+        legacyOrder("COMPLETED", 13);
+        legacyOrder("CANCELLED_CLARIFICATION", 14);
 
         List<OperationalOrderSummaryResponse> active = operationalOrderReadService.activeOrders();
 
         assertThat(active).extracting(OperationalOrderSummaryResponse::id)
-                .containsExactly(legacy.getId(), manual.getId(), preparing.getId());
+                .containsExactly(legacy.getId(), manual.getId(), preparing.getId(), ready.getId());
         assertThat(active.get(0)).satisfies(summary -> {
             assertThat(summary.orderSource()).isNull();
             assertThat(summary.fulfillmentType()).isNull();
             assertThat(summary.paymentMethod()).isNull();
             assertThat(summary.phoneNumber()).isEqualTo("5214770000009");
             assertThat(summary.total()).isEqualByComparingTo("10.50");
+            assertThat(summary.createdAt()).isEqualTo(Instant.parse("2026-08-11T08:09:00Z"));
             assertThat(summary.requiresPaymentValidation()).isFalse();
             assertThat(summary.structuredLinesAvailable()).isFalse();
         });
@@ -104,6 +107,7 @@ class OperationalOrderReadServiceIntegrationTest {
         assertThat(initial.createdByUserId()).isEqualTo(1L);
         assertThat(initial.phoneNumber()).isNull();
         assertThat(initial.total()).isEqualByComparingTo("94.00");
+        assertThat(initial.createdAt()).isEqualTo(Instant.parse("2026-08-11T08:10:00Z"));
         assertThat(initial.lines()).hasSize(2);
         OperationalOrderLineResponse paid = initial.lines().get(0);
         OperationalOrderLineResponse reward = initial.lines().get(1);

@@ -24,6 +24,8 @@ public class ManualPosOrderApiExceptionHandler {
             case ORDER_MENU_ITEM_NOT_FOUND -> error(HttpStatus.NOT_FOUND, exception.getError(), "Elemento de menu no encontrado.");
             case ORDER_MENU_ITEM_UNAVAILABLE -> error(HttpStatus.CONFLICT, exception.getError(), "El elemento de menu no esta disponible.");
             case ORDER_PROMOTION_CONFLICT -> error(HttpStatus.CONFLICT, exception.getError(), "La promocion aplicable tiene un conflicto.");
+            case ORDER_CASH_DENOMINATION_INSUFFICIENT -> error(HttpStatus.BAD_REQUEST, exception.getError(),
+                    "La denominación en efectivo es menor al total de la orden.");
             case ORDER_FORBIDDEN_OPERATION -> error(HttpStatus.FORBIDDEN, exception.getError(), "La operacion no esta permitida.");
             case ORDER_INVALID, ORDER_CONFIGURATION_INVALID -> error(HttpStatus.BAD_REQUEST, exception.getError(), "La solicitud de orden no es valida.");
         };

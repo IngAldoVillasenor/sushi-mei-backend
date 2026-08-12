@@ -32,7 +32,6 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
@@ -95,13 +94,16 @@ class ManualPosOrderServiceIntegrationTest {
                 List.of(new PromotionQuoteLineRequest("  line  ", california.id(), 2, List.of(), List.of())));
 
         ManualPosOrderResponse created = manualPosOrderService.create(userId, request);
-        ManualPosOrderResponse retry = manualPosOrderService.create(userId, request);
+        ManualPosOrderRequest retryWithIrrelevantCash = new ManualPosOrderRequest(requestId, OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", new BigDecimal("999.00"), request.lines());
+        ManualPosOrderResponse retry = manualPosOrderService.create(userId, retryWithIrrelevantCash);
 
         assertThat(created.result()).isEqualTo(ManualOrderResult.CREATED);
         assertThat(created.orderSource()).isEqualTo(OrderSource.ANDROID_MANUAL);
         assertThat(created.createdByUserId()).isEqualTo(userId);
         assertThat(created.status()).isEqualTo("PENDING");
-        assertThat(created.createdAt()).isEqualTo(LocalDateTime.ofInstant(TestClock.NOW.get(), ZoneId.of("UTC")));
+        assertThat(created.createdAt()).isEqualTo(TestClock.NOW.get());
+        assertThat(created.cashDenomination()).isNull();
         assertThat(created.total()).isEqualByComparingTo("158.00");
         assertThat(created.lines()).singleElement().satisfies(line -> {
             assertThat(line.lineKind()).isEqualTo(OrderLineKind.PAID);
@@ -115,6 +117,7 @@ class ManualPosOrderServiceIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select source_cart_item_id from public.order_lines", Long.class)).isNull();
         assertThat(jdbcTemplate.queryForObject("select client_line_key from public.order_lines", String.class)).isEqualTo("line");
+        assertThat(jdbcTemplate.queryForObject("select cash_denomination from public.orders", BigDecimal.class)).isNull();
         assertThatThrownBy(() -> manualPosOrderService.create(insertUser("cashier-b"), request))
                 .isInstanceOf(ManualPosOrderException.class)
                 .extracting(exception -> ((ManualPosOrderException) exception).getError())
@@ -131,13 +134,69 @@ class ManualPosOrderServiceIntegrationTest {
         Instant quoteInstant = Instant.parse("2026-08-10T23:59:59Z");
         TestClock.setThenAdvance(quoteInstant, quoteInstant.plusSeconds(1));
         ManualPosOrderRequest request = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
-                OrderPaymentMethod.TRANSFER, null, "Ana", null,
+                OrderPaymentMethod.TRANSFER, null, "Ana", new BigDecimal("200.00"),
                 List.of(new PromotionQuoteLineRequest("transfer-line", california.id(), 1, List.of(), List.of())));
 
         ManualPosOrderResponse created = manualPosOrderService.create(insertUser("cashier-transfer"), request);
 
         assertThat(created.status()).isEqualTo("PENDING_VALIDATION");
-        assertThat(created.createdAt()).isEqualTo(LocalDateTime.ofInstant(quoteInstant, ZoneId.of("UTC")));
+        assertThat(created.createdAt()).isEqualTo(quoteInstant);
+        assertThat(created.cashDenomination()).isNull();
+    }
+
+    @Test
+    void pickupCashDoesNotRequireOrPersistDenominationAndPickupCardRemainsValid() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-pickup-cash");
+        ManualPosOrderRequest cashWithoutDenomination = new ManualPosOrderRequest(UUID.randomUUID(),
+                OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("cash", california.id(), 1, List.of(), List.of())));
+        ManualPosOrderRequest cardWithLegacyCash = new ManualPosOrderRequest(UUID.randomUUID(),
+                OrderFulfillmentType.PICKUP, OrderPaymentMethod.CARD, null, "Ana", new BigDecimal("200.00"),
+                List.of(new PromotionQuoteLineRequest("card", california.id(), 1, List.of(), List.of())));
+
+        ManualPosOrderResponse cash = manualPosOrderService.create(userId, cashWithoutDenomination);
+        ManualPosOrderResponse card = manualPosOrderService.create(userId, cardWithLegacyCash);
+
+        assertThat(cash.cashDenomination()).isNull();
+        assertThat(card.cashDenomination()).isNull();
+        assertThat(card.paymentMethod()).isEqualTo(OrderPaymentMethod.CARD);
+        assertThat(card.status()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void deliveryCashRequiresEnoughServerAuthoritativeDenominationAfterQuote() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-delivery-cash");
+
+        assertError(() -> manualPosOrderService.create(userId, deliveryCashRequest(UUID.randomUUID(), california.id(), null)),
+                ManualPosOrderError.ORDER_INVALID);
+        assertError(() -> manualPosOrderService.create(userId, deliveryCashRequest(UUID.randomUUID(), california.id(), new BigDecimal("78.99"))),
+                ManualPosOrderError.ORDER_CASH_DENOMINATION_INSUFFICIENT);
+
+        ManualPosOrderResponse created = manualPosOrderService.create(userId,
+                deliveryCashRequest(UUID.randomUUID(), california.id(), new BigDecimal("79.00")));
+
+        assertThat(created.total()).isEqualByComparingTo("79.00");
+        assertThat(created.cashDenomination()).isEqualByComparingTo("79.00");
+        assertThat(created.deliveryAddress()).isEqualTo("Calle Principal 123");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void deliveryTransferRejectsCashDenominationAndDeliveryCardRemainsInvalid() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-delivery-payment");
+        List<PromotionQuoteLineRequest> lines = List.of(new PromotionQuoteLineRequest(
+                "line", california.id(), 1, List.of(), List.of()));
+        ManualPosOrderRequest transferWithCash = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.DELIVERY,
+                OrderPaymentMethod.TRANSFER, "Calle Principal 123", null, new BigDecimal("100.00"), lines);
+        ManualPosOrderRequest card = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.DELIVERY,
+                OrderPaymentMethod.CARD, "Calle Principal 123", null, null, lines);
+
+        assertError(() -> manualPosOrderService.create(userId, transferWithCash), ManualPosOrderError.ORDER_INVALID);
+        assertError(() -> manualPosOrderService.create(userId, card), ManualPosOrderError.ORDER_INVALID);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isZero();
     }
 
     @Test
@@ -424,6 +483,20 @@ class ManualPosOrderServiceIntegrationTest {
         return new ManualPosOrderRequest(requestId, OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH,
                 null, "Ana", new BigDecimal("100.00"),
                 List.of(new PromotionQuoteLineRequest("line", menuItemId, quantity, List.of(), List.of())));
+    }
+
+    private ManualPosOrderRequest deliveryCashRequest(UUID requestId, Long menuItemId, BigDecimal cashDenomination) {
+        return new ManualPosOrderRequest(requestId, OrderFulfillmentType.DELIVERY, OrderPaymentMethod.CASH,
+                "Calle Principal 123", null, cashDenomination,
+                List.of(new PromotionQuoteLineRequest("delivery", menuItemId, 1, List.of(), List.of())));
+    }
+
+    private void assertError(org.assertj.core.api.ThrowableAssert.ThrowingCallable operation,
+                             ManualPosOrderError expected) {
+        assertThatThrownBy(operation)
+                .isInstanceOf(ManualPosOrderException.class)
+                .extracting(exception -> ((ManualPosOrderException) exception).getError())
+                .isEqualTo(expected);
     }
 
     private ManualPosOrderRequest configuredRequest(UUID requestId, Long menuItemId, Long groupId, Long toppingId) {

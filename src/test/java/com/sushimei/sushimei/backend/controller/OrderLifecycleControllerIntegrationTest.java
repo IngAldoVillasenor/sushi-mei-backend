@@ -62,6 +62,9 @@ class OrderLifecycleControllerIntegrationTest {
         mockMvc.perform(put("/api/orders/{id}/complete", pending.getId()).with(user("manager").roles("MANAGER")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ORDER_INVALID_TRANSITION"));
+        mockMvc.perform(put("/api/orders/{id}/ready", pending.getId()).with(user("manager").roles("MANAGER")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_INVALID_TRANSITION"));
     }
 
     @Test
@@ -69,11 +72,13 @@ class OrderLifecycleControllerIntegrationTest {
         OrderRecord older = order("PENDING", OrderPaymentMethod.CASH, 1);
         order("COMPLETED", OrderPaymentMethod.CASH, 2);
         OrderRecord newer = order("PREPARING", OrderPaymentMethod.CASH, 3);
+        OrderRecord ready = order("READY", OrderPaymentMethod.CASH, 4);
 
         mockMvc.perform(get("/api/orders/active").with(user("kitchen").roles("KITCHEN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(older.getId()))
                 .andExpect(jsonPath("$[1].id").value(newer.getId()))
+                .andExpect(jsonPath("$[2].id").value(ready.getId()))
                 .andExpect(jsonPath("$[0].requestFingerprint").doesNotExist())
                 .andExpect(jsonPath("$[0].createdByUserId").doesNotExist())
                 .andExpect(jsonPath("$[0].orderLines").doesNotExist());
@@ -85,10 +90,14 @@ class OrderLifecycleControllerIntegrationTest {
         OrderRecord ownerPending = order("PENDING", OrderPaymentMethod.CASH, 2);
         OrderRecord managerPending = order("PENDING", OrderPaymentMethod.CASH, 3);
         OrderRecord kitchenPending = order("PENDING", OrderPaymentMethod.CASH, 4);
-        OrderRecord kitchenForbiddenTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 5);
-        OrderRecord ownerTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 6);
-        OrderRecord managerTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 7);
-        OrderRecord cashierTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 8);
+        OrderRecord cashierPreparing = order("PREPARING", OrderPaymentMethod.CASH, 5);
+        OrderRecord ownerPreparing = order("PREPARING", OrderPaymentMethod.CASH, 6);
+        OrderRecord managerPreparing = order("PREPARING", OrderPaymentMethod.CASH, 7);
+        OrderRecord kitchenPreparing = order("PREPARING", OrderPaymentMethod.CASH, 8);
+        OrderRecord kitchenForbiddenTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 9);
+        OrderRecord ownerTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 10);
+        OrderRecord managerTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 11);
+        OrderRecord cashierTransfer = order("PENDING_VALIDATION", OrderPaymentMethod.TRANSFER, 12);
 
         mockMvc.perform(put("/api/orders/{id}/prepare", cashierForbidden.getId()))
                 .andExpect(status().isUnauthorized());
@@ -105,6 +114,22 @@ class OrderLifecycleControllerIntegrationTest {
                                 .roles("MANAGER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/prepare", kitchenPending.getId())
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("kitchen")
+                                .roles("KITCHEN")))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/orders/{id}/ready", cashierPreparing.getId())
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("cashier")
+                                .roles("CASHIER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/orders/{id}/ready", ownerPreparing.getId())
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("owner")
+                                .roles("OWNER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/orders/{id}/ready", managerPreparing.getId())
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("manager")
+                                .roles("MANAGER")))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/orders/{id}/ready", kitchenPreparing.getId())
                         .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("kitchen")
                                 .roles("KITCHEN")))
                 .andExpect(status().isOk());

@@ -8,6 +8,9 @@ import com.sushimei.sushimei.backend.repository.OrderRepository;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,8 +43,12 @@ class ManualPosOrderReadService {
                 .toList();
         return new ManualPosOrderResponse(order.getId(), order.getClientRequestId(), result, order.getOrderSource(),
                 order.getCreatedByUserId(), order.getFulfillmentType(), order.getPaymentMethod(), order.getDeliveryAddress(),
-                order.getPickupName(), order.getCashDenomination(), order.getStatus(), order.getCreatedAt(), paid,
+                order.getPickupName(), order.getCashDenomination(), order.getStatus(), asUtcInstant(order.getCreatedAt()), paid,
                 order.getTotalAmountAmount());
+    }
+
+    private static Instant asUtcInstant(LocalDateTime value) {
+        return value == null ? null : value.toInstant(ZoneOffset.UTC);
     }
 
     private static ManualPosOrderLineResponse lineResponse(OrderLineRecord line, List<OrderLineRecord> all) {

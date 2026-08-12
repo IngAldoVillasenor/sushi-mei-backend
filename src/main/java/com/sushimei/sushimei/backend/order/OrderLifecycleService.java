@@ -50,7 +50,13 @@ public class OrderLifecycleService {
     @Transactional
     public OrderLifecycleTransitionResult complete(Long orderId) {
         OrderRecord order = lockRequired(orderId);
-        return transition(order, requiredStatus(order), OrderLifecycleStatus.PREPARING, OrderLifecycleStatus.COMPLETED);
+        return transition(order, requiredStatus(order), OrderLifecycleStatus.READY, OrderLifecycleStatus.COMPLETED);
+    }
+
+    @Transactional
+    public OrderLifecycleTransitionResult ready(Long orderId) {
+        OrderRecord order = lockRequired(orderId);
+        return transition(order, requiredStatus(order), OrderLifecycleStatus.PREPARING, OrderLifecycleStatus.READY);
     }
 
     /**

@@ -69,7 +69,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/v1/orders")
                         .hasAnyRole("OWNER", "MANAGER", "CASHIER")
                         .requestMatchers("/api/orders/*/validate-payment").hasAnyRole("OWNER", "MANAGER", "CASHIER")
-                        .requestMatchers("/api/orders/*/prepare", "/api/orders/*/complete", "/api/orders/*/reject")
+                        .requestMatchers("/api/orders/*/prepare", "/api/orders/*/ready", "/api/orders/*/complete", "/api/orders/*/reject")
                         .hasAnyRole("OWNER", "MANAGER", "KITCHEN")
                         .requestMatchers("/api/orders/active").hasAnyRole("OWNER", "MANAGER", "CASHIER", "KITCHEN")
                         .anyRequest().authenticated())

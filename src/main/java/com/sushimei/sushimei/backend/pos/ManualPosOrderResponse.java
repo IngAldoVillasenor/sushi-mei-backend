@@ -4,7 +4,7 @@ import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,7 +20,7 @@ public record ManualPosOrderResponse(
         String pickupName,
         BigDecimal cashDenomination,
         String status,
-        LocalDateTime createdAt,
+        Instant createdAt,
         List<ManualPosOrderLineResponse> lines,
         BigDecimal total
 ) {
