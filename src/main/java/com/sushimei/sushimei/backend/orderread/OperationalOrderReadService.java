@@ -9,6 +9,9 @@ import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import com.sushimei.sushimei.backend.repository.OrderLineSelectionSnapshotRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -86,7 +89,7 @@ public class OperationalOrderReadService {
                 order.getTransferReceiptPath(),
                 order.getPaymentNotes(),
                 order.getStatus(),
-                order.getCreatedAt(),
+                asUtcInstant(order.getCreatedAt()),
                 total(order),
                 order.getOrderDetails(),
                 lines);
@@ -112,7 +115,7 @@ public class OperationalOrderReadService {
                 order.getCashDenomination(),
                 order.getPhoneNumber(),
                 total(order),
-                order.getCreatedAt(),
+                asUtcInstant(order.getCreatedAt()),
                 requiresPaymentValidation(order),
                 structuredLinesAvailable);
     }
@@ -170,5 +173,9 @@ public class OperationalOrderReadService {
     private boolean requiresPaymentValidation(OrderRecord order) {
         return OrderLifecycleStatus.PENDING_VALIDATION.persistedValue().equals(order.getStatus())
                 && order.getPaymentMethod() == OrderPaymentMethod.TRANSFER;
+    }
+
+    private Instant asUtcInstant(LocalDateTime value) {
+        return value == null ? null : value.toInstant(ZoneOffset.UTC);
     }
 }

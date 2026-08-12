@@ -4,7 +4,7 @@ import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /** Lightweight, stable operational queue projection. */
 public record OperationalOrderSummaryResponse(
@@ -18,7 +18,7 @@ public record OperationalOrderSummaryResponse(
         BigDecimal cashDenomination,
         String phoneNumber,
         BigDecimal total,
-        LocalDateTime createdAt,
+        Instant createdAt,
         boolean requiresPaymentValidation,
         boolean structuredLinesAvailable
 ) {

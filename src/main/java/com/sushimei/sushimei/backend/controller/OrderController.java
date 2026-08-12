@@ -83,6 +83,12 @@ public class OrderController {
         return ResponseEntity.ok("Orden #" + id + " enviada a cocina.");
     }
 
+    @PutMapping("/{id}/ready")
+    public ResponseEntity<String> readyOrder(@PathVariable Long id) {
+        orderLifecycleService.ready(id);
+        return ResponseEntity.ok("Orden #" + id + " lista para entrega.");
+    }
+
     @PutMapping("/{id}/validate-payment")
     public ResponseEntity<String> validatePayment(@PathVariable Long id) {
         orderLifecycleService.validatePayment(id);

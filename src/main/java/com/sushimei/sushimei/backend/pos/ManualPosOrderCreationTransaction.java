@@ -56,6 +56,7 @@ class ManualPosOrderCreationTransaction {
         }
         appUserRepository.findById(userId).orElseThrow(() -> new ManualPosOrderException(ManualPosOrderError.ORDER_FORBIDDEN_OPERATION));
         PromotionQuoteResponse quote = promotionQuoteService.quote(new PromotionQuoteRequest(request.lines()));
+        validateDeliveryCashDenomination(request, quote.total());
         OrderRecord order = createOrder(userId, request, quote);
         int linePosition = 1;
         for (PromotionQuoteLineResponse quoteLine : quote.lines()) {
@@ -111,6 +112,14 @@ class ManualPosOrderCreationTransaction {
         order.setCreatedAt(LocalDateTime.ofInstant(quote.quotedAt(), ZoneOffset.UTC));
         order.setOrderDetails(ManualPosOrderLegacyDetailsFormatter.format(quote));
         return order;
+    }
+
+    private void validateDeliveryCashDenomination(NormalizedManualPosOrder request, BigDecimal authoritativeTotal) {
+        if (request.fulfillmentType() == com.sushimei.sushimei.backend.entity.OrderFulfillmentType.DELIVERY
+                && request.paymentMethod() == com.sushimei.sushimei.backend.entity.OrderPaymentMethod.CASH
+                && request.cashDenomination().compareTo(authoritativeTotal) < 0) {
+            throw new ManualPosOrderException(ManualPosOrderError.ORDER_CASH_DENOMINATION_INSUFFICIENT);
+        }
     }
 
     private void snapshots(OrderLineRecord line, MenuItemQuoteResponse quote) {

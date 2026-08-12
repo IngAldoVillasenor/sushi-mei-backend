@@ -62,12 +62,19 @@ public class ManualPosOrderService {
         } else if (fulfillment == OrderFulfillmentType.PICKUP) {
             if (!bounded(pickupName, 2, 120) || deliveryAddress != null) throw invalid();
         } else throw invalid();
-        if (payment == OrderPaymentMethod.CARD && fulfillment != OrderFulfillmentType.PICKUP) throw invalid();
+        if (fulfillment == OrderFulfillmentType.PICKUP) {
+            if (payment != OrderPaymentMethod.CASH && payment != OrderPaymentMethod.TRANSFER
+                    && payment != OrderPaymentMethod.CARD) {
+                throw invalid();
+            }
+            // Pickup payment is settled at the counter; any legacy denomination is operationally irrelevant.
+            return null;
+        }
         if (payment == OrderPaymentMethod.CASH) {
             try { return checkoutMoney.normalizeNumericAmount(cash); }
             catch (IllegalArgumentException exception) { throw new ManualPosOrderException(ManualPosOrderError.ORDER_INVALID, exception); }
         }
-        if (cash != null || (payment != OrderPaymentMethod.TRANSFER && payment != OrderPaymentMethod.CARD)) throw invalid();
+        if (payment != OrderPaymentMethod.TRANSFER || cash != null) throw invalid();
         return null;
     }
 
