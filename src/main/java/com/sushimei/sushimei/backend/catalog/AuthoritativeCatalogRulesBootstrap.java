@@ -8,6 +8,8 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -92,8 +94,9 @@ class AuthoritativeCatalogRulesService {
         }
 
         Instant now = clock.instant();
+        OffsetDateTime databaseNow = jdbcTimestamp(now);
         Map<Long, BaseCatalogItem> baseCatalog = loadBaseCatalog();
-        initializeEmptyBaseCatalog(baseCatalog, now);
+        initializeEmptyBaseCatalog(baseCatalog, databaseNow);
 
         Map<Long, MenuItem> items = requireExpectedItems(baseCatalog);
         Map<String, CatalogTag> authoritativeTags = synchronizeTags(now);
@@ -110,7 +113,7 @@ class AuthoritativeCatalogRulesService {
                 update public.catalog_bootstrap_rule_sets
                 set applied_at = ?
                 where rule_set_id = ? and applied_at is null
-                """, now, RULE_SET_ID);
+                """, databaseNow, RULE_SET_ID);
         if (marked != 1) {
             throw new IllegalStateException("Authoritative catalog rule set could not be marked as applied");
         }
@@ -138,7 +141,11 @@ class AuthoritativeCatalogRulesService {
      * identity generator for catalog additions beginning at 122, so a rollback
      * here neither consumes nor corrupts the required base identity range.
      */
-    private void initializeEmptyBaseCatalog(Map<Long, BaseCatalogItem> baseCatalog, Instant now) {
+    static OffsetDateTime jdbcTimestamp(Instant instant) {
+        return instant.atOffset(ZoneOffset.UTC);
+    }
+
+    private void initializeEmptyBaseCatalog(Map<Long, BaseCatalogItem> baseCatalog, OffsetDateTime databaseNow) {
         if (menuItems.count() != 0) {
             return;
         }
@@ -150,7 +157,7 @@ class AuthoritativeCatalogRulesService {
                     insert into public.menu_items (id, name, description, category, price_amount, pricing_mode,
                         active, available, standalone_orderable, display_order, created_at, updated_at, version)
                     values (?, ?, null, ?, ?, 'BASE_PLUS_ADJUSTMENTS', true, true, true, ?, ?, ?, 0)
-                    """, item.id(), item.name(), item.category(), item.price(), displayOrder, now, now);
+                    """, item.id(), item.name(), item.category(), item.price(), displayOrder, databaseNow, databaseNow);
         }
     }
 
