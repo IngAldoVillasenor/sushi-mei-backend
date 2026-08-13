@@ -2,6 +2,8 @@ package com.sushimei.sushimei.backend.catalog;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -42,6 +44,10 @@ public class MenuItem {
     @Column(name = "price_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal priceAmount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pricing_mode", nullable = false, length = 32)
+    private MenuItemPricingMode pricingMode;
+
     @Column(nullable = false)
     private boolean active;
 
@@ -79,6 +85,7 @@ public class MenuItem {
                            String description,
                            String category,
                            BigDecimal priceAmount,
+                           MenuItemPricingMode pricingMode,
                            boolean available,
                            boolean standaloneOrderable,
                            int displayOrder,
@@ -88,6 +95,7 @@ public class MenuItem {
         item.description = description;
         item.category = Objects.requireNonNull(category, "category must not be null");
         item.priceAmount = Objects.requireNonNull(priceAmount, "priceAmount must not be null");
+        item.pricingMode = Objects.requireNonNull(pricingMode, "pricingMode must not be null");
         item.active = true;
         item.available = available;
         item.standaloneOrderable = standaloneOrderable;
@@ -101,6 +109,7 @@ public class MenuItem {
                 String description,
                 String category,
                 BigDecimal priceAmount,
+                MenuItemPricingMode pricingMode,
                 boolean active,
                 boolean available,
                 boolean standaloneOrderable,
@@ -110,6 +119,7 @@ public class MenuItem {
         this.description = description;
         this.category = Objects.requireNonNull(category, "category must not be null");
         this.priceAmount = Objects.requireNonNull(priceAmount, "priceAmount must not be null");
+        this.pricingMode = Objects.requireNonNull(pricingMode, "pricingMode must not be null");
         this.active = active;
         this.available = available;
         this.standaloneOrderable = standaloneOrderable;
@@ -133,6 +143,46 @@ public class MenuItem {
         touch(now);
     }
 
+    void archiveAsDiscontinued(Instant now) {
+        this.active = false;
+        this.available = false;
+        this.standaloneOrderable = false;
+        touch(now);
+    }
+
+    void synchronizeAuthoritativeState(BigDecimal priceAmount,
+                                       MenuItemPricingMode pricingMode,
+                                       boolean active,
+                                       boolean available,
+                                       boolean standaloneOrderable,
+                                       Instant now) {
+        boolean changed = this.priceAmount.compareTo(priceAmount) != 0
+                || this.pricingMode != pricingMode
+                || this.active != active
+                || this.available != available
+                || this.standaloneOrderable != standaloneOrderable;
+        this.priceAmount = Objects.requireNonNull(priceAmount, "priceAmount must not be null");
+        this.pricingMode = Objects.requireNonNull(pricingMode, "pricingMode must not be null");
+        this.active = active;
+        this.available = available;
+        this.standaloneOrderable = standaloneOrderable;
+        if (changed) {
+            touch(now);
+        }
+    }
+
+    void synchronizeManagedTags(Set<CatalogTag> managedTags, Set<CatalogTag> desiredTags, Instant now) {
+        Set<Long> managedTagIds = managedTags.stream().map(CatalogTag::getId).collect(java.util.stream.Collectors.toSet());
+        Set<CatalogTag> synchronizedTags = new LinkedHashSet<>(tags);
+        synchronizedTags.removeIf(tag -> managedTagIds.contains(tag.getId()));
+        synchronizedTags.addAll(desiredTags);
+        if (!synchronizedTags.equals(tags)) {
+            tags.clear();
+            tags.addAll(synchronizedTags);
+            touch(now);
+        }
+    }
+
     public Long getId() {
         return id;
     }
@@ -151,6 +201,10 @@ public class MenuItem {
 
     public BigDecimal getPriceAmount() {
         return priceAmount;
+    }
+
+    public MenuItemPricingMode getPricingMode() {
+        return pricingMode;
     }
 
     public boolean isActive() {

@@ -5,6 +5,7 @@ import com.sushimei.sushimei.backend.catalog.CreateMenuSelectionGroupRequest;
 import com.sushimei.sushimei.backend.catalog.CreateMenuSelectionRuleRequest;
 import com.sushimei.sushimei.backend.catalog.CatalogConfigurationService;
 import com.sushimei.sushimei.backend.catalog.MenuCatalogService;
+import com.sushimei.sushimei.backend.catalog.MenuItemPricingMode;
 import com.sushimei.sushimei.backend.catalog.MenuItemResponse;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest;
@@ -126,6 +127,38 @@ class ManualPosOrderServiceIntegrationTest {
                 .isInstanceOf(ManualPosOrderException.class)
                 .extracting(exception -> ((ManualPosOrderException) exception).getError())
                 .isEqualTo(ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void persistsSelectionSumContainerWithZeroCatalogBaseAndPositiveAuthoritativeFinalPrice() {
+        MenuItemResponse container = menuCatalogService.create(new CreateMenuItemRequest(
+                "Arma tu prueba", null, "Charolas", BigDecimal.ZERO, true, true, 0,
+                MenuItemPricingMode.SELECTION_SUM));
+        MenuItemResponse selectedRoll = item("California", "79.00");
+        MenuSelectionGroupResponse group = catalogConfigurationService.createGroup(container.id(),
+                new CreateMenuSelectionGroupRequest("Elige un rollo", 1, 1, true, 0));
+        catalogConfigurationService.createRule(group.id(), new CreateMenuSelectionRuleRequest(
+                SelectionRuleTargetType.ITEM, selectedRoll.id(), SelectionPricingPolicy.FULL_ITEM_PRICE,
+                null, null, 0));
+
+        ManualPosOrderResponse created = manualPosOrderService.create(insertUser("cashier-selection-sum"),
+                new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH,
+                        null, "Ana", null, List.of(new PromotionQuoteLineRequest("container", container.id(), 1,
+                        List.of(new MenuQuoteGroupRequest(group.id(),
+                                List.of(new MenuQuoteSelectionRequest(selectedRoll.id(), 1, List.of())))), List.of()))));
+
+        assertThat(created.total()).isEqualByComparingTo("79.00");
+        assertThat(created.lines()).singleElement().satisfies(line -> {
+            assertThat(line.catalogBaseUnitPrice()).isEqualByComparingTo("0.00");
+            assertThat(line.chargedBaseUnitPrice()).isEqualByComparingTo("0.00");
+            assertThat(line.configurationAdjustmentAmount()).isEqualByComparingTo("79.00");
+            assertThat(line.finalUnitAmount()).isEqualByComparingTo("79.00");
+            assertThat(line.finalLineTotal()).isEqualByComparingTo("79.00");
+        });
+        assertThat(jdbcTemplate.queryForObject("select catalog_base_unit_price from public.order_lines", BigDecimal.class))
+                .isEqualByComparingTo("0.00");
+        assertThat(jdbcTemplate.queryForObject("select line_total_amount from public.order_lines", BigDecimal.class))
+                .isEqualByComparingTo("79.00");
     }
 
     @Test
@@ -516,7 +549,7 @@ class ManualPosOrderServiceIntegrationTest {
     }
 
     static final class TestClock extends Clock {
-        private static final AtomicReference<Instant> NOW = new AtomicReference<>();
+        private static final AtomicReference<Instant> NOW = new AtomicReference<>(Instant.parse("2026-08-10T18:00:00Z"));
         private static final AtomicReference<Instant> AFTER_FIRST_READ = new AtomicReference<>();
         private static final java.util.concurrent.atomic.AtomicInteger READS = new java.util.concurrent.atomic.AtomicInteger();
         static void set(Instant instant) {

@@ -3,6 +3,7 @@ package com.sushimei.sushimei.backend.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sushimei.sushimei.backend.catalog.CreateMenuItemRequest;
+import com.sushimei.sushimei.backend.catalog.MenuItemPricingMode;
 import com.sushimei.sushimei.backend.catalog.UpdateMenuItemRequest;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -54,6 +55,10 @@ class MenuCatalogControllerIntegrationTest {
 
     @BeforeEach
     void removeCatalogFixtures() {
+        jdbcTemplate.update("delete from public.menu_selection_rules");
+        jdbcTemplate.update("delete from public.menu_selection_groups");
+        jdbcTemplate.update("delete from public.menu_item_tags");
+        jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
     }
 
@@ -69,6 +74,8 @@ class MenuCatalogControllerIntegrationTest {
         assertThat(created.price()).isEqualByComparingTo("79.50");
         assertThat(created.active()).isTrue();
         assertThat(created.available()).isTrue();
+        assertThat(created.pricingMode()).isEqualTo(MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS);
+        assertThat(created.requiresConfiguration()).isFalse();
         assertThat(created.displayOrder()).isZero();
         assertThat(created.version()).isZero();
         assertThat(created.createdAt()).isEqualTo(created.updatedAt());
@@ -101,6 +108,16 @@ class MenuCatalogControllerIntegrationTest {
                 .andExpect(jsonPath("$[1].id").value(rollA.id()))
                 .andExpect(jsonPath("$[2].id").value(rollB.id()))
                 .andExpect(jsonPath("$[3].id").value(sushi.id()));
+    }
+
+    @Test
+    void selectionSumPricingModeIsRepresentedWithoutRoundingTheZeroRootPrice() throws Exception {
+        CatalogItemView created = create(new CreateMenuItemRequest(
+                "Arma tu Charola", null, "Charolas/Sushi Box", BigDecimal.ZERO,
+                true, true, 0, MenuItemPricingMode.SELECTION_SUM));
+
+        assertThat(created.pricingMode()).isEqualTo(MenuItemPricingMode.SELECTION_SUM);
+        assertThat(created.price()).isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -247,8 +264,10 @@ class MenuCatalogControllerIntegrationTest {
                 node.path("description").isNull() ? null : node.path("description").asText(),
                 node.required("category").asText(),
                 node.required("price").decimalValue(),
+                MenuItemPricingMode.valueOf(node.required("pricingMode").asText()),
                 node.required("active").asBoolean(),
                 node.required("available").asBoolean(),
+                node.required("requiresConfiguration").asBoolean(),
                 node.required("displayOrder").asInt(),
                 node.required("version").asLong(),
                 node.required("createdAt").asText(),
@@ -261,8 +280,10 @@ class MenuCatalogControllerIntegrationTest {
             String description,
             String category,
             BigDecimal price,
+            MenuItemPricingMode pricingMode,
             boolean active,
             boolean available,
+            boolean requiresConfiguration,
             int displayOrder,
             long version,
             String createdAt,

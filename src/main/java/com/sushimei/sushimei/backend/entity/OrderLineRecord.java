@@ -148,7 +148,7 @@ public class OrderLineRecord {
                 quantity,
                 finalUnitAmount,
                 finalLineTotal,
-                requirePositiveAmount(catalogBaseUnitPrice, "catalogBaseUnitPrice"),
+                requireNonNegativeAmount(catalogBaseUnitPrice, "catalogBaseUnitPrice"),
                 requireNonNegativeAmount(chargedBaseUnitPrice, "chargedBaseUnitPrice"),
                 requireNonNegativeAmount(configurationAdjustmentAmount, "configurationAdjustmentAmount"),
                 appliedPromotionId,

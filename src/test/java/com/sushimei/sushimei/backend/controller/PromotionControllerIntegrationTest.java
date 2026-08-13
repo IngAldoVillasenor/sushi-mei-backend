@@ -65,9 +65,9 @@ class PromotionControllerIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
 
         jdbcTemplate.update("""
-                insert into public.menu_items (name, category, price_amount, active, available, standalone_orderable,
+                insert into public.menu_items (name, category, price_amount, pricing_mode, active, available, standalone_orderable,
                     display_order, created_at, updated_at, version)
-                values ('California', 'Rollos', 79.00, true, true, true, 0, current_timestamp, current_timestamp, 0)
+                values ('California', 'Rollos', 79.00, 'BASE_PLUS_ADJUSTMENTS', true, true, true, 0, current_timestamp, current_timestamp, 0)
                 """);
         long itemId = jdbcTemplate.queryForObject("select id from public.menu_items where name = 'California'", Long.class);
         created = mockMvc.perform(post("/api/v1/promotions")
