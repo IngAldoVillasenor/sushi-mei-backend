@@ -62,6 +62,7 @@ class ManualPosOrderHttpIntegrationTest {
         jdbcTemplate.update("delete from public.menu_item_tags");
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
+        jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
     }
 

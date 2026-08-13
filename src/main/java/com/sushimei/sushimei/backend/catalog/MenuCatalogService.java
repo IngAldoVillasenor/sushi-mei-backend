@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.Objects;
 
 @Service
@@ -40,12 +41,18 @@ public class MenuCatalogService {
         } else {
             items = menuCatalogRepository.findByActiveTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
         }
-        return items.stream().map(MenuItemResponse::from).toList();
+        Set<Long> configuredItemIds = items.isEmpty()
+                ? Set.of()
+                : Set.copyOf(menuCatalogRepository.findIdsWithActiveSelectionGroups(
+                        items.stream().map(MenuItem::getId).toList()));
+        return items.stream().map(item -> MenuItemResponse.from(item, configuredItemIds.contains(item.getId()))).toList();
     }
 
     @Transactional(readOnly = true)
     public MenuItemResponse get(Long id) {
-        return MenuItemResponse.from(findRequired(id));
+        MenuItem item = findRequired(id);
+        return MenuItemResponse.from(item,
+                !menuCatalogRepository.findIdsWithActiveSelectionGroups(List.of(item.getId())).isEmpty());
     }
 
     @Transactional
@@ -53,17 +60,20 @@ public class MenuCatalogService {
         if (request == null) {
             throw new MenuCatalogValidationException();
         }
+        MenuItemPricingMode pricingMode = normalizePricingMode(request.pricingMode(),
+                MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS);
         Instant now = clock.instant();
         MenuItem item = MenuItem.create(
                 normalizeRequiredText(request.name(), MAX_NAME_LENGTH),
                 normalizeOptionalText(request.description(), MAX_DESCRIPTION_LENGTH),
                 normalizeRequiredText(request.category(), MAX_CATEGORY_LENGTH),
-                normalizePrice(request.price()),
+                normalizePrice(request.price(), pricingMode),
+                pricingMode,
                 request.available() == null || request.available(),
                 request.standaloneOrderable() == null || request.standaloneOrderable(),
                 normalizeDisplayOrder(request.displayOrder(), 0),
                 now);
-        return MenuItemResponse.from(menuCatalogRepository.saveAndFlush(item));
+        return responseFor(menuCatalogRepository.saveAndFlush(item));
     }
 
     @Transactional
@@ -75,19 +85,21 @@ public class MenuCatalogService {
         if (item.getVersion() != request.version()) {
             throw new MenuCatalogVersionConflictException();
         }
+        MenuItemPricingMode pricingMode = normalizePricingMode(request.pricingMode(), item.getPricingMode());
         Instant now = clock.instant();
         item.update(
                 normalizeRequiredText(request.name(), MAX_NAME_LENGTH),
                 normalizeOptionalText(request.description(), MAX_DESCRIPTION_LENGTH),
                 normalizeRequiredText(request.category(), MAX_CATEGORY_LENGTH),
-                normalizePrice(request.price()),
+                normalizePrice(request.price(), pricingMode),
+                pricingMode,
                 requireBoolean(request.active()),
                 requireBoolean(request.available()),
                 requireBoolean(request.standaloneOrderable()),
                 normalizeDisplayOrder(request.displayOrder(), null),
                 now);
         menuCatalogRepository.flush();
-        return MenuItemResponse.from(item);
+        return responseFor(item);
     }
 
     @Transactional
@@ -103,12 +115,29 @@ public class MenuCatalogService {
         return menuCatalogRepository.findById(id).orElseThrow(MenuCatalogItemNotFoundException::new);
     }
 
-    private BigDecimal normalizePrice(BigDecimal price) {
+    private BigDecimal normalizePrice(BigDecimal price, MenuItemPricingMode pricingMode) {
         try {
-            return checkoutMoney.normalizeNumericAmount(price);
+            BigDecimal normalized = checkoutMoney.normalizeNonNegativeNumericAmount(price);
+            if (pricingMode == MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS && normalized.signum() <= 0) {
+                throw new IllegalArgumentException("base price must be positive");
+            }
+            if (pricingMode == MenuItemPricingMode.SELECTION_SUM && normalized.signum() != 0) {
+                throw new IllegalArgumentException("selection-sum price must be zero");
+            }
+            return normalized;
         } catch (IllegalArgumentException exception) {
             throw new MenuCatalogValidationException();
         }
+    }
+
+    private MenuItemResponse responseFor(MenuItem item) {
+        boolean requiresConfiguration = !menuCatalogRepository.findIdsWithActiveSelectionGroups(List.of(item.getId())).isEmpty();
+        return MenuItemResponse.from(item, requiresConfiguration);
+    }
+
+    private MenuItemPricingMode normalizePricingMode(MenuItemPricingMode requested,
+                                                      MenuItemPricingMode defaultValue) {
+        return requested == null ? defaultValue : requested;
     }
 
     private String normalizeRequiredText(String value, int maximumLength) {

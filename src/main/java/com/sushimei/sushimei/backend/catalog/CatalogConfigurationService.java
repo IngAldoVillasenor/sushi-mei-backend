@@ -122,7 +122,9 @@ public class CatalogConfigurationService {
         }
         item.replaceTags(new LinkedHashSet<>(tags), clock.instant());
         menuCatalogRepository.flush();
-        return MenuItemResponse.from(item);
+        boolean requiresConfiguration = !menuCatalogRepository
+                .findIdsWithActiveSelectionGroups(List.of(item.getId())).isEmpty();
+        return MenuItemResponse.from(item, requiresConfiguration);
     }
 
     @Transactional
@@ -202,7 +204,7 @@ public class CatalogConfigurationService {
                 .map(group -> operationalGroup(group, candidates))
                 .toList();
         return new MenuItemConfigurationResponse(item.getId(), item.getName(), item.isStandaloneOrderable(),
-                requirePositiveMoney(item.getPriceAmount()), !groups.isEmpty(), groups);
+                requireNonNegativeMoney(item.getPriceAmount()), !groups.isEmpty(), groups);
     }
 
     @Transactional(readOnly = true)
@@ -232,7 +234,9 @@ public class CatalogConfigurationService {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_ITEM_NOT_ORDERABLE);
         }
         ConfiguredNode configuration = configureItem(root, request.groups(), new LinkedHashSet<>(Set.of(root.getId())), 0);
-        BigDecimal baseUnitPrice = requirePositiveMoney(root.getPriceAmount());
+        BigDecimal baseUnitPrice = root.getPricingMode() == MenuItemPricingMode.SELECTION_SUM
+                ? zeroAmount()
+                : requirePositiveMoney(root.getPriceAmount());
         BigDecimal baseTotal = multiply(baseUnitPrice, quantity);
         BigDecimal unitTotal = requirePositiveMoney(baseUnitPrice.add(configuration.unitAdjustmentTotal()));
         return new MenuItemQuoteResponse(root.getId(), root.getName(), quantity, baseUnitPrice, baseTotal,
@@ -554,6 +558,14 @@ public class CatalogConfigurationService {
     private BigDecimal requirePositiveMoney(BigDecimal amount) {
         try {
             return checkoutMoney.normalizeNumericAmount(amount);
+        } catch (IllegalArgumentException exception) {
+            throw invalidConfiguration();
+        }
+    }
+
+    private BigDecimal requireNonNegativeMoney(BigDecimal amount) {
+        try {
+            return checkoutMoney.normalizeNonNegativeNumericAmount(amount);
         } catch (IllegalArgumentException exception) {
             throw invalidConfiguration();
         }

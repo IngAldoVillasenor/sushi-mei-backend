@@ -11,9 +11,19 @@ public record CreateMenuItemRequest(
         @NotBlank @Size(max = 160) String name,
         @Size(max = 1000) String description,
         @NotBlank @Size(max = 120) String category,
-        @NotNull @DecimalMin(value = "0.00", inclusive = false) BigDecimal price,
+        @NotNull @DecimalMin(value = "0.00", inclusive = true) BigDecimal price,
         Boolean available,
         Boolean standaloneOrderable,
-        Integer displayOrder
+        Integer displayOrder,
+        MenuItemPricingMode pricingMode
 ) {
+    public CreateMenuItemRequest(String name,
+                                 String description,
+                                 String category,
+                                 BigDecimal price,
+                                 Boolean available,
+                                 Boolean standaloneOrderable,
+                                 Integer displayOrder) {
+        this(name, description, category, price, available, standaloneOrderable, displayOrder, null);
+    }
 }
