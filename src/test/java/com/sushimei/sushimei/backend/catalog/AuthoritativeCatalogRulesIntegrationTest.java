@@ -20,6 +20,9 @@ import org.springframework.test.context.ActiveProfiles;
 import java.math.BigDecimal;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,6 +53,16 @@ class AuthoritativeCatalogRulesIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Test
+    void directJdbcTimestampBindingUsesUtcOffsetDateTimeRatherThanInstant() {
+        Instant instant = Instant.parse("2026-08-13T18:45:12.345Z");
+
+        Object databaseTimestamp = AuthoritativeCatalogRulesService.jdbcTimestamp(instant);
+
+        assertThat(databaseTimestamp).isInstanceOf(OffsetDateTime.class);
+        assertThat(databaseTimestamp).isEqualTo(OffsetDateTime.ofInstant(instant, ZoneOffset.UTC));
+    }
 
     @Test
     void cleanBootstrapSeedsTheVerified121ItemCatalogAndCreatesOnlyThreePhaseItems() throws IOException {
