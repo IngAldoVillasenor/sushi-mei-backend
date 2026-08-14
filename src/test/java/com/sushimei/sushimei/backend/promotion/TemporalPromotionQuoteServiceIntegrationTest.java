@@ -160,7 +160,8 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         PromotionResponse highItem = fixedPromotion("Item override", 20, Set.of(4), targetItem(california), "69.00");
         assertThat(quote(line("priority", california.id(), 1, List.of(), List.of())).total()).isEqualByComparingTo("69.00");
         promotionService.archive(highItem.id());
-        assertThatThrownBy(() -> fixedPromotion("Tie", 10, Set.of(4), targetItem(california), "70.00"))
+        final PromotionTargetRequest californiaTarget = targetItem(california);
+        assertThatThrownBy(() -> fixedPromotion("Tie", 10, Set.of(4), californiaTarget, "70.00"))
                 .isInstanceOf(PromotionException.class)
                 .extracting(exception -> ((PromotionException) exception).getError())
                 .isEqualTo(PromotionError.PROMOTION_SCHEDULE_CONFLICT);
