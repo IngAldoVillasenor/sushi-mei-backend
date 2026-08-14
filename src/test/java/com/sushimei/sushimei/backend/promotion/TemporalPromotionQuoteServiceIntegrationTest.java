@@ -160,12 +160,24 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         PromotionResponse highItem = fixedPromotion("Item override", 20, Set.of(4), targetItem(california), "69.00");
         assertThat(quote(line("priority", california.id(), 1, List.of(), List.of())).total()).isEqualByComparingTo("69.00");
         promotionService.archive(highItem.id());
-        PromotionResponse tie = fixedPromotion("Tie", 10, Set.of(4), targetItem(california), "70.00");
+        assertThatThrownBy(() -> fixedPromotion("Tie", 10, Set.of(4), targetItem(california), "70.00"))
+                .isInstanceOf(PromotionException.class)
+                .extracting(exception -> ((PromotionException) exception).getError())
+                .isEqualTo(PromotionError.PROMOTION_SCHEDULE_CONFLICT);
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    created_at, updated_at, version)
+                values ('Corrupted tie', true, 10, 'FIXED_UNIT_PRICE', 70.00, current_timestamp, current_timestamp, 0)
+                """);
+        Long tieId = jdbcTemplate.queryForObject("select id from public.promotions where name = 'Corrupted tie'", Long.class);
+        jdbcTemplate.update("insert into public.promotion_weekdays (promotion_id, iso_day_of_week) values (?, 4)", tieId);
+        jdbcTemplate.update("insert into public.promotion_targets (promotion_id, target_menu_item_id) values (?, ?)",
+                tieId, california.id());
         assertThatThrownBy(() -> quote(line("tie", californiaId, 1, List.of(), List.of())))
                 .isInstanceOf(PromotionException.class)
                 .extracting(exception -> ((PromotionException) exception).getError())
                 .isEqualTo(PromotionError.PROMOTION_CONFIGURATION_CONFLICT);
-        promotionService.archive(tie.id());
+        jdbcTemplate.update("update public.promotions set active = false where id = ?", tieId);
         TestClock.set(MONDAY);
         assertThat(quote(line("weekday", california.id(), 1, List.of(), List.of())).lines().get(0).rewards()).isEmpty();
         PromotionResponse archivedMonday = fixedPromotion("Archived Monday", 30, Set.of(1), targetItem(california), "69.00");

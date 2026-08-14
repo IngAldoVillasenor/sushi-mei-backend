@@ -11,12 +11,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = PromotionController.class)
 public class PromotionApiExceptionHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(PromotionApiExceptionHandler.class);
 
     @ExceptionHandler(PromotionException.class)
     public ResponseEntity<PromotionApiError> handlePromotion(PromotionException exception) {
@@ -25,6 +30,9 @@ public class PromotionApiExceptionHandler {
             case PROMOTION_NOT_FOUND -> error(HttpStatus.NOT_FOUND, error.name(), "Promocion no encontrada.");
             case PROMOTION_VERSION_CONFLICT, PROMOTION_CONFIGURATION_CONFLICT ->
                     error(HttpStatus.CONFLICT, error.name(), "La promocion cambio o tiene una configuracion conflictiva.");
+            case PROMOTION_SCHEDULE_CONFLICT ->
+                    error(HttpStatus.CONFLICT, error.name(),
+                            "Otra promocion activa con la misma prioridad coincide en dias y productos.");
             case PROMOTION_REWARD_INVALID ->
                     error(HttpStatus.BAD_REQUEST, error.name(), "La promocion seleccionada ya no esta disponible para esta orden.");
             case INVALID_PROMOTION, PROMOTION_QUOTE_INVALID ->
@@ -65,6 +73,8 @@ public class PromotionApiExceptionHandler {
     }
 
     private ResponseEntity<PromotionApiError> error(HttpStatus status, String code, String message) {
+        LOGGER.warn("promotion_api_error requestId={} status={} code={}",
+                MDC.get("requestId"), status.value(), code);
         return ResponseEntity.status(status).body(new PromotionApiError(code, message));
     }
 }

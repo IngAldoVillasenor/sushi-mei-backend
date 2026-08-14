@@ -141,6 +141,81 @@ class PromotionControllerIntegrationTest {
                 .andExpect(jsonPath("$[0].name").value("Lunes aplicable"));
     }
 
+    @Test
+    void rejectsActivePromotionsThatCompeteForTheSameSchedulePriorityAndItem() throws Exception {
+        jdbcTemplate.update("""
+                insert into public.menu_items (name, category, price_amount, pricing_mode, active, available, standalone_orderable,
+                    display_order, created_at, updated_at, version)
+                values ('California', 'Rollos', 79.00, 'BASE_PLUS_ADJUSTMENTS', true, true, true, 0,
+                    current_timestamp, current_timestamp, 0)
+                """);
+        long itemId = jdbcTemplate.queryForObject("select id from public.menu_items where name = 'California'", Long.class);
+        jdbcTemplate.update("""
+                insert into public.catalog_tags (code, name, active, display_order, created_at, updated_at, version)
+                values ('ROLLO_CLASICO', 'Rollos clasicos', true, 0, current_timestamp, current_timestamp, 0)
+                """);
+        long tagId = jdbcTemplate.queryForObject("select id from public.catalog_tags where code = 'ROLLO_CLASICO'", Long.class);
+        jdbcTemplate.update("insert into public.menu_item_tags (menu_item_id, tag_id) values (?, ?)", itemId, tagId);
+
+        mockMvc.perform(post("/api/v1/promotions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Lunes $69","active":true,"priority":100,"benefitType":"FIXED_UNIT_PRICE",
+                                 "fixedUnitPrice":69.00,"daysOfWeek":[1],
+                                 "targets":[{"targetType":"TAG","targetId":%d}]}
+                                """.formatted(tagId)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/promotions")
+                        .header("X-Request-Id", "promotion-conflict-test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Otro lunes","active":true,"priority":100,"benefitType":"FIXED_UNIT_PRICE",
+                                 "fixedUnitPrice":70.00,"daysOfWeek":[1],
+                                 "targets":[{"targetType":"ITEM","targetId":%d}]}
+                                """.formatted(itemId)))
+                .andExpect(status().isConflict())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("X-Request-Id", "promotion-conflict-test"))
+                .andExpect(jsonPath("$.code").value("PROMOTION_SCHEDULE_CONFLICT"))
+                .andExpect(jsonPath("$.message").value(
+                        "Otra promocion activa con la misma prioridad coincide en dias y productos."));
+
+        mockMvc.perform(post("/api/v1/promotions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Jueves 2x1","active":true,"priority":100,"benefitType":"BUY_X_GET_Y_SAME_ITEM",
+                                 "buyQuantity":1,"rewardQuantity":1,"repeat":true,"daysOfWeek":[4],
+                                 "targets":[{"targetType":"TAG","targetId":%d}]}
+                                """.formatted(tagId)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void rejectsDirectTagOverlapEvenWhenTheTagHasNoMenuMembers() throws Exception {
+        jdbcTemplate.update("""
+                insert into public.catalog_tags (code, name, active, display_order, created_at, updated_at, version)
+                values ('FUTURE_ROLL', 'Future rolls', true, 0, current_timestamp, current_timestamp, 0)
+                """);
+        long tagId = jdbcTemplate.queryForObject("select id from public.catalog_tags where code = 'FUTURE_ROLL'", Long.class);
+        String first = """
+                {"name":"Martes futura","active":true,"priority":200,"benefitType":"FIXED_UNIT_PRICE",
+                 "fixedUnitPrice":69.00,"daysOfWeek":[2],
+                 "targets":[{"targetType":"TAG","targetId":%d}]}
+                """.formatted(tagId);
+        String conflicting = """
+                {"name":"Otro martes","active":true,"priority":200,"benefitType":"FIXED_UNIT_PRICE",
+                 "fixedUnitPrice":70.00,"daysOfWeek":[2],
+                 "targets":[{"targetType":"TAG","targetId":%d}]}
+                """.formatted(tagId);
+
+        mockMvc.perform(post("/api/v1/promotions").contentType(MediaType.APPLICATION_JSON).content(first))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/promotions").contentType(MediaType.APPLICATION_JSON).content(conflicting))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PROMOTION_SCHEDULE_CONFLICT"));
+    }
+
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
         @Bean
