@@ -377,9 +377,17 @@ class ManualPosOrderServiceIntegrationTest {
         promotionService.create(new CreatePromotionRequest("Uno", true, 10,
                 PromotionBenefitType.FIXED_UNIT_PRICE, new BigDecimal("69.00"), null, null, null, null, null,
                 Set.of(1), List.of(new PromotionTargetRequest(PromotionTargetType.ITEM, california.id()))));
-        promotionService.create(new CreatePromotionRequest("Dos", true, 10,
-                PromotionBenefitType.FIXED_UNIT_PRICE, new BigDecimal("68.00"), null, null, null, null, null,
-                Set.of(1), List.of(new PromotionTargetRequest(PromotionTargetType.ITEM, california.id()))));
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    created_at, updated_at, version)
+                values ('Dos', true, 10, 'FIXED_UNIT_PRICE', 68.00, current_timestamp, current_timestamp, 0)
+                """);
+        Long conflictingPromotionId = jdbcTemplate.queryForObject(
+                "select id from public.promotions where name = 'Dos'", Long.class);
+        jdbcTemplate.update("insert into public.promotion_weekdays (promotion_id, iso_day_of_week) values (?, 1)",
+                conflictingPromotionId);
+        jdbcTemplate.update("insert into public.promotion_targets (promotion_id, target_menu_item_id) values (?, ?)",
+                conflictingPromotionId, california.id());
 
         assertThatThrownBy(() -> manualPosOrderService.create(insertUser("cashier-conflict"),
                 request(UUID.randomUUID(), california.id(), 1)))
