@@ -49,6 +49,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V9_SCRIPT = "V9__add_application_security.sql";
     private static final String V10_SCRIPT = "V10__add_manual_pos_order_foundations.sql";
     private static final String V11_SCRIPT = "V11__add_authoritative_catalog_rules.sql";
+    private static final String V12_SCRIPT = "V12__add_authoritative_promotion_rules.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -83,7 +84,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 9, "SQL", V9_SCRIPT);
         assertSqlMigration(jdbcTemplate, 10, "SQL", V10_SCRIPT);
         assertSqlMigration(jdbcTemplate, 11, "SQL", V11_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("11");
+        assertSqlMigration(jdbcTemplate, 12, "SQL", V12_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("12");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -106,6 +108,7 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "AUTH_REFRESH_TOKEN_HISTORY");
         assertTableExists(jdbcTemplate, "SECURITY_AUDIT_EVENTS");
         assertTableExists(jdbcTemplate, "ORDER_LINE_SELECTION_SNAPSHOTS");
+        assertTableExists(jdbcTemplate, "PROMOTION_BOOTSTRAP_RULE_SETS");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
         assertThat(constraintCount(jdbcTemplate, "CART_ITEMS", "FOREIGN KEY")).isEqualTo(1);
@@ -142,11 +145,13 @@ class FlywayBaselineIntegrationTest {
         assertSecuritySchema(jdbcTemplate);
         assertManualPosOrderSchema(jdbcTemplate);
         assertAuthoritativeCatalogRulesSchema(jdbcTemplate);
+        assertAuthoritativePromotionRulesSchema(jdbcTemplate);
         assertAuthoritativeCatalogBootstrapData(jdbcTemplate);
+        assertAuthoritativePromotionBootstrapData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV11AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV12AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -163,7 +168,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 9, "SQL", V9_SCRIPT);
         assertSqlMigration(jdbcTemplate, 10, "SQL", V10_SCRIPT);
         assertSqlMigration(jdbcTemplate, 11, "SQL", V11_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("11");
+        assertSqlMigration(jdbcTemplate, 12, "SQL", V12_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("12");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -177,9 +183,14 @@ class FlywayBaselineIntegrationTest {
         assertSecuritySchema(jdbcTemplate);
         assertManualPosOrderSchema(jdbcTemplate);
         assertAuthoritativeCatalogRulesSchema(jdbcTemplate);
+        assertAuthoritativePromotionRulesSchema(jdbcTemplate);
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from public.catalog_bootstrap_rule_sets
                 where rule_set_id = 'PHASE_6F1_AUTHORITATIVE_CATALOG_RULES' and applied_at is null
+                """, Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.promotion_bootstrap_rule_sets
+                where rule_set_id = 'PHASE_6G_P0_A_AUTHORITATIVE_TEMPORAL_PROMOTIONS' and applied_at is null
                 """, Integer.class)).isEqualTo(1);
         jdbcTemplate.update("""
                 insert into public.menu_items (name, category, price_amount, pricing_mode, active, available,
@@ -299,6 +310,7 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 9, "SQL", V9_SCRIPT);
         assertSqlMigration(jdbcTemplate, 10, "SQL", V10_SCRIPT);
         assertSqlMigration(jdbcTemplate, 11, "SQL", V11_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 12, "SQL", V12_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
@@ -309,8 +321,9 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 9)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 10)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 11)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("11");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 16);
+        assertThat(historyCount(jdbcTemplate, 12)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("12");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 17);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -674,6 +687,7 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_weekdays", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_targets", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.catalog_bootstrap_rule_sets", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_bootstrap_rule_sets", Integer.class)).isEqualTo(1);
     }
 
     private void assertSecuritySchema(JdbcTemplate jdbcTemplate) {
@@ -708,6 +722,14 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_rules", Integer.class)).isGreaterThan(0);
     }
 
+    private void assertAuthoritativePromotionBootstrapData(JdbcTemplate jdbcTemplate) {
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotions", Integer.class)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.promotion_bootstrap_rule_sets
+                where rule_set_id = 'PHASE_6G_P0_A_AUTHORITATIVE_TEMPORAL_PROMOTIONS' and applied_at is not null
+                """, Integer.class)).isEqualTo(1);
+    }
+
     private void assertAuthoritativeCatalogRulesSchema(JdbcTemplate jdbcTemplate) {
         assertColumnPresent(jdbcTemplate, "MENU_ITEMS", "PRICING_MODE");
         assertThat(namedConstraintExists(jdbcTemplate, "MENU_ITEMS", "MENU_ITEMS_PRICING_MODE_CHECK")).isTrue();
@@ -715,6 +737,12 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "CATALOG_BOOTSTRAP_RULE_SETS");
         assertThat(namedConstraintExists(jdbcTemplate, "CATALOG_BOOTSTRAP_RULE_SETS",
                 "CATALOG_BOOTSTRAP_RULE_SETS_RULE_SET_ID_NOT_BLANK_CHECK")).isTrue();
+    }
+
+    private void assertAuthoritativePromotionRulesSchema(JdbcTemplate jdbcTemplate) {
+        assertTableExists(jdbcTemplate, "PROMOTION_BOOTSTRAP_RULE_SETS");
+        assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_BOOTSTRAP_RULE_SETS",
+                "PROMOTION_BOOTSTRAP_RULE_SETS_RULE_SET_ID_NOT_BLANK_CHECK")).isTrue();
     }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {

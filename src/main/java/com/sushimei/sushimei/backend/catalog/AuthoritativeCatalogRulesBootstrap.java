@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -33,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
  * initial 121 rows; it never invokes RAG ingestion or writes descriptions.
  */
 @Component
+@Order(100)
 class AuthoritativeCatalogRulesBootstrap implements ApplicationRunner {
 
     private final AuthoritativeCatalogRulesService rulesService;

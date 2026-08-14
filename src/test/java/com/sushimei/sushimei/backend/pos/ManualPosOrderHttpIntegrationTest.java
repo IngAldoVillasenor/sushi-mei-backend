@@ -59,6 +59,9 @@ class ManualPosOrderHttpIntegrationTest {
         jdbcTemplate.update("delete from public.auth_refresh_token_history");
         jdbcTemplate.update("delete from public.auth_sessions");
         jdbcTemplate.update("delete from public.app_users");
+        jdbcTemplate.update("delete from public.promotion_targets");
+        jdbcTemplate.update("delete from public.promotion_weekdays");
+        jdbcTemplate.update("delete from public.promotions");
         jdbcTemplate.update("delete from public.menu_item_tags");
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
