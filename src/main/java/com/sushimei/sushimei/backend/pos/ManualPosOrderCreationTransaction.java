@@ -107,8 +107,7 @@ class ManualPosOrderCreationTransaction {
         order.setPhoneNumber(null);
         order.setTotalAmountAmount(money.numericAmount());
         order.setTotalAmount(money.legacyAmount());
-        order.setStatus(request.paymentMethod() == com.sushimei.sushimei.backend.entity.OrderPaymentMethod.TRANSFER
-                ? "PENDING_VALIDATION" : "PENDING");
+        order.setStatus("PREPARING");
         order.setCreatedAt(LocalDateTime.ofInstant(quote.quotedAt(), ZoneOffset.UTC));
         order.setOrderDetails(ManualPosOrderLegacyDetailsFormatter.format(quote));
         return order;

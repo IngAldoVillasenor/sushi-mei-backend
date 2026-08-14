@@ -50,13 +50,19 @@ public class TemporalPromotionQuoteService {
     }
 
     @Transactional(readOnly = true)
+    public List<PromotionResponse> listApplicable() {
+        LocalDate businessDate = clock.instant().atZone(businessZone).toLocalDate();
+        return applicablePromotions(businessDate).stream().map(PromotionResponse::from).toList();
+    }
+
+    @Transactional(readOnly = true)
     public PromotionQuoteResponse quote(PromotionQuoteRequest request) {
         if (request == null || request.lines() == null || request.lines().isEmpty()) {
             throw invalidQuote();
         }
         Instant quotedAt = clock.instant();
         LocalDate businessDate = quotedAt.atZone(businessZone).toLocalDate();
-        List<Promotion> activePromotions = promotionRepository.findByActiveTrueOrderByPriorityDescIdAsc();
+        List<Promotion> applicablePromotions = applicablePromotions(businessDate);
         Set<String> lineKeys = new HashSet<>();
         List<PromotionQuoteLineResponse> lines = new ArrayList<>();
         BigDecimal catalogBaseSubtotal = zero();
@@ -70,7 +76,7 @@ public class TemporalPromotionQuoteService {
                     || !lineKeys.add(line.lineKey().trim())) {
                 throw invalidQuote();
             }
-            QuotedLine quoted = quoteLine(line, businessDate, activePromotions);
+            QuotedLine quoted = quoteLine(line, applicablePromotions);
             lines.add(quoted.response());
             catalogBaseSubtotal = addNonNegative(catalogBaseSubtotal, quoted.catalogBaseTotal());
             configurationAdjustmentTotal = addNonNegative(configurationAdjustmentTotal, quoted.configurationAdjustmentTotal());
@@ -82,13 +88,12 @@ public class TemporalPromotionQuoteService {
     }
 
     private QuotedLine quoteLine(PromotionQuoteLineRequest line,
-                                 LocalDate businessDate,
-                                 List<Promotion> activePromotions) {
+                                 List<Promotion> applicablePromotions) {
         String lineKey = line.lineKey().trim();
         MenuItemQuoteResponse catalogQuote = catalogConfigurationService.quote(line.menuItemId(),
                 new MenuItemQuoteRequest(line.quantity(), line.groups()));
         MenuItem rootItem = menuCatalogRepository.findById(line.menuItemId()).orElseThrow(this::invalidQuote);
-        Promotion promotion = resolvePromotion(rootItem, businessDate, activePromotions);
+        Promotion promotion = resolvePromotion(rootItem, applicablePromotions);
         BigDecimal catalogBaseUnit = catalogQuote.baseUnitPrice();
         BigDecimal catalogBaseTotal = catalogQuote.baseTotal();
         BigDecimal configurationTotal = multiplyNonNegative(catalogQuote.unitAdjustmentTotal(), line.quantity());
@@ -173,10 +178,8 @@ public class TemporalPromotionQuoteService {
     }
 
     private Promotion resolvePromotion(MenuItem rootItem,
-                                       LocalDate businessDate,
-                                       List<Promotion> activePromotions) {
-        List<Promotion> matches = activePromotions.stream()
-                .filter(promotion -> appliesOn(promotion, businessDate))
+                                       List<Promotion> applicablePromotions) {
+        List<Promotion> matches = applicablePromotions.stream()
                 .filter(promotion -> targets(promotion, rootItem))
                 .toList();
         if (matches.isEmpty()) {
@@ -188,6 +191,12 @@ public class TemporalPromotionQuoteService {
             throw new PromotionException(PromotionError.PROMOTION_CONFIGURATION_CONFLICT);
         }
         return highest.get(0);
+    }
+
+    private List<Promotion> applicablePromotions(LocalDate businessDate) {
+        return promotionRepository.findByActiveTrueOrderByPriorityDescIdAsc().stream()
+                .filter(promotion -> appliesOn(promotion, businessDate))
+                .toList();
     }
 
     private boolean appliesOn(Promotion promotion, LocalDate businessDate) {

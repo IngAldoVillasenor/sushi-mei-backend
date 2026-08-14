@@ -92,6 +92,7 @@ class ManualPosOrderHttpIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PREPARING"))
                 .andExpect(jsonPath("$.createdAt").value(TestInfrastructureConfiguration.ORDER_TIME.toString()));
     }
 
