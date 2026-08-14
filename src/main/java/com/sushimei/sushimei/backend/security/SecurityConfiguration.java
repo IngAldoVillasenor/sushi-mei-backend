@@ -63,6 +63,8 @@ public class SecurityConfiguration {
                         .requestMatchers("/api/v1/menu/items/*/configuration").hasAnyRole("OWNER", "MANAGER", "CASHIER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/menu/items/**").authenticated()
                         .requestMatchers("/api/v1/menu/**").hasAnyRole("OWNER", "MANAGER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/promotions/active")
+                        .hasAnyRole("OWNER", "MANAGER", "CASHIER")
                         .requestMatchers("/api/v1/promotions/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/orders/active", "/api/v1/orders/*")
                         .hasAnyRole("OWNER", "MANAGER", "CASHIER", "KITCHEN")
