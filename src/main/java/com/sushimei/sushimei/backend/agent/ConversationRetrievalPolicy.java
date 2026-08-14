@@ -36,14 +36,15 @@ public class ConversationRetrievalPolicy {
 
         return shouldRetrieve(message)
                 && !AiToolSafetyGuard.isCurrentCartQuery(normalized)
+                && !AiToolSafetyGuard.isAddRequest(message)
                 && !containsAction(tokens, Set.of(
-                "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye",
                 "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta", "restar", "saca", "sacar"));
     }
     private boolean isGreetingOrGeneralConversation(Set<String> tokens) {
         return tokens.stream().anyMatch(token -> Set.of("hola", "buenas", "buenos", "gracias", "como", "estas").contains(token))
                 && !containsCatalogSignal(tokens)
-                && !containsAction(tokens, Set.of("quiero", "quisiera", "dame", "ponme", "agrega", "agregame", "anade", "incluye"));
+                && !containsAction(tokens, Set.of("quiero", "quisiera", "dame", "ponme", "agrega", "agregame", "anade", "incluye",
+                "ordena", "ordenar", "ordenarme", "pido", "pedir"));
     }
 
     private boolean isFinishIntent(String normalized) {
@@ -61,12 +62,12 @@ public class ConversationRetrievalPolicy {
     }
 
     private boolean isGenericProductRequest(Set<String> tokens) {
-        return containsAction(tokens, Set.of("quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye"))
+        return AiToolSafetyGuard.isAddRequest(String.join(" ", tokens))
                 && !hasSpecificProductToken(tokens);
     }
 
     private boolean isSpecificAddRequest(Set<String> tokens) {
-        return containsAction(tokens, Set.of("quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye"))
+        return AiToolSafetyGuard.isAddRequest(String.join(" ", tokens))
                 && hasSpecificProductToken(tokens);
     }
 
@@ -83,7 +84,7 @@ public class ConversationRetrievalPolicy {
         return tokens.stream().anyMatch(token -> !Set.of(
                 "a", "al", "con", "de", "del", "el", "la", "las", "lo", "los", "me", "mi", "para", "por", "que",
                 "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye", "un",
-                "una", "unos", "unas", "y", "orden", "ordenes", "pedido", "platillo", "platillos", "producto", "productos",
+                "ordena", "ordenar", "ordenarme", "pido", "pedir", "una", "unos", "unas", "y", "favor", "otro", "otra", "orden", "ordenes", "pedido", "platillo", "platillos", "producto", "productos",
                 "roll", "rollo", "rollos", "bebida", "bebidas", "refresco", "refrescos", "sushi", "comida", "algo", "eso",
                 "esa", "ese", "esta", "este").contains(token));
     }

@@ -16,18 +16,27 @@ import java.util.function.Supplier;
 public class AiToolSafetyGuard {
 
     private static final Set<String> ADD_ACTIONS = Set.of(
-            "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye");
+            "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye",
+            "ordena", "ordenar", "ordenarme", "pido", "pedir");
     private static final Set<String> REMOVE_ACTIONS = Set.of(
             "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta", "restar", "saca", "sacar");
     private static final Set<String> SIMPLE_GREETING_TOKENS = Set.of(
             "hola", "buenas", "buenos", "dias", "tardes", "noches");
     private static final Set<String> AMBIGUOUS_REFERENCE_TOKENS = Set.of(
             "ese", "esa", "esto", "esta", "melo", "lo", "la");
+    private static final Set<String> IMPLICIT_ADD_MARKERS = Set.of(
+            "un", "una", "unos", "unas", "por", "favor", "y", "tambien", "otro", "otra");
+    private static final Set<String> INFORMATION_REQUEST_TOKENS = Set.of(
+            "que", "cual", "cuales", "cuanto", "cuantos", "cuesta", "cuestan", "precio", "precios", "tienen",
+            "venden", "lleva", "incluye", "ingredientes", "contiene");
+    private static final Set<String> AMBIGUOUS_PRODUCT_MODIFIERS = Set.of(
+            "charola", "familiar", "supreme", "combo", "paquete", "box");
     private static final Set<String> NON_PRODUCT_TOKENS = Set.of(
             "a", "al", "con", "de", "del", "el", "ella", "ellos", "esa", "ese", "esto", "la", "las", "lo", "los",
             "me", "mi", "para", "por", "que", "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega",
             "agregame", "anade", "incluye", "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta",
-            "restar", "saca", "sacar", "tambien", "un", "una", "unos", "unas", "y", "orden", "ordenes", "pedido",
+            "ordena", "ordenar", "ordenarme", "pido", "pedir", "restar", "saca", "sacar", "tambien", "un", "una",
+            "unos", "unas", "y", "favor", "otro", "otra", "orden", "ordenes", "pedido",
             "platillo", "platillos", "producto", "productos", "roll", "rollo", "rollos", "bebida", "bebidas", "refresco",
             "refrescos", "sushi", "comida", "algo", "eso", "esta", "este");
 
@@ -57,7 +66,8 @@ public class AiToolSafetyGuard {
         if (context == null) {
             return;
         }
-        if (!containsAnyToken(context.messageTokens(), ADD_ACTIONS) || !hasExplicitDishReference(context.messageTokens(), dishName)) {
+        if (!isAddRequest(context.normalizedMessage())
+                || !hasExplicitDishReference(context.messageTokens(), dishName)) {
             throw new AiToolSafetyException(AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
         }
     }
@@ -134,6 +144,19 @@ public class AiToolSafetyGuard {
                 || normalized.contains("ya acabamos");
     }
 
+    static boolean isAddRequest(String message) {
+        String normalized = normalize(message);
+        Set<String> messageTokens = tokens(normalized);
+        return containsAnyToken(messageTokens, ADD_ACTIONS) || isImplicitAddSelection(messageTokens);
+    }
+
+    private static boolean isImplicitAddSelection(Set<String> messageTokens) {
+        return !messageTokens.isEmpty()
+                && containsAnyToken(messageTokens, IMPLICIT_ADD_MARKERS)
+                && !containsAnyToken(messageTokens, INFORMATION_REQUEST_TOKENS)
+                && hasPotentialProductToken(messageTokens);
+    }
+
     static boolean isSimpleGreeting(String message) {
         Set<String> tokens = tokens(message);
         return !tokens.isEmpty() && SIMPLE_GREETING_TOKENS.containsAll(tokens);
@@ -166,13 +189,35 @@ public class AiToolSafetyGuard {
     }
 
     static boolean hasExplicitDishReference(Set<String> messageTokens, String dishName) {
-        return dishTokens(dishName).stream().anyMatch(messageTokens::contains);
+        Set<String> identityTokens = dishTokens(dishName);
+        if (identityTokens.isEmpty()) {
+            return false;
+        }
+
+        Set<String> numericIdentityTokens = identityTokens.stream()
+                .filter(token -> token.chars().allMatch(Character::isDigit))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        if (!messageTokens.containsAll(numericIdentityTokens)) {
+            return false;
+        }
+
+        Set<String> distinctiveTokens = identityTokens.stream()
+                .filter(token -> !token.chars().allMatch(Character::isDigit))
+                .filter(token -> !AMBIGUOUS_PRODUCT_MODIFIERS.contains(token))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        if (!distinctiveTokens.isEmpty()) {
+            return distinctiveTokens.stream().anyMatch(messageTokens::contains);
+        }
+
+        return identityTokens.stream()
+                .filter(token -> !token.chars().allMatch(Character::isDigit))
+                .anyMatch(messageTokens::contains);
     }
 
     static Set<String> dishTokens(String value) {
         Set<String> tokens = new HashSet<>(tokens(value));
         tokens.removeAll(NON_PRODUCT_TOKENS);
-        tokens.removeIf(token -> token.length() < 3 || token.chars().allMatch(Character::isDigit));
+        tokens.removeIf(token -> token.length() < 3 && !token.chars().allMatch(Character::isDigit));
         return tokens;
     }
 

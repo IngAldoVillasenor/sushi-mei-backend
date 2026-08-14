@@ -10,6 +10,7 @@ import com.sushimei.sushimei.backend.checkout.EmptyCartException;
 import com.sushimei.sushimei.backend.checkout.MultipleActiveCartsException;
 import com.sushimei.sushimei.backend.checkout.OrderService;
 import com.sushimei.sushimei.backend.entity.OrderSource;
+import com.sushimei.sushimei.backend.service.CartService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
@@ -32,20 +33,32 @@ public class WhatsAppCheckoutFlowService {
     private final CheckoutIntentRouter intentRouter;
     private final CartSnapshotService cartSnapshotService;
     private final OrderService orderService;
+    private final CartService cartService;
 
     public WhatsAppCheckoutFlowService(ConversationSessionService sessionService,
                                        CheckoutIntentRouter intentRouter,
                                        CartSnapshotService cartSnapshotService,
-                                       OrderService orderService) {
+                                       OrderService orderService,
+                                       CartService cartService) {
         this.sessionService = Objects.requireNonNull(sessionService, "sessionService must not be null");
         this.intentRouter = Objects.requireNonNull(intentRouter, "intentRouter must not be null");
         this.cartSnapshotService = Objects.requireNonNull(cartSnapshotService,
                 "cartSnapshotService must not be null");
         this.orderService = Objects.requireNonNull(orderService, "orderService must not be null");
+        this.cartService = Objects.requireNonNull(cartService, "cartService must not be null");
     }
 
     public Optional<String> handleText(String phoneNumber, String message) {
         ConversationSession session = sessionService.getOrCreateSession(phoneNumber);
+        if (WhatsAppCheckoutMessageParser.isClearCart(message)) {
+            boolean cleared = cartService.clearCart(phoneNumber);
+            sessionService.resetSession(phoneNumber);
+            LOGGER.info("whatsapp_cart_reset requestId={} outcome={}", MDC.get("requestId"),
+                    cleared ? "CLEARED" : "ALREADY_EMPTY");
+            return Optional.of(cleared
+                    ? "Listo, vacié tu carrito. Dime nuevamente qué productos deseas agregar."
+                    : "Tu carrito ya estaba vacío. Dime qué productos deseas agregar.");
+        }
         if (session.getState() == ConversationState.CANCELLED) {
             sessionService.resetSession(phoneNumber);
             return Optional.empty();

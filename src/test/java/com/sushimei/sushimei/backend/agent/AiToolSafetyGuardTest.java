@@ -27,6 +27,30 @@ class AiToolSafetyGuardTest {
     }
 
     @Test
+    void naturalFollowUpCanAddTheExactNamedPresentation() {
+        guard.withinTextTurn("Y una Coca de 1.75 L", () -> {
+            guard.requireAddAllowed("Coca 1.75 ml (Refresco)");
+            return null;
+        });
+    }
+
+    @Test
+    void naturalFollowUpCannotSelectADifferentSizeOrAmbiguousFamilyVariant() {
+        assertBlocked("Y una Coca de 1.75 L", () -> guard.requireAddAllowed("Coca 600 ml (Refresco)"),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+        assertBlocked("Una Charola Familiar por favor", () -> guard.requireAddAllowed("Clásica Familiar"),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+    }
+
+    @Test
+    void orderingVerbCanAddTheNamedProduct() {
+        guard.withinTextTurn("Deseo ordenar una Clásica Familiar", () -> {
+            guard.requireAddAllowed("Clásica Familiar");
+            return null;
+        });
+    }
+
+    @Test
     void genericCategoriesCannotSelectArbitraryProducts() {
         assertBlocked("Ponme un rollo y una bebida", () -> guard.requireAddAllowed("Rollo Empanizado"),
                 AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);

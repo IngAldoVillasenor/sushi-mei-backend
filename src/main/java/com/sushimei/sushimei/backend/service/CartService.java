@@ -149,11 +149,14 @@ public class CartService {
     }
 
     @Transactional
-    public void clearCart(String phoneNumber) {
-        cartRepository.findOpenCartByPhoneNumberForUpdate(phoneNumber).ifPresent(cart -> {
-            cart.setStatus("CLOSED");
-            cartRepository.save(cart);
-        });
+    public boolean clearCart(String phoneNumber) {
+        Optional<Cart> cart = cartRepository.findOpenCartByPhoneNumberForUpdate(phoneNumber);
+        if (cart.isEmpty()) {
+            return false;
+        }
+        cart.get().setStatus("CLOSED");
+        cartRepository.save(cart.get());
+        return true;
     }
 
     @Transactional

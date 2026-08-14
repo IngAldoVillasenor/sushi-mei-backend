@@ -53,6 +53,19 @@ final class WhatsAppCheckoutMessageParser {
         return containsAny(message, CANCEL);
     }
 
+    static boolean isClearCart(String message) {
+        Set<String> messageTokens = tokens(message);
+        if (!messageTokens.contains("carrito")) {
+            return false;
+        }
+        boolean directClear = messageTokens.stream().anyMatch(Set.of(
+                "vaciar", "vacia", "vacie", "limpiar", "limpia", "borra", "borrar")::contains);
+        boolean removeAll = messageTokens.stream().anyMatch(Set.of(
+                "quita", "quitar", "elimina", "eliminar", "saca", "sacar")::contains)
+                && messageTokens.stream().anyMatch(Set.of("todo", "todos")::contains);
+        return directClear || removeAll;
+    }
+
     static FulfillmentType fulfillment(String message) {
         Set<String> tokens = tokens(message);
         boolean delivery = tokens.stream().anyMatch(DELIVERY::contains);

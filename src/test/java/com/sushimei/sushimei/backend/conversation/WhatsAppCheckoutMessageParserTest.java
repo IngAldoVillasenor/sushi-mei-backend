@@ -30,4 +30,12 @@ class WhatsAppCheckoutMessageParserTest {
         assertThat(WhatsAppCheckoutMessageParser.payment("efectivo o transferencia"))
                 .isNull();
     }
+
+    @Test
+    void recognizesOnlyExplicitWholeCartResetRequests() {
+        assertThat(WhatsAppCheckoutMessageParser.isClearCart("Puedes vaciar el carrito por favor")).isTrue();
+        assertThat(WhatsAppCheckoutMessageParser.isClearCart("Quita todo del carrito")).isTrue();
+        assertThat(WhatsAppCheckoutMessageParser.isClearCart("Todos")).isFalse();
+        assertThat(WhatsAppCheckoutMessageParser.isClearCart("Cancela el pedido")).isFalse();
+    }
 }

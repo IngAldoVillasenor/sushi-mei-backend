@@ -119,6 +119,26 @@ class AiConversationServiceTest {
     }
 
     @Test
+    void naturalFollowUpAddReturnsItsAuthoritativeToolResponse() {
+        CartService cartService = mock(CartService.class);
+        when(cartService.getCartContents(PHONE_NUMBER)).thenReturn("Detalle exacto del carrito");
+        AiToolSafetyGuard guard = new AiToolSafetyGuard();
+        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Y una Coca de 1.75 L"))
+                .thenAnswer(invocation -> {
+                    tools.addDishToCart(PHONE_NUMBER, "Coca 1.75 ml (Refresco)", 1, 45.0);
+                    return GENERIC_MODEL_RESPONSE;
+                });
+
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Y una Coca de 1.75 L");
+
+        assertThat(response).contains("1 x Coca 1.75 ml (Refresco)", "Detalle exacto del carrito")
+                .doesNotContain(GENERIC_MODEL_RESPONSE);
+        verify(cartService).addItem(PHONE_NUMBER, "Coca 1.75 ml (Refresco)", 1, 45.0);
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
     void successfulRemoveReturnsItsAuthoritativeToolResponseInsteadOfGenericModelText() {
         CartService cartService = mock(CartService.class);
         when(cartService.removeItem(PHONE_NUMBER, "Coca Cola", 1)).thenReturn("El carrito est\u00e1 vac\u00edo.");
@@ -173,6 +193,18 @@ class AiConversationServiceTest {
 
         assertThat(response).contains("producto");
         verifyNoInteractions(cartService, catalogAgent);
+    }
+
+    @Test
+    void modelCannotClaimAnAddWhenNoToolWasExecuted() {
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Una Charola Familiar por favor"))
+                .thenReturn("Listo, agregué una charola a tu carrito.");
+
+        String response = service(new AiToolSafetyGuard())
+                .chat(MEMORY_ID, PHONE_NUMBER, "Una Charola Familiar por favor");
+
+        assertThat(response).contains("No pude verificar").doesNotContain("agregué una charola");
+        verifyNoInteractions(catalogAgent);
     }
 
     @Test

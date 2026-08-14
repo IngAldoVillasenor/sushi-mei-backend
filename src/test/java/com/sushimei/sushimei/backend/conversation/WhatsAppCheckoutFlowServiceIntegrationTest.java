@@ -139,6 +139,25 @@ class WhatsAppCheckoutFlowServiceIntegrationTest {
                 .isEqualTo(ConversationState.ORDERING);
     }
 
+    @Test
+    void explicitCartResetClosesTheAbandonedCartAndRestartsOrdering() {
+        String phone = "525512340005";
+        Cart abandonedCart = openCart(phone, item("Empanizado ebi", 3, "99.00"));
+        text(phone, "ya sería todo");
+        assertThat(sessionService.findSession(phone).orElseThrow().getState())
+                .isEqualTo(ConversationState.WAITING_CART_CONFIRMATION);
+
+        assertThat(text(phone, "Puedes vaciar el carrito por favor"))
+                .contains("vacié tu carrito");
+
+        assertThat(cartRepository.findById(abandonedCart.getId()).orElseThrow().getStatus())
+                .isEqualTo("CLOSED");
+        assertThat(sessionService.findSession(phone).orElseThrow().getState())
+                .isEqualTo(ConversationState.ORDERING);
+        assertThat(text(phone, "ya sería todo"))
+                .contains("carrito está vacío");
+    }
+
     private String text(String phone, String message) {
         return flowService.handleText(phone, message).orElseThrow();
     }

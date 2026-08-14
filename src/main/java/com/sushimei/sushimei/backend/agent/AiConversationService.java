@@ -14,7 +14,8 @@ public class AiConversationService {
     private static final String FINISH_ORDER_RESPONSE = "Perfecto, tomo nota de que por ahora no deseas agregar m\u00e1s. "
             + "Si necesitas cambiar algo, dime el producto que deseas agregar o quitar.";
     private static final String GREETING_RESPONSE = "\u00a1Hola! Soy el asistente de Sushi Mei. \u00bfQu\u00e9 te gustar\u00eda pedir hoy?";
-    private static final String ADD_CLARIFICATION_RESPONSE = "Claro. \u00bfQu\u00e9 producto deseas agregar?";
+    private static final String ADD_CLARIFICATION_RESPONSE = "Claro. \u00bfQu\u00e9 producto y presentaci\u00f3n exactos deseas agregar? "
+            + "Por ejemplo, indica el tipo de charola o el tama\u00f1o de la bebida.";
     private static final String REMOVE_CLARIFICATION_RESPONSE = "Claro. \u00bfQu\u00e9 producto deseas quitar?";
     private static final String AMBIGUOUS_REFERENCE_RESPONSE = "Claro. \u00bfQu\u00e9 producto deseas agregar o quitar?";
     private static final String MUTATION_FAILURE_RESPONSE =
@@ -23,6 +24,8 @@ public class AiConversationService {
             "No puedo confirmar una orden todav\u00eda. La finalizaci\u00f3n se procesa por un flujo separado.";
     private static final String CATALOG_OPERATION_CLAIM_RESPONSE =
             "Puedo ayudarte con informaci\u00f3n del men\u00fa. \u00bfQu\u00e9 producto deseas consultar?";
+    private static final String UNVERIFIED_OPERATION_CLAIM_RESPONSE =
+            "No pude verificar ese cambio en tu carrito. Ind\u00edcame el producto y la presentaci\u00f3n exactos para intentarlo nuevamente.";
     private static final Set<String> OPERATION_SUCCESS_TOKENS = Set.of(
             "agregue", "agrego", "agregado", "anadi", "anadio", "anadido",
             "quite", "quito", "quitado", "elimine", "elimino", "eliminado");
@@ -79,6 +82,10 @@ public class AiConversationService {
         AiToolTurnResult<String> result = toolSafetyGuard.executeTextTurn(message,
                 () -> invokeAgent(memoryId, phoneNumber, message));
         return safeResponseFor(result.mutationOutcome()).orElseGet(() -> authoritativeResponseFor(result).orElseGet(() -> {
+            if (containsOperationalClaim(result.value())) {
+                log.warn("AI conversation outcome=MODEL_RESPONSE_BLOCKED reason=UNVERIFIED_OPERATIONAL_CLAIM");
+                return UNVERIFIED_OPERATION_CLAIM_RESPONSE;
+            }
             log.info("AI conversation outcome=MODEL_RESPONSE");
             return result.value();
         }));

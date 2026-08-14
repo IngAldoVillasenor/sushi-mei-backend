@@ -16,6 +16,8 @@ class ConversationRetrievalPolicyTest {
         assertThat(policy.shouldRetrieve("Que lleva el California?")).isTrue();
         assertThat(policy.shouldRetrieve("Quiero un California")).isTrue();
         assertThat(policy.shouldRetrieve("Quiero dos ordenes de camarones de 4")).isTrue();
+        assertThat(policy.shouldRetrieve("Una Clásica Familiar por favor")).isTrue();
+        assertThat(policy.shouldRetrieve("Y una Coca de 1.75 L")).isTrue();
     }
 
     @Test
@@ -34,6 +36,8 @@ class ConversationRetrievalPolicyTest {
         assertThat(policy.isReadOnlyCatalogTurn("Que lleva el California?")).isTrue();
         assertThat(policy.isReadOnlyCatalogTurn("Que llevo?")).isFalse();
         assertThat(policy.isReadOnlyCatalogTurn("Quiero un California")).isFalse();
+        assertThat(policy.isReadOnlyCatalogTurn("Una Clásica Familiar por favor")).isFalse();
+        assertThat(policy.isReadOnlyCatalogTurn("Y una Coca de 1.75 L")).isFalse();
         assertThat(policy.isReadOnlyCatalogTurn("Quita la Coca")).isFalse();
     }
 }
