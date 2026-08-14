@@ -13,9 +13,14 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 @RestControllerAdvice(assignableTypes = ManualPosOrderController.class)
 public class ManualPosOrderApiExceptionHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ManualPosOrderApiExceptionHandler.class);
 
     @ExceptionHandler(ManualPosOrderException.class)
     public ResponseEntity<ManualPosOrderApiError> manual(ManualPosOrderException exception) {
@@ -62,6 +67,8 @@ public class ManualPosOrderApiExceptionHandler {
     }
 
     private ResponseEntity<ManualPosOrderApiError> error(HttpStatus status, ManualPosOrderError code, String message) {
+        LOGGER.warn("manual_pos_api_error requestId={} status={} code={}",
+                MDC.get("requestId"), status.value(), code.name());
         return ResponseEntity.status(status).body(new ManualPosOrderApiError(code.name(), message));
     }
 }

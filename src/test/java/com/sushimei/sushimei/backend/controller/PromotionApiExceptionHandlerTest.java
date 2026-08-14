@@ -48,4 +48,15 @@ class PromotionApiExceptionHandlerTest {
                 "PROMOTION_REWARD_INVALID",
                 "La promocion seleccionada ya no esta disponible para esta orden."));
     }
+
+    @Test
+    void explainsConflictingActiveSchedules() {
+        ResponseEntity<PromotionApiError> response = handler.handlePromotion(
+                new PromotionException(PromotionError.PROMOTION_SCHEDULE_CONFLICT));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isEqualTo(new PromotionApiError(
+                "PROMOTION_SCHEDULE_CONFLICT",
+                "Otra promocion activa con la misma prioridad coincide en dias y productos."));
+    }
 }

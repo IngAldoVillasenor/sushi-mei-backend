@@ -5,6 +5,9 @@ import com.sushimei.sushimei.backend.catalog.CatalogTagRepository;
 import com.sushimei.sushimei.backend.catalog.MenuCatalogRepository;
 import com.sushimei.sushimei.backend.catalog.MenuItem;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +16,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -22,6 +26,7 @@ import java.util.Set;
 public class PromotionService {
 
     private static final int MAX_NAME_LENGTH = 160;
+    private static final Logger LOGGER = LoggerFactory.getLogger(PromotionService.class);
 
     private final PromotionRepository promotionRepository;
     private final MenuCatalogRepository menuCatalogRepository;
@@ -62,6 +67,7 @@ public class PromotionService {
         NormalizedPromotion normalized = normalize(request.name(), request.active() == null || request.active(), request.priority(),
                 request.benefitType(), request.fixedUnitPrice(), request.buyQuantity(), request.rewardQuantity(), request.repeat(),
                 request.validFrom(), request.validUntil(), request.daysOfWeek(), request.targets());
+        validateNoScheduleConflict(null, normalized);
         Instant now = clock.instant();
         Promotion promotion = Promotion.create(normalized.name(), normalized.active(), normalized.priority(), normalized.benefitType(),
                 normalized.fixedUnitPrice(), normalized.buyQuantity(), normalized.rewardQuantity(), normalized.repeat(),
@@ -81,6 +87,7 @@ public class PromotionService {
         NormalizedPromotion normalized = normalize(request.name(), requireBoolean(request.active()), request.priority(), request.benefitType(),
                 request.fixedUnitPrice(), request.buyQuantity(), request.rewardQuantity(), request.repeat(), request.validFrom(),
                 request.validUntil(), request.daysOfWeek(), request.targets());
+        validateNoScheduleConflict(promotion.getId(), normalized);
         promotion.update(normalized.name(), normalized.active(), normalized.priority(), normalized.benefitType(),
                 normalized.fixedUnitPrice(), normalized.buyQuantity(), normalized.rewardQuantity(), normalized.repeat(),
                 normalized.validFrom(), normalized.validUntil(), normalized.daysOfWeek(), normalized.targets(), clock.instant());
@@ -166,6 +173,82 @@ public class PromotionService {
             }
         }
         return targets;
+    }
+
+    private void validateNoScheduleConflict(Long promotionId, NormalizedPromotion candidate) {
+        if (!candidate.active()) {
+            return;
+        }
+        List<MenuItem> catalogItems = menuCatalogRepository.findAllByOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+        Set<Long> candidateItemIds = targetedItemIds(candidate.targets(), catalogItems);
+        Promotion conflict = promotionRepository.findByActiveTrueOrderByPriorityDescIdAsc().stream()
+                .filter(existing -> !Objects.equals(existing.getId(), promotionId))
+                .filter(existing -> existing.getPriority() == candidate.priority())
+                .filter(existing -> weekdaysOverlap(existing.getIsoWeekdays(), candidate.daysOfWeek()))
+                .filter(existing -> dateRangesOverlap(existing.getValidFrom(), existing.getValidUntil(),
+                        candidate.validFrom(), candidate.validUntil()))
+                .filter(existing -> targetsOverlap(existing, candidate.targets(), candidateItemIds, catalogItems))
+                .findFirst()
+                .orElse(null);
+        if (conflict != null) {
+            LOGGER.warn("promotion_schedule_conflict requestId={} candidateId={} conflictingId={} priority={}",
+                    MDC.get("requestId"), promotionId, conflict.getId(), candidate.priority());
+            throw new PromotionException(PromotionError.PROMOTION_SCHEDULE_CONFLICT);
+        }
+    }
+
+    private boolean targetsOverlap(Promotion existing,
+                                   List<PromotionTargetDraft> candidateTargets,
+                                   Set<Long> candidateItemIds,
+                                   List<MenuItem> catalogItems) {
+        List<PromotionTargetDraft> existingTargets = existing.getTargets().stream()
+                .map(target -> new PromotionTargetDraft(target.getTargetMenuItem(), target.getTargetTag()))
+                .toList();
+        if (directTargetsOverlap(existingTargets, candidateTargets)) {
+            return true;
+        }
+        Set<Long> existingItemIds = targetedItemIds(existingTargets, catalogItems);
+        return existingItemIds.stream().anyMatch(candidateItemIds::contains);
+    }
+
+    private boolean directTargetsOverlap(List<PromotionTargetDraft> left, List<PromotionTargetDraft> right) {
+        return left.stream().anyMatch(leftTarget -> right.stream().anyMatch(rightTarget ->
+                (leftTarget.targetMenuItem() != null && rightTarget.targetMenuItem() != null
+                        && Objects.equals(leftTarget.targetMenuItem().getId(), rightTarget.targetMenuItem().getId()))
+                        || (leftTarget.targetTag() != null && rightTarget.targetTag() != null
+                        && Objects.equals(leftTarget.targetTag().getId(), rightTarget.targetTag().getId()))));
+    }
+
+    private Set<Long> targetedItemIds(List<PromotionTargetDraft> targets, List<MenuItem> catalogItems) {
+        Set<Long> itemIds = new HashSet<>();
+        Set<Long> tagIds = new HashSet<>();
+        for (PromotionTargetDraft target : targets) {
+            if (target.targetMenuItem() != null) {
+                itemIds.add(target.targetMenuItem().getId());
+            }
+            if (target.targetTag() != null && target.targetTag().isActive()) {
+                tagIds.add(target.targetTag().getId());
+            }
+        }
+        if (!tagIds.isEmpty()) {
+            catalogItems.stream()
+                    .filter(item -> item.getTags().stream().anyMatch(tag -> tagIds.contains(tag.getId())))
+                    .map(MenuItem::getId)
+                    .forEach(itemIds::add);
+        }
+        return itemIds;
+    }
+
+    private boolean weekdaysOverlap(Set<Integer> left, Set<Integer> right) {
+        return left.stream().anyMatch(right::contains);
+    }
+
+    private boolean dateRangesOverlap(LocalDate leftFrom,
+                                      LocalDate leftUntil,
+                                      LocalDate rightFrom,
+                                      LocalDate rightUntil) {
+        return (leftUntil == null || rightFrom == null || !leftUntil.isBefore(rightFrom))
+                && (rightUntil == null || leftFrom == null || !rightUntil.isBefore(leftFrom));
     }
 
     private Promotion findPromotion(Long id) {

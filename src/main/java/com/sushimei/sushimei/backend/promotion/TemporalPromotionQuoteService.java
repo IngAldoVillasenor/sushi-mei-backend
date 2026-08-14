@@ -8,6 +8,9 @@ import com.sushimei.sushimei.backend.catalog.MenuItemQuoteRequest;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteResponse;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +29,8 @@ import java.util.Set;
 
 @Service
 public class TemporalPromotionQuoteService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TemporalPromotionQuoteService.class);
 
     private final PromotionRepository promotionRepository;
     private final MenuCatalogRepository menuCatalogRepository;
@@ -188,6 +193,9 @@ public class TemporalPromotionQuoteService {
         int highestPriority = matches.get(0).getPriority();
         List<Promotion> highest = matches.stream().filter(promotion -> promotion.getPriority() == highestPriority).toList();
         if (highest.size() != 1) {
+            LOGGER.warn("promotion_resolution_conflict requestId={} businessDate={} menuItemId={} priority={} promotionIds={}",
+                    MDC.get("requestId"), LocalDate.now(clock.withZone(businessZone)), rootItem.getId(), highestPriority,
+                    highest.stream().map(Promotion::getId).sorted().toList());
             throw new PromotionException(PromotionError.PROMOTION_CONFIGURATION_CONFLICT);
         }
         return highest.get(0);
