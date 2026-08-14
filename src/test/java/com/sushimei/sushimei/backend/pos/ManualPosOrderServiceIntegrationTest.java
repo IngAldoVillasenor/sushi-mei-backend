@@ -102,7 +102,7 @@ class ManualPosOrderServiceIntegrationTest {
         assertThat(created.result()).isEqualTo(ManualOrderResult.CREATED);
         assertThat(created.orderSource()).isEqualTo(OrderSource.ANDROID_MANUAL);
         assertThat(created.createdByUserId()).isEqualTo(userId);
-        assertThat(created.status()).isEqualTo("PENDING");
+        assertThat(created.status()).isEqualTo("PREPARING");
         assertThat(created.createdAt()).isEqualTo(TestClock.NOW.get());
         assertThat(created.cashDenomination()).isNull();
         assertThat(created.total()).isEqualByComparingTo("158.00");
@@ -162,7 +162,7 @@ class ManualPosOrderServiceIntegrationTest {
     }
 
     @Test
-    void transferStartsPendingValidationAndUsesTheQuoteInstantForCreatedAt() {
+    void trustedPosTransferStartsPreparingAndUsesTheQuoteInstantForCreatedAt() {
         MenuItemResponse california = item("California", "79.00");
         Instant quoteInstant = Instant.parse("2026-08-10T23:59:59Z");
         TestClock.setThenAdvance(quoteInstant, quoteInstant.plusSeconds(1));
@@ -172,7 +172,7 @@ class ManualPosOrderServiceIntegrationTest {
 
         ManualPosOrderResponse created = manualPosOrderService.create(insertUser("cashier-transfer"), request);
 
-        assertThat(created.status()).isEqualTo("PENDING_VALIDATION");
+        assertThat(created.status()).isEqualTo("PREPARING");
         assertThat(created.createdAt()).isEqualTo(quoteInstant);
         assertThat(created.cashDenomination()).isNull();
     }
@@ -194,7 +194,7 @@ class ManualPosOrderServiceIntegrationTest {
         assertThat(cash.cashDenomination()).isNull();
         assertThat(card.cashDenomination()).isNull();
         assertThat(card.paymentMethod()).isEqualTo(OrderPaymentMethod.CARD);
-        assertThat(card.status()).isEqualTo("PENDING");
+        assertThat(card.status()).isEqualTo("PREPARING");
     }
 
     @Test

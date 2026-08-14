@@ -45,7 +45,7 @@ public class PromotionController {
 
     @GetMapping("/active")
     public List<PromotionResponse> listActive() {
-        return promotionService.list(false);
+        return temporalPromotionQuoteService.listApplicable();
     }
 
     @GetMapping("/{id}")

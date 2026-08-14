@@ -25,7 +25,9 @@ public class PromotionApiExceptionHandler {
             case PROMOTION_NOT_FOUND -> error(HttpStatus.NOT_FOUND, error.name(), "Promocion no encontrada.");
             case PROMOTION_VERSION_CONFLICT, PROMOTION_CONFIGURATION_CONFLICT ->
                     error(HttpStatus.CONFLICT, error.name(), "La promocion cambio o tiene una configuracion conflictiva.");
-            case INVALID_PROMOTION, PROMOTION_QUOTE_INVALID, PROMOTION_REWARD_INVALID ->
+            case PROMOTION_REWARD_INVALID ->
+                    error(HttpStatus.BAD_REQUEST, error.name(), "La promocion seleccionada ya no esta disponible para esta orden.");
+            case INVALID_PROMOTION, PROMOTION_QUOTE_INVALID ->
                     error(HttpStatus.BAD_REQUEST, error.name(), "La solicitud de promocion no es valida.");
         };
     }

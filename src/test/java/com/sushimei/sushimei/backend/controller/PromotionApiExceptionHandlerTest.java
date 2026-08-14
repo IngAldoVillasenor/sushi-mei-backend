@@ -3,6 +3,8 @@ package com.sushimei.sushimei.backend.controller;
 import com.sushimei.sushimei.backend.catalog.CatalogConfigurationException;
 import com.sushimei.sushimei.backend.catalog.CatalogDomainError;
 import com.sushimei.sushimei.backend.promotion.Promotion;
+import com.sushimei.sushimei.backend.promotion.PromotionError;
+import com.sushimei.sushimei.backend.promotion.PromotionException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,5 +36,16 @@ class PromotionApiExceptionHandlerTest {
         assertThat(unavailable.getBody()).extracting(PromotionApiError::code).isEqualTo("MENU_ITEM_UNAVAILABLE");
         assertThat(incomplete.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(incomplete.getBody()).extracting(PromotionApiError::code).isEqualTo("MENU_CONFIGURATION_INCOMPLETE");
+    }
+
+    @Test
+    void explainsWhenASelectedPromotionIsNoLongerApplicable() {
+        ResponseEntity<PromotionApiError> response = handler.handlePromotion(
+                new PromotionException(PromotionError.PROMOTION_REWARD_INVALID));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isEqualTo(new PromotionApiError(
+                "PROMOTION_REWARD_INVALID",
+                "La promocion seleccionada ya no esta disponible para esta orden."));
     }
 }

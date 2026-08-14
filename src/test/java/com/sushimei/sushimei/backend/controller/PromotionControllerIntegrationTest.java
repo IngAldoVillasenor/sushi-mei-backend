@@ -13,10 +13,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -100,29 +105,49 @@ class PromotionControllerIntegrationTest {
     }
 
     @Test
-    void activeEndpointReturnsOnlyActivePromotionDefinitions() throws Exception {
+    void activeEndpointReturnsOnlyPromotionsApplicableOnTheBusinessDate() throws Exception {
         jdbcTemplate.update("""
                 insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
                     buy_quantity, reward_quantity, repeat_enabled, valid_from, valid_until, created_at, updated_at, version)
-                values ('Activa', true, 10, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
+                values ('Lunes aplicable', true, 10, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
                     current_timestamp, current_timestamp, 0)
                 """);
         jdbcTemplate.update("""
                 insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
                     buy_quantity, reward_quantity, repeat_enabled, valid_from, valid_until, created_at, updated_at, version)
-                values ('Archivada', false, 20, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
+                values ('Jueves no aplicable', true, 20, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
                     current_timestamp, current_timestamp, 0)
                 """);
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    buy_quantity, reward_quantity, repeat_enabled, valid_from, valid_until, created_at, updated_at, version)
+                values ('Lunes archivada', false, 30, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
+                    current_timestamp, current_timestamp, 0)
+                """);
+        Long mondayId = jdbcTemplate.queryForObject(
+                "select id from public.promotions where name = 'Lunes aplicable'", Long.class);
+        Long thursdayId = jdbcTemplate.queryForObject(
+                "select id from public.promotions where name = 'Jueves no aplicable'", Long.class);
+        Long archivedId = jdbcTemplate.queryForObject(
+                "select id from public.promotions where name = 'Lunes archivada'", Long.class);
+        jdbcTemplate.update("insert into public.promotion_weekdays (promotion_id, iso_day_of_week) values (?, 1)", mondayId);
+        jdbcTemplate.update("insert into public.promotion_weekdays (promotion_id, iso_day_of_week) values (?, 4)", thursdayId);
+        jdbcTemplate.update("insert into public.promotion_weekdays (promotion_id, iso_day_of_week) values (?, 1)", archivedId);
 
         mockMvc.perform(get("/api/v1/promotions/active"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].name").value("Activa"));
+                .andExpect(jsonPath("$[0].name").value("Lunes aplicable"));
     }
 
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
+        @Bean
+        @Primary
+        Clock promotionClock() {
+            return Clock.fixed(Instant.parse("2026-08-10T18:00:00Z"), ZoneOffset.UTC);
+        }
         @Bean ChatModel chatModel() { return mock(ChatModel.class); }
         @Bean EmbeddingModel embeddingModel() { return mock(EmbeddingModel.class); }
         @Bean ChatMemoryProvider chatMemoryProvider() { return memoryId -> MessageWindowChatMemory.withMaxMessages(20); }
