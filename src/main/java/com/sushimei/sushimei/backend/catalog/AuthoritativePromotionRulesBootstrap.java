@@ -2,9 +2,11 @@ package com.sushimei.sushimei.backend.catalog;
 
 import com.sushimei.sushimei.backend.promotion.CreatePromotionRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionBenefitType;
+import com.sushimei.sushimei.backend.promotion.PromotionResponse;
 import com.sushimei.sushimei.backend.promotion.PromotionService;
 import com.sushimei.sushimei.backend.promotion.PromotionTargetRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionTargetType;
+import com.sushimei.sushimei.backend.promotion.UpdatePromotionRequest;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -24,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Activates the reviewed temporal promotions after the authoritative catalog
- * runner has materialized the menu items required by their ITEM targets.
+ * runner has materialized the catalog tags required by their targets.
  */
 @Component
 @Order(200)
@@ -46,22 +48,27 @@ class AuthoritativePromotionRulesBootstrap implements ApplicationRunner {
 class AuthoritativePromotionRulesService {
 
     static final String RULE_SET_ID = "PHASE_6G_P0_A_AUTHORITATIVE_TEMPORAL_PROMOTIONS";
+    static final String CLASSIC_ROLL_TAG_RULE_SET_ID = "PHASE_6G_P0_C_CLASSIC_ROLL_TAG_PROMOTIONS";
 
     private static final String LEGACY_MONDAY_ITEM_NAME = "Lunes $69";
     private static final String LEGACY_MONDAY_ITEM_CATEGORY = "Promociones";
-    private static final List<Long> ELIGIBLE_CLASSIC_ROLL_IDS = List.of(18L, 24L, 49L, 80L, 107L);
+    private static final String CLASSIC_ROLL_TAG_CODE = "ROLLO_CLASICO";
+    private static final List<String> AUTHORITATIVE_PROMOTION_NAMES = List.of("Lunes $69", "Jueves 2x1");
     private static final int PRIORITY = 100;
 
     private final MenuCatalogRepository menuItems;
+    private final CatalogTagRepository catalogTags;
     private final PromotionService promotionService;
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
 
     AuthoritativePromotionRulesService(MenuCatalogRepository menuItems,
+                                       CatalogTagRepository catalogTags,
                                        PromotionService promotionService,
                                        JdbcTemplate jdbcTemplate,
                                        Clock clock) {
         this.menuItems = Objects.requireNonNull(menuItems, "menuItems must not be null");
+        this.catalogTags = Objects.requireNonNull(catalogTags, "catalogTags must not be null");
         this.promotionService = Objects.requireNonNull(promotionService, "promotionService must not be null");
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -69,35 +76,41 @@ class AuthoritativePromotionRulesService {
 
     @Transactional
     public void synchronize() {
-        if (isRuleSetAppliedWithLock()) {
-            return;
+        if (!isRuleSetAppliedWithLock(RULE_SET_ID)) {
+            Instant now = clock.instant();
+            archiveLegacyMondayItem(now);
+            createMondayPromotion();
+            createThursdayPromotion();
+            menuItems.flush();
+            markRuleSetApplied(RULE_SET_ID, now);
         }
 
-        Instant now = clock.instant();
-        archiveLegacyMondayItem(now);
-        createMondayPromotion();
-        createThursdayPromotion();
-        menuItems.flush();
+        if (!isRuleSetAppliedWithLock(CLASSIC_ROLL_TAG_RULE_SET_ID)) {
+            normalizeClassicRollPromotionTargets();
+            markRuleSetApplied(CLASSIC_ROLL_TAG_RULE_SET_ID, clock.instant());
+        }
+    }
 
+    private void markRuleSetApplied(String ruleSetId, Instant now) {
         OffsetDateTime databaseNow = now.atOffset(ZoneOffset.UTC);
         int marked = jdbcTemplate.update("""
                 update public.promotion_bootstrap_rule_sets
                 set applied_at = ?
                 where rule_set_id = ? and applied_at is null
-                """, databaseNow, RULE_SET_ID);
+                """, databaseNow, ruleSetId);
         if (marked != 1) {
             throw new IllegalStateException("Authoritative promotion rule set could not be marked as applied");
         }
     }
 
-    private boolean isRuleSetAppliedWithLock() {
+    private boolean isRuleSetAppliedWithLock(String ruleSetId) {
         try {
             Boolean applied = jdbcTemplate.queryForObject("""
                     select applied_at is not null
                     from public.promotion_bootstrap_rule_sets
                     where rule_set_id = ?
                     for update
-                    """, Boolean.class, RULE_SET_ID);
+                    """, Boolean.class, ruleSetId);
             if (applied == null) {
                 throw new IllegalStateException("Authoritative promotion rule-set marker is invalid");
             }
@@ -130,7 +143,7 @@ class AuthoritativePromotionRulesService {
                 null,
                 null,
                 Set.of(1),
-                itemTargets()));
+                classicRollTagTarget()));
     }
 
     private void createThursdayPromotion() {
@@ -146,12 +159,34 @@ class AuthoritativePromotionRulesService {
                 null,
                 null,
                 Set.of(4),
-                itemTargets()));
+                classicRollTagTarget()));
     }
 
-    private List<PromotionTargetRequest> itemTargets() {
-        return ELIGIBLE_CLASSIC_ROLL_IDS.stream()
-                .map(id -> new PromotionTargetRequest(PromotionTargetType.ITEM, id))
-                .toList();
+    private void normalizeClassicRollPromotionTargets() {
+        List<PromotionTargetRequest> target = classicRollTagTarget();
+        Long targetId = target.get(0).targetId();
+        List<PromotionResponse> promotions = promotionService.list(true);
+        for (String name : AUTHORITATIVE_PROMOTION_NAMES) {
+            PromotionResponse promotion = promotions.stream()
+                    .filter(candidate -> name.equals(candidate.name()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Missing authoritative promotion " + name));
+            boolean alreadyTargetsClassicRollTag = promotion.targets().size() == 1
+                    && promotion.targets().get(0).targetType() == PromotionTargetType.TAG
+                    && targetId.equals(promotion.targets().get(0).targetId());
+            if (!alreadyTargetsClassicRollTag) {
+                promotionService.update(promotion.id(), new UpdatePromotionRequest(
+                        promotion.name(), promotion.active(), promotion.priority(), promotion.benefitType(),
+                        promotion.fixedUnitPrice(), promotion.buyQuantity(), promotion.rewardQuantity(), promotion.repeat(),
+                        promotion.validFrom(), promotion.validUntil(), promotion.daysOfWeek(), target, promotion.version()));
+            }
+        }
+    }
+
+    private List<PromotionTargetRequest> classicRollTagTarget() {
+        CatalogTag classicRollTag = catalogTags.findByCode(CLASSIC_ROLL_TAG_CODE)
+                .filter(CatalogTag::isActive)
+                .orElseThrow(() -> new IllegalStateException("Missing active ROLLO_CLASICO catalog tag"));
+        return List.of(new PromotionTargetRequest(PromotionTargetType.TAG, classicRollTag.getId()));
     }
 }
