@@ -43,6 +43,11 @@ public class PromotionController {
         return promotionService.list(includeInactive);
     }
 
+    @GetMapping("/active")
+    public List<PromotionResponse> listActive() {
+        return promotionService.list(false);
+    }
+
     @GetMapping("/{id}")
     public PromotionResponse get(@PathVariable Long id) {
         return promotionService.get(id);

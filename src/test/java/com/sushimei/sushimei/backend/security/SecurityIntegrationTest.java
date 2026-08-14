@@ -282,6 +282,12 @@ class SecurityIntegrationTest {
         mockMvc.perform(get("/api/v1/menu/items").with(user("cashier").roles("CASHIER"))).andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/menu/items").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/menu/items").with(user("manager").roles("MANAGER"))).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/promotions/active")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/promotions/active").with(user("owner").roles("OWNER"))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/promotions/active").with(user("manager").roles("MANAGER"))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/promotions/active").with(user("cashier").roles("CASHIER"))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/promotions/active").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/promotions").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/promotions/quote").with(user("cashier").roles("CASHIER"))).andExpect(status().isBadRequest());
         mockMvc.perform(post("/api/v1/promotions").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
         createUser("manual-cashier", "una frase larga segura 123", ApplicationRole.CASHIER);

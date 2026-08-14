@@ -99,6 +99,28 @@ class PromotionControllerIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].active").value(false));
     }
 
+    @Test
+    void activeEndpointReturnsOnlyActivePromotionDefinitions() throws Exception {
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    buy_quantity, reward_quantity, repeat_enabled, valid_from, valid_until, created_at, updated_at, version)
+                values ('Activa', true, 10, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
+                    current_timestamp, current_timestamp, 0)
+                """);
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    buy_quantity, reward_quantity, repeat_enabled, valid_from, valid_until, created_at, updated_at, version)
+                values ('Archivada', false, 20, 'FIXED_UNIT_PRICE', 69.00, null, null, null, null, null,
+                    current_timestamp, current_timestamp, 0)
+                """);
+
+        mockMvc.perform(get("/api/v1/promotions/active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Activa"));
+    }
+
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
         @Bean ChatModel chatModel() { return mock(ChatModel.class); }
