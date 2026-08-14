@@ -33,6 +33,9 @@ class CatalogConfigurationServiceIntegrationTest {
 
     @BeforeEach
     void cleanCatalogTables() {
+        jdbcTemplate.update("delete from public.promotion_targets");
+        jdbcTemplate.update("delete from public.promotion_weekdays");
+        jdbcTemplate.update("delete from public.promotions");
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
         jdbcTemplate.update("delete from public.menu_item_tags");

@@ -58,6 +58,9 @@ class OperationalOrderReadServiceIntegrationTest {
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
+        jdbcTemplate.update("delete from public.promotion_targets");
+        jdbcTemplate.update("delete from public.promotion_weekdays");
+        jdbcTemplate.update("delete from public.promotions");
         jdbcTemplate.update("delete from public.menu_item_tags");
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
