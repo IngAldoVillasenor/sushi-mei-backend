@@ -10,6 +10,7 @@ import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderLineRecord;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
+import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import com.sushimei.sushimei.backend.repository.CartRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import org.springframework.stereotype.Service;
@@ -24,16 +25,14 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Internal deterministic checkout core. It is intentionally disconnected from
- * WhatsApp, AI, controllers, and raw customer traffic until production routing
- * can use this atomic completion boundary.
+ * Internal deterministic checkout core. Trusted adapters may invoke this atomic boundary,
+ * but raw customer text and AI tools never write orders directly.
  */
 @Service
 public class OrderService {
 
     private static final String OPEN_CART_STATUS = "OPEN";
     private static final String CLOSED_CART_STATUS = "CLOSED";
-    private static final String INITIAL_ORDER_STATUS = "PENDING";
     private static final String LEGACY_DELIVERY_TYPE = "DOMICILIO";
     private static final String LEGACY_PICKUP_TYPE = "SUCURSAL";
 
@@ -93,6 +92,7 @@ public class OrderService {
         CartSnapshot snapshot = cartSnapshotService.snapshotOf(sourceCart);
         ConversationSession session = conversationSessionRepository.findById(request.phoneNumber())
                 .orElseThrow(() -> failure(CheckoutCompletionFailureReason.CONVERSATION_SESSION_NOT_FOUND));
+        validateCashDenomination(session, snapshot.total());
         Instant now = clock.instant();
 
         OrderRecord order = buildOrder(request, snapshot, session, now);
@@ -101,6 +101,13 @@ public class OrderService {
         conversationStateMachine.confirmCheckout(session, now);
 
         return new CheckoutCompletionResult(CheckoutCompletionOutcome.CREATED, requireOrderId(savedOrder));
+    }
+
+    private void validateCashDenomination(ConversationSession session, BigDecimal total) {
+        if (session.getPaymentMethod() == PaymentMethod.CASH
+                && (session.getCashDenomination() == null || session.getCashDenomination().compareTo(total) < 0)) {
+            throw failure(CheckoutCompletionFailureReason.CASH_DENOMINATION_INSUFFICIENT);
+        }
     }
 
     private CheckoutCompletionResult existingResult(OrderRecord existing, CompletionRequest request) {
@@ -148,7 +155,9 @@ public class OrderService {
         order.setOrderDetails(legacyOrderDetailsFormatter.format(snapshot));
         order.setTotalAmountAmount(snapshot.total());
         order.setTotalAmount(legacyTotal.legacyAmount());
-        order.setStatus(INITIAL_ORDER_STATUS);
+        order.setStatus(session.getPaymentMethod() == PaymentMethod.TRANSFER
+                ? OrderLifecycleStatus.PENDING_VALIDATION.persistedValue()
+                : OrderLifecycleStatus.PENDING.persistedValue());
         order.setCreatedAt(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
 
         int linePosition = 1;

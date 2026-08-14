@@ -8,7 +8,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * Persists shadow conversation data only. It does not decide checkout state or responses.
+ * Persists conversation data. State decisions remain in the deterministic transition boundary.
  */
 @Service
 public class ConversationSessionService {

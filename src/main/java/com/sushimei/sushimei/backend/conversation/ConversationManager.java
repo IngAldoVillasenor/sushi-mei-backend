@@ -7,9 +7,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Objects;
+
 /**
- * Coordinates the existing conversational behavior with shadow conversation persistence.
- * It intentionally does not infer or transition checkout state.
+ * Coordinates AI menu conversation with the deterministic WhatsApp checkout adapter.
  */
 @Service
 public class ConversationManager {
@@ -29,19 +30,22 @@ public class ConversationManager {
                     + "¿Me ayudas escribiendo tu mensaje? 🍣";
 
     private final AiConversationService aiConversationService;
+    private final WhatsAppCheckoutFlowService whatsAppCheckoutFlowService;
     private final ConversationSessionService conversationSessionService;
     private final OrderRepository orderRepository;
 
     public ConversationManager(AiConversationService aiConversationService,
+                               WhatsAppCheckoutFlowService whatsAppCheckoutFlowService,
                                ConversationSessionService conversationSessionService,
                                OrderRepository orderRepository) {
         this.aiConversationService = aiConversationService;
+        this.whatsAppCheckoutFlowService = whatsAppCheckoutFlowService;
         this.conversationSessionService = conversationSessionService;
         this.orderRepository = orderRepository;
     }
 
     /**
-     * Records an inbound message in shadow mode. The controller calls this exactly once
+     * Records inbound activity. The controller calls this exactly once
      * after phone normalization and before dispatching to a message-specific handler.
      */
     public void recordInboundMessage(String phoneNumber) {
@@ -60,10 +64,20 @@ public class ConversationManager {
      * Uses a caller-provided memory ID for non-WhatsApp callers while preserving phone-number tool safety.
      */
     public String handleTextMessage(String memoryId, String phoneNumber, String text) {
+        if (Objects.equals(memoryId, phoneNumber)) {
+            var deterministicResponse = whatsAppCheckoutFlowService.handleText(phoneNumber, text);
+            if (deterministicResponse.isPresent()) {
+                return deterministicResponse.get();
+            }
+        }
         return aiConversationService.chat(memoryId, phoneNumber, text);
     }
 
     public String handleImageMessage(String phoneNumber, String savedReceiptPath) {
+        var deterministicResponse = whatsAppCheckoutFlowService.handleImage(phoneNumber, savedReceiptPath);
+        if (deterministicResponse.isPresent()) {
+            return deterministicResponse.get();
+        }
         if (savedReceiptPath != null) {
             recordTransferReceiptInShadowMode(phoneNumber, savedReceiptPath);
             associateReceiptWithPendingOrder(phoneNumber, savedReceiptPath);

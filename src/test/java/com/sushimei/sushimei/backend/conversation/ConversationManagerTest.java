@@ -9,6 +9,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
@@ -40,13 +42,17 @@ class ConversationManagerTest {
     private ConversationSessionService conversationSessionService;
 
     @Mock
+    private WhatsAppCheckoutFlowService whatsAppCheckoutFlowService;
+
+    @Mock
     private OrderRepository orderRepository;
 
     private ConversationManager conversationManager;
 
     @BeforeEach
     void setUp() {
-        conversationManager = new ConversationManager(aiConversationService, conversationSessionService, orderRepository);
+        conversationManager = new ConversationManager(aiConversationService, whatsAppCheckoutFlowService,
+                conversationSessionService, orderRepository);
     }
 
     @Test
@@ -56,7 +62,7 @@ class ConversationManagerTest {
         verify(conversationSessionService).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
-        verifyNoInteractions(aiConversationService, orderRepository);
+        verifyNoInteractions(aiConversationService, whatsAppCheckoutFlowService, orderRepository);
     }
 
     @Test
@@ -71,6 +77,7 @@ class ConversationManagerTest {
         assertThat(response).isEqualTo("agent response");
         verify(conversationSessionService).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
+        verify(whatsAppCheckoutFlowService).handleText(PHONE_NUMBER, TEXT_MESSAGE);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE);
         verifyNoInteractions(orderRepository);
     }
@@ -82,6 +89,7 @@ class ConversationManagerTest {
         String response = conversationManager.handleTextMessage(PHONE_NUMBER, TEXT_MESSAGE);
 
         assertThat(response).isEqualTo("agent response");
+        verify(whatsAppCheckoutFlowService).handleText(PHONE_NUMBER, TEXT_MESSAGE);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, TEXT_MESSAGE);
         verifyNoInteractions(conversationSessionService, orderRepository);
     }
@@ -103,6 +111,7 @@ class ConversationManagerTest {
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
         verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION");
         verify(orderRepository).save(pendingOrder);
+        verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
@@ -120,6 +129,7 @@ class ConversationManagerTest {
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
         verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION");
         verify(orderRepository, never()).save(org.mockito.ArgumentMatchers.any(OrderRecord.class));
+        verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
@@ -130,6 +140,7 @@ class ConversationManagerTest {
         String response = conversationManager.handleImageMessage(PHONE_NUMBER, null);
 
         assertThat(response).isEqualTo("thanks");
+        verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, null);
         verifyNoInteractions(conversationSessionService, orderRepository);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
@@ -152,6 +163,7 @@ class ConversationManagerTest {
         verify(conversationSessionService, never()).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
         verify(orderRepository).save(pendingOrder);
+        verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
     }
 
@@ -167,14 +179,39 @@ class ConversationManagerTest {
         verify(conversationSessionService).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         verify(conversationSessionService, never()).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
+        verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
         verify(aiConversationService, never()).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
+    }
+
+    @Test
+    void deterministicTextCheckoutResponseBypassesTheAgent() {
+        when(whatsAppCheckoutFlowService.handleText(PHONE_NUMBER, "ya sería todo"))
+                .thenReturn(Optional.of("checkout response"));
+
+        String response = conversationManager.handleTextMessage(PHONE_NUMBER, "ya sería todo");
+
+        assertThat(response).isEqualTo("checkout response");
+        verify(whatsAppCheckoutFlowService).handleText(PHONE_NUMBER, "ya sería todo");
+        verifyNoInteractions(aiConversationService, conversationSessionService, orderRepository);
+    }
+
+    @Test
+    void deterministicReceiptResponseBypassesLegacyAssociationAndTheAgent() {
+        when(whatsAppCheckoutFlowService.handleImage(PHONE_NUMBER, RECEIPT_PATH))
+                .thenReturn(Optional.of("receipt accepted"));
+
+        String response = conversationManager.handleImageMessage(PHONE_NUMBER, RECEIPT_PATH);
+
+        assertThat(response).isEqualTo("receipt accepted");
+        verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
+        verifyNoInteractions(aiConversationService, conversationSessionService, orderRepository);
     }
 
     @Test
     void audioResponseIsByteForByteUnchangedAndDoesNotUseTheAgentOrSession() {
         assertThat(conversationManager.handleAudioMessage(PHONE_NUMBER)).isEqualTo(AUDIO_RESPONSE);
 
-        verifyNoInteractions(aiConversationService, conversationSessionService, orderRepository);
+        verifyNoInteractions(aiConversationService, whatsAppCheckoutFlowService, conversationSessionService, orderRepository);
     }
 
     @Test
@@ -182,6 +219,6 @@ class ConversationManagerTest {
         assertThat(conversationManager.handleUnsupportedMessage(PHONE_NUMBER, "video"))
                 .isEqualTo(UNSUPPORTED_MESSAGE_RESPONSE);
 
-        verifyNoInteractions(aiConversationService, conversationSessionService, orderRepository);
+        verifyNoInteractions(aiConversationService, whatsAppCheckoutFlowService, conversationSessionService, orderRepository);
     }
 }

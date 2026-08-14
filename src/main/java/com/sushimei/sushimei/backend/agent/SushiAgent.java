@@ -23,7 +23,7 @@ public interface SushiAgent {
             "Después de agregar o quitar un producto, menciona naturalmente el producto confirmado por la herramienta. No respondas con una pregunta genérica.",
             "No uses herramientas para saludos, conversación general, preguntas de menú o cuando el cliente dice que ya terminó. No agregues una despedida, pregunta de cierre o sugerencia obligatoria en cada respuesta.",
             "El historial sirve solo para continuidad conversacional; no es una fuente de verdad para dirección, pago, comprobantes, confirmación ni estado de una orden.",
-            "Si el cliente indica que ya terminó de ordenar, reconócelo sin afirmar que la orden fue creada, pagada o confirmada. No uses confirmOrder: la finalización determinista de pedidos se implementará por separado."
+            "Si el cliente indica que ya terminó de ordenar, no uses herramientas ni afirmes que la orden fue creada. La finalización la procesa un flujo determinista fuera del modelo."
     })
     String chat(@MemoryId String memoryId, @V("telefono") String telefono, @UserMessage String mensaje);
 }

@@ -138,6 +138,7 @@ class OrderServiceIntegrationTest {
         assertThat(order.getPaymentMethod()).isEqualTo(OrderPaymentMethod.TRANSFER);
         assertThat(order.getTransferReceiptPath()).isEqualTo("receipts/transfer.png");
         assertThat(order.getCashDenomination()).isNull();
+        assertThat(order.getStatus()).isEqualTo("PENDING_VALIDATION");
         assertClosedAndConfirmed(cart.getId(), phoneNumber);
     }
 
@@ -160,6 +161,7 @@ class OrderServiceIntegrationTest {
         assertThat(transferOrder.getPaymentMethod()).isEqualTo(OrderPaymentMethod.TRANSFER);
         assertThat(transferOrder.getPickupName()).isEqualTo("Ana");
         assertThat(transferOrder.getTransferReceiptPath()).isEqualTo("receipts/pickup.png");
+        assertThat(transferOrder.getStatus()).isEqualTo("PENDING_VALIDATION");
     }
 
     @Test
@@ -175,6 +177,20 @@ class OrderServiceIntegrationTest {
         assertThat(order.getCashDenomination()).isNull();
         assertThat(order.getTransferReceiptPath()).isNull();
         assertClosedAndConfirmed(cart.getId(), phoneNumber);
+    }
+
+    @Test
+    void insufficientCashDenominationRollsBackCheckout() {
+        String phoneNumber = "5214770000112";
+        Cart cart = persistOpenCart(phoneNumber, item("California Roll", 1, "79.00"));
+        readyPickupCash(phoneNumber, "Ana", "50.00");
+
+        assertThatThrownBy(() -> orderService.completeCheckout(command(phoneNumber, cart.getId())))
+                .isInstanceOf(CheckoutCompletionException.class)
+                .extracting(exception -> ((CheckoutCompletionException) exception).getReason())
+                .isEqualTo(CheckoutCompletionFailureReason.CASH_DENOMINATION_INSUFFICIENT);
+
+        assertRollbackState(cart.getId(), phoneNumber);
     }
 
     @Test
