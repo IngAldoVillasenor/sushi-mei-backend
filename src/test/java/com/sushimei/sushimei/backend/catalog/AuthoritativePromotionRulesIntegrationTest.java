@@ -8,7 +8,9 @@ import com.sushimei.sushimei.backend.promotion.PromotionResponse;
 import com.sushimei.sushimei.backend.promotion.PromotionService;
 import com.sushimei.sushimei.backend.promotion.PromotionTargetResponse;
 import com.sushimei.sushimei.backend.promotion.PromotionTargetType;
+import com.sushimei.sushimei.backend.promotion.PromotionTargetRequest;
 import com.sushimei.sushimei.backend.promotion.TemporalPromotionQuoteService;
+import com.sushimei.sushimei.backend.promotion.UpdatePromotionRequest;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -56,6 +58,9 @@ class AuthoritativePromotionRulesIntegrationTest {
     private MenuCatalogService menuCatalogService;
 
     @Autowired
+    private CatalogTagRepository catalogTagRepository;
+
+    @Autowired
     private AuthoritativePromotionRulesService rulesService;
 
     @Autowired
@@ -80,11 +85,12 @@ class AuthoritativePromotionRulesIntegrationTest {
         rulesService.synchronize();
 
         assertThat(promotionService.list(true)).hasSize(2);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_targets", Integer.class)).isEqualTo(10);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotion_targets", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from public.promotion_bootstrap_rule_sets
-                where rule_set_id = ? and applied_at is not null
-                """, Integer.class, AuthoritativePromotionRulesService.RULE_SET_ID)).isEqualTo(1);
+                where rule_set_id in (?, ?) and applied_at is not null
+                """, Integer.class, AuthoritativePromotionRulesService.RULE_SET_ID,
+                AuthoritativePromotionRulesService.CLASSIC_ROLL_TAG_RULE_SET_ID)).isEqualTo(2);
 
         promotionService.archive(promotions.get("Lunes $69").id());
         rulesService.synchronize();
@@ -95,6 +101,9 @@ class AuthoritativePromotionRulesIntegrationTest {
     @Test
     void mondayAndThursdayQuotesUseOnlyTheReviewedRootItemPromotions() {
         TestClock.set(MONDAY);
+        for (Long classicRollId : ELIGIBLE_CLASSIC_ROLL_IDS) {
+            assertThat(quote(classicRollId, 1).lines().get(0).appliedPromotion().name()).isEqualTo("Lunes $69");
+        }
         PromotionQuoteResponse monday = quote(24L, 1);
         assertThat(monday.catalogBaseSubtotal()).isEqualByComparingTo("79.00");
         assertThat(monday.configurationAdjustmentTotal()).isEqualByComparingTo("0.00");
@@ -113,6 +122,9 @@ class AuthoritativePromotionRulesIntegrationTest {
         assertThat(nonEligibleMondayRoll.lines().get(0).appliedPromotion()).isNull();
 
         TestClock.set(THURSDAY);
+        for (Long classicRollId : ELIGIBLE_CLASSIC_ROLL_IDS) {
+            assertThat(quote(classicRollId, 1).lines().get(0).rewards()).hasSize(1);
+        }
         PromotionQuoteResponse oneThursdayRoll = quote(24L, 1);
         assertThat(oneThursdayRoll.lines().get(0).rewards()).hasSize(1);
         assertThat(oneThursdayRoll.lines().get(0).rewards().get(0).menuItemId()).isEqualTo(24L);
@@ -131,6 +143,32 @@ class AuthoritativePromotionRulesIntegrationTest {
         assertThat(quote(24L, 1).lines().get(0).rewards()).isEmpty();
     }
 
+    @Test
+    @DirtiesContext
+    void correctionRuleRepairsAProductOnlyPromotionWithoutChangingItsBusinessConfiguration() {
+        PromotionResponse monday = promotionService.list(true).stream()
+                .filter(promotion -> promotion.name().equals("Lunes $69"))
+                .findFirst()
+                .orElseThrow();
+        promotionService.update(monday.id(), new UpdatePromotionRequest(
+                monday.name(), monday.active(), monday.priority(), monday.benefitType(), monday.fixedUnitPrice(),
+                monday.buyQuantity(), monday.rewardQuantity(), monday.repeat(), monday.validFrom(), monday.validUntil(),
+                Set.of(1, 5), List.of(new PromotionTargetRequest(PromotionTargetType.ITEM, 18L)), monday.version()));
+        jdbcTemplate.update("""
+                update public.promotion_bootstrap_rule_sets
+                set applied_at = null
+                where rule_set_id = ?
+                """, AuthoritativePromotionRulesService.CLASSIC_ROLL_TAG_RULE_SET_ID);
+
+        rulesService.synchronize();
+
+        PromotionResponse repaired = promotionService.get(monday.id());
+        assertThat(repaired.daysOfWeek()).containsExactlyInAnyOrder(1, 5);
+        assertClassicRollTagTarget(repaired);
+        TestClock.set(MONDAY);
+        assertThat(quote(24L, 1).lines().get(0).appliedPromotion().name()).isEqualTo("Lunes $69");
+    }
+
     private void assertMondayPromotion(PromotionResponse promotion) {
         assertThat(promotion).isNotNull();
         assertThat(promotion.active()).isTrue();
@@ -142,7 +180,7 @@ class AuthoritativePromotionRulesIntegrationTest {
         assertThat(promotion.validFrom()).isNull();
         assertThat(promotion.validUntil()).isNull();
         assertThat(promotion.daysOfWeek()).containsExactly(1);
-        assertItemTargets(promotion);
+        assertClassicRollTagTarget(promotion);
     }
 
     private void assertThursdayPromotion(PromotionResponse promotion) {
@@ -156,16 +194,15 @@ class AuthoritativePromotionRulesIntegrationTest {
         assertThat(promotion.validFrom()).isNull();
         assertThat(promotion.validUntil()).isNull();
         assertThat(promotion.daysOfWeek()).containsExactly(4);
-        assertItemTargets(promotion);
+        assertClassicRollTagTarget(promotion);
     }
 
-    private void assertItemTargets(PromotionResponse promotion) {
+    private void assertClassicRollTagTarget(PromotionResponse promotion) {
+        Long classicRollTagId = catalogTagRepository.findByCode("ROLLO_CLASICO").orElseThrow().getId();
         assertThat(promotion.targets()).extracting(PromotionTargetResponse::targetType)
-                .containsOnly(PromotionTargetType.ITEM);
+                .containsExactly(PromotionTargetType.TAG);
         assertThat(promotion.targets()).extracting(PromotionTargetResponse::targetId)
-                .containsExactlyInAnyOrderElementsOf(ELIGIBLE_CLASSIC_ROLL_IDS);
-        assertThat(promotion.targets()).extracting(PromotionTargetResponse::targetId)
-                .doesNotContain(53L, 74L, 108L);
+                .containsExactly(classicRollTagId);
     }
 
     private PromotionQuoteResponse quote(long menuItemId, int quantity) {
