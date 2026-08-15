@@ -94,7 +94,8 @@ class InboundMessageIdempotencyServiceIntegrationTest {
         inboundMessageIdempotencyService.claim("wamid-complete", "525512345678", "text");
         inboundMessageIdempotencyService.markCompleted("wamid-complete");
         inboundMessageIdempotencyService.claim("wamid-failed", "525512345678", "image");
-        inboundMessageIdempotencyService.markFailed("wamid-failed");
+        inboundMessageIdempotencyService.markFailed("wamid-failed", InboundMessageFailureStage.SEND_RESPONSE,
+                new IllegalStateException("delivery failed"));
 
         assertThat(jdbcTemplate.queryForObject("""
                 select processing_status
@@ -116,6 +117,16 @@ class InboundMessageIdempotencyServiceIntegrationTest {
                 from public.whatsapp_inbound_messages
                 where message_id = 'wamid-failed'
                 """, Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                select failure_stage
+                from public.whatsapp_inbound_messages
+                where message_id = 'wamid-failed'
+                """, String.class)).isEqualTo("SEND_RESPONSE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select failure_type
+                from public.whatsapp_inbound_messages
+                where message_id = 'wamid-failed'
+                """, String.class)).isEqualTo("IllegalStateException");
     }
 
     @TestConfiguration(proxyBeanMethods = false)

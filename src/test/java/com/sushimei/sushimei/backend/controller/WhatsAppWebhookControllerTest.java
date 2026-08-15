@@ -5,6 +5,7 @@ import com.sushimei.sushimei.backend.configuration.WhatsAppProperties;
 import com.sushimei.sushimei.backend.conversation.ConversationManager;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
 import com.sushimei.sushimei.backend.whatsapp.InboundMessageClaimOutcome;
+import com.sushimei.sushimei.backend.whatsapp.InboundMessageFailureStage;
 import com.sushimei.sushimei.backend.whatsapp.InboundMessageIdempotencyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,10 +17,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -229,8 +228,13 @@ class WhatsAppWebhookControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo("ERROR_CONTROLADO");
         verify(conversationManager).recordInboundMessage(NORMALIZED_PHONE_NUMBER);
-        verify(inboundMessageIdempotencyService).markFailed(TEXT_MESSAGE_ID);
-        verify(whatsAppService, never()).sendMessage(anyString(), anyString());
+        verify(inboundMessageIdempotencyService).markFailed(
+                org.mockito.ArgumentMatchers.eq(TEXT_MESSAGE_ID),
+                org.mockito.ArgumentMatchers.eq(InboundMessageFailureStage.HANDLE_MESSAGE),
+                org.mockito.ArgumentMatchers.any(IllegalStateException.class));
+        verify(whatsAppService).sendMessage(
+                org.mockito.ArgumentMatchers.eq(NORMALIZED_PHONE_NUMBER),
+                org.mockito.ArgumentMatchers.contains("¿Qué llevo?"));
     }
 
     @Test
@@ -244,7 +248,10 @@ class WhatsAppWebhookControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo("ERROR_CONTROLADO");
-        verify(inboundMessageIdempotencyService).markFailed(TEXT_MESSAGE_ID);
+        verify(inboundMessageIdempotencyService).markFailed(
+                org.mockito.ArgumentMatchers.eq(TEXT_MESSAGE_ID),
+                org.mockito.ArgumentMatchers.eq(InboundMessageFailureStage.SEND_RESPONSE),
+                org.mockito.ArgumentMatchers.any(IllegalStateException.class));
     }
 
     private void assertEventReceived(ResponseEntity<String> response) {

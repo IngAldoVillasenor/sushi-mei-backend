@@ -80,8 +80,21 @@ public class InboundMessageIdempotencyService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void markFailed(String messageId) {
-        updateOutcome(requireNonBlank(messageId, "messageId"), InboundMessageProcessingStatus.FAILED);
+    public void markFailed(String messageId, InboundMessageFailureStage failureStage, Throwable failure) {
+        String validatedMessageId = requireNonBlank(messageId, "messageId");
+        Objects.requireNonNull(failureStage, "failureStage must not be null");
+        Objects.requireNonNull(failure, "failure must not be null");
+        jdbcTemplate.update("""
+                        UPDATE public.whatsapp_inbound_messages
+                        SET processing_status = ?, failed_at = ?, failure_stage = ?, failure_type = ?
+                        WHERE message_id = ? AND processing_status = ?
+                        """,
+                InboundMessageProcessingStatus.FAILED.name(),
+                Timestamp.from(clock.instant()),
+                failureStage.name(),
+                failure.getClass().getSimpleName(),
+                validatedMessageId,
+                InboundMessageProcessingStatus.PROCESSING.name());
     }
 
     private void updateOutcome(String messageId, InboundMessageProcessingStatus outcome) {
