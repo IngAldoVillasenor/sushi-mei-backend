@@ -66,6 +66,26 @@ class AiToolSafetyGuardTest {
     }
 
     @Test
+    void compoundRequestKeepsProductNamesAndQuantitiesBoundToTheirOwnPhrases() {
+        String message = "Me puede poner un empanizado ebi 2 california roll y una coca por favor";
+
+        assertBlocked(message, () -> guard.requireAddAllowed("California ebi", 1),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+        assertBlocked(message, () -> guard.requireAddAllowed("Empanizado ebi", 2),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+        assertBlocked(message, () -> guard.requireAddAllowed("California roll", 1),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+        guard.withinTextTurn(message, () -> {
+            guard.requireAddAllowed("Empanizado ebi", 1);
+            guard.requireAddAllowed("California roll", 2);
+            return null;
+        });
+
+        org.assertj.core.api.Assertions.assertThat(AiToolSafetyGuard.requestedItemCountLowerBound(message))
+                .isEqualTo(3);
+    }
+
+    @Test
     void orderingVerbCanAddTheNamedProduct() {
         guard.withinTextTurn("Deseo ordenar una Clásica Familiar", () -> {
             guard.requireAddAllowed("Clásica Familiar");

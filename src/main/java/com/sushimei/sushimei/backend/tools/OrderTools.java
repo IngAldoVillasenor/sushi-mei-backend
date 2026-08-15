@@ -29,16 +29,17 @@ public class OrderTools {
     private final OrderRepository orderRepository;
     private final CartService cartService;
     private final AiToolSafetyGuard toolSafetyGuard;
-
-    public OrderTools(OrderRepository orderRepository, CartService cartService) {
-        this(orderRepository, cartService, new AiToolSafetyGuard());
-    }
+    private final AiMenuItemResolver menuItemResolver;
 
     @Autowired
-    public OrderTools(OrderRepository orderRepository, CartService cartService, AiToolSafetyGuard toolSafetyGuard) {
+    public OrderTools(OrderRepository orderRepository,
+                      CartService cartService,
+                      AiToolSafetyGuard toolSafetyGuard,
+                      AiMenuItemResolver menuItemResolver) {
         this.orderRepository = orderRepository;
         this.cartService = cartService;
         this.toolSafetyGuard = toolSafetyGuard;
+        this.menuItemResolver = menuItemResolver;
     }
 
     @Tool("Agrega un platillo al carrito solo cuando el cliente pida claramente agregar ese producto. "
@@ -46,24 +47,34 @@ public class OrderTools {
     public String addDishToCart(
             @P("El número de teléfono del cliente") String phoneNumber,
             @P("El nombre exacto del platillo que el usuario quiere ordenar") String dishName,
-            @P("La cantidad numérica de platillos") int quantity,
-            @P("El precio unitario del platillo (extraído del menú proporcionado)") double unitPrice) {
+            @P("La cantidad numérica de platillos") int quantity) {
 
         try {
-            toolSafetyGuard.requireAddAllowed(dishName);
-            cartService.addItem(phoneNumber, dishName, quantity, unitPrice);
+            toolSafetyGuard.requireAddAllowed(dishName, quantity);
+            ResolvedMenuItem resolvedItem = menuItemResolver.resolveExact(dishName);
+            cartService.addItem(phoneNumber, resolvedItem.name(), quantity, resolvedItem.unitPrice().doubleValue());
             String cartContents = cartService.getCartContents(phoneNumber);
-            String response = "\u00a1Listo! Agregu\u00e9 " + quantity + " x " + dishName + " a tu carrito.\n" + cartContents;
-            toolSafetyGuard.recordAddSucceeded(dishName, quantity, cartContents);
+            String response = "\u00a1Listo! Agregu\u00e9 " + quantity + " x " + resolvedItem.name()
+                    + " a tu carrito.\n" + cartContents;
+            toolSafetyGuard.recordAddSucceeded(resolvedItem.name(), quantity, cartContents);
             log.info("AI tool outcome=ADD_CART_ITEM result=SUCCESS");
             return response;
         } catch (AiToolSafetyException exception) {
             toolSafetyGuard.recordAddBlocked();
             return toolSafetyFailureResponse("ADD_CART_ITEM", exception);
+        } catch (AiMenuItemResolutionException exception) {
+            toolSafetyGuard.recordAddBlocked();
+            log.warn("AI tool outcome=ADD_CART_ITEM result=BLOCKED reason=CATALOG_ITEM_NOT_RESOLVED");
+            return "No agregues ese producto todavía. Pide al cliente el nombre y la presentación exactos del menú.";
         } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
             toolSafetyGuard.recordAddFailed();
             return checkoutDataFailureResponse("ADD_CART_ITEM", exception);
         }
+    }
+
+    /** Compatibility helper for direct callers compiled against the former AI-price signature. */
+    public String addDishToCart(String phoneNumber, String dishName, int quantity, double ignoredUnitPrice) {
+        return addDishToCart(phoneNumber, dishName, quantity);
     }
 
     @Tool("Consulta el contenido actual y el total del carrito. Úsala solo cuando el cliente pregunte qué lleva, "

@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -33,6 +34,10 @@ public class AiToolSafetyGuard {
             "venden", "lleva", "incluye", "ingredientes", "contiene");
     private static final Set<String> AMBIGUOUS_PRODUCT_MODIFIERS = Set.of(
             "charola", "familiar", "supreme", "combo", "paquete", "box");
+    private static final Set<String> SINGULAR_QUANTITY_TOKENS = Set.of("un", "una");
+    private static final Map<String, Integer> QUANTITY_WORDS = Map.of(
+            "uno", 1, "dos", 2, "tres", 3, "cuatro", 4, "cinco", 5,
+            "seis", 6, "siete", 7, "ocho", 8, "nueve", 9, "diez", 10);
     private static final Set<String> NON_PRODUCT_TOKENS = Set.of(
             "a", "al", "con", "de", "del", "el", "ella", "ellos", "esa", "ese", "esto", "la", "las", "lo", "los",
             "me", "mi", "para", "por", "que", "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega",
@@ -65,12 +70,17 @@ public class AiToolSafetyGuard {
     }
 
     public void requireAddAllowed(String dishName) {
+        requireAddAllowed(dishName, 1);
+    }
+
+    public void requireAddAllowed(String dishName, int quantity) {
         TurnContext context = activeTurn.get();
         if (context == null) {
             return;
         }
         if (!isAddRequest(context.normalizedMessage())
-                || !hasExplicitDishReference(context.messageTokens(), dishName)) {
+                || !hasExplicitDishReference(context.normalizedMessage(), dishName)
+                || !hasExplicitQuantity(context.normalizedMessage(), dishName, quantity)) {
             throw new AiToolSafetyException(AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
         }
     }
@@ -80,7 +90,8 @@ public class AiToolSafetyGuard {
         if (context == null) {
             return;
         }
-        if (!containsAnyToken(context.messageTokens(), REMOVE_ACTIONS) || !hasExplicitDishReference(context.messageTokens(), dishName)) {
+        if (!containsAnyToken(context.messageTokens(), REMOVE_ACTIONS)
+                || !hasExplicitDishReference(context.normalizedMessage(), dishName)) {
             throw new AiToolSafetyException(AiToolSafetyReason.REMOVE_NOT_EXPLICITLY_REQUESTED);
         }
     }
@@ -176,7 +187,7 @@ public class AiToolSafetyGuard {
             itemCount++;
             fromIndex += 3;
         }
-        return itemCount;
+        return Math.max(itemCount, explicitItemMarkerCount(normalized));
     }
 
     private static boolean isImplicitAddSelection(Set<String> messageTokens) {
@@ -217,36 +228,144 @@ public class AiToolSafetyGuard {
                 && !token.chars().allMatch(Character::isDigit));
     }
 
-    static boolean hasExplicitDishReference(Set<String> messageTokens, String dishName) {
-        Set<String> identityTokens = dishTokens(dishName);
-        if (identityTokens.isEmpty()) {
-            return false;
-        }
-
-        Set<String> numericIdentityTokens = numericFragments(identityTokens);
-        Set<String> numericMessageTokens = numericFragments(messageTokens);
-        if (!numericMessageTokens.containsAll(numericIdentityTokens)) {
-            return false;
-        }
-
-        Set<String> distinctiveTokens = identityTokens.stream()
-                .filter(token -> token.chars().noneMatch(Character::isDigit))
-                .filter(token -> !AMBIGUOUS_PRODUCT_MODIFIERS.contains(token))
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        if (distinctiveTokens.isEmpty()) {
-            return false;
-        }
-        if (distinctiveTokens.contains("calpi")) {
-            return messageTokens.containsAll(distinctiveTokens);
-        }
-        return distinctiveTokens.stream().anyMatch(messageTokens::contains);
+    static boolean hasExplicitDishReference(String message, String dishName) {
+        return !matchingReferenceStarts(message, dishName).isEmpty();
     }
 
-    private static Set<String> numericFragments(Set<String> sourceTokens) {
-        return sourceTokens.stream()
-                .flatMap(token -> Arrays.stream(token.split("\\D+")))
-                .filter(token -> !token.isBlank())
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    static boolean hasExplicitQuantity(String message, String dishName, int quantity) {
+        if (quantity <= 0) {
+            return false;
+        }
+        String[] messageTokens = normalize(message).split(" ");
+        return matchingReferenceStarts(message, dishName).stream()
+                .anyMatch(start -> requestedQuantityBefore(messageTokens, start) == quantity);
+    }
+
+    private static List<Integer> matchingReferenceStarts(String message, String dishName) {
+        List<PositionedToken> messageTokens = positionedProductTokens(message);
+        List<String> identityTokens = productTokens(dishName);
+        if (identityTokens.isEmpty() || messageTokens.size() < identityTokens.size()) {
+            return List.of();
+        }
+
+        List<Integer> starts = new ArrayList<>();
+        for (int start = 0; start <= messageTokens.size() - identityTokens.size(); start++) {
+            boolean matches = true;
+            for (int offset = 0; offset < identityTokens.size(); offset++) {
+                if (!messageTokens.get(start + offset).value().equals(identityTokens.get(offset))) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                starts.add(messageTokens.get(start).sourceIndex());
+            }
+        }
+        return List.copyOf(starts);
+    }
+
+    private static List<PositionedToken> positionedProductTokens(String value) {
+        String normalized = normalize(value);
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        String[] sourceTokens = normalized.split(" ");
+        List<PositionedToken> result = new ArrayList<>();
+        for (int index = 0; index < sourceTokens.length; index++) {
+            if (isProductIdentityToken(sourceTokens[index])) {
+                result.add(new PositionedToken(sourceTokens[index], index));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<String> productTokens(String value) {
+        return positionedProductTokens(value).stream().map(PositionedToken::value).toList();
+    }
+
+    private static boolean isProductIdentityToken(String token) {
+        return !NON_PRODUCT_TOKENS.contains(token)
+                && !AMBIGUOUS_PRODUCT_MODIFIERS.contains(token)
+                && (token.length() >= 3 || token.chars().allMatch(Character::isDigit));
+    }
+
+    private static int requestedQuantityBefore(String[] sourceTokens, int productStart) {
+        for (int index = productStart - 1; index >= 0 && productStart - index <= 3; index--) {
+            String token = sourceTokens[index];
+            if ("y".equals(token)) {
+                break;
+            }
+            Integer quantity = explicitQuantity(token);
+            if (quantity != null) {
+                return quantity;
+            }
+            if (!NON_PRODUCT_TOKENS.contains(token) && !ADD_ACTIONS.contains(token)) {
+                break;
+            }
+        }
+        return 1;
+    }
+
+    private static int explicitItemMarkerCount(String normalizedMessage) {
+        if (normalizedMessage.isBlank()) {
+            return 0;
+        }
+        String[] sourceTokens = normalizedMessage.split(" ");
+        int markers = 0;
+        for (int index = 0; index < sourceTokens.length; index++) {
+            String token = sourceTokens[index];
+            if (SINGULAR_QUANTITY_TOKENS.contains(token) && hasProductTokenAfter(sourceTokens, index + 1)) {
+                markers++;
+                continue;
+            }
+            if (isQuantityToken(token)
+                    && (index == 0 || !SINGULAR_QUANTITY_TOKENS.contains(sourceTokens[index - 1]))
+                    && hasProductTokenImmediatelyAfter(sourceTokens, index + 1)) {
+                markers++;
+            }
+        }
+        return markers;
+    }
+
+    private static boolean hasProductTokenAfter(String[] sourceTokens, int fromIndex) {
+        for (int index = fromIndex; index < sourceTokens.length && index - fromIndex <= 2; index++) {
+            if ("y".equals(sourceTokens[index])) {
+                return false;
+            }
+            if (isProductIdentityToken(sourceTokens[index])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasProductTokenImmediatelyAfter(String[] sourceTokens, int index) {
+        return index < sourceTokens.length
+                && !sourceTokens[index].chars().allMatch(Character::isDigit)
+                && isProductIdentityToken(sourceTokens[index]);
+    }
+
+    private static boolean isQuantityToken(String token) {
+        return explicitQuantity(token) != null && !SINGULAR_QUANTITY_TOKENS.contains(token);
+    }
+
+    private static Integer explicitQuantity(String token) {
+        if (SINGULAR_QUANTITY_TOKENS.contains(token)) {
+            return 1;
+        }
+        Integer wordQuantity = QUANTITY_WORDS.get(token);
+        if (wordQuantity != null) {
+            return wordQuantity;
+        }
+        if (!token.isBlank() && token.chars().allMatch(Character::isDigit)) {
+            try {
+                int parsed = Integer.parseInt(token);
+                return parsed > 0 ? parsed : null;
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     static Set<String> dishTokens(String value) {
@@ -254,6 +373,9 @@ public class AiToolSafetyGuard {
         tokens.removeAll(NON_PRODUCT_TOKENS);
         tokens.removeIf(token -> token.length() < 3 && !token.chars().allMatch(Character::isDigit));
         return tokens;
+    }
+
+    private record PositionedToken(String value, int sourceIndex) {
     }
 
     static Set<String> tokens(String value) {

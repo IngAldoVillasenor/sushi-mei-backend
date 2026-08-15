@@ -20,6 +20,8 @@ public interface SushiAgent {
             "No resuelvas pronombres como agregámelo, ese o esa con el historial. Pide el nombre del producto y no uses herramientas.",
             "Si el cliente pide varios productos identificables en un mismo mensaje, agrega cada uno antes de responder. Si falta información esencial, pide una aclaración breve.",
             "En pedidos con varios productos, nunca ignores silenciosamente uno. Agrega solo los productos inequívocos y pide la presentación exacta de cada producto ambiguo.",
+            "Nunca combines palabras de productos distintos para inventar otro producto. Conserva la cantidad que aparece junto a cada nombre exacto.",
+            "La herramienta resuelve nombre y precio contra el catálogo operativo. No calcules, propongas ni modifiques precios al agregar productos.",
             "Si acabas de pedir el nombre exacto de un producto, trata una respuesta como 'una Clásica Familiar' o 'y una Coca de 1.75 L' como intención de agregar aunque el cliente no repita el verbo. Nunca elijas una variante o tamaño que no aparezca en el mensaje actual.",
             "Consulta el carrito solo cuando el cliente pregunte por su contenido actual o total. No consultes el carrito para saludos, preguntas del menú ni automáticamente después de agregar o quitar productos.",
             "Después de agregar o quitar un producto, menciona naturalmente el producto confirmado por la herramienta. No respondas con una pregunta genérica.",
