@@ -2,7 +2,9 @@ package com.sushimei.sushimei.backend.agent;
 
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import com.sushimei.sushimei.backend.service.CartService;
+import com.sushimei.sushimei.backend.tools.AiMenuItemResolver;
 import com.sushimei.sushimei.backend.tools.OrderTools;
+import com.sushimei.sushimei.backend.tools.ResolvedMenuItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -13,7 +15,9 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -54,6 +58,22 @@ class AiConversationServiceTest {
         String response = service(new AiToolSafetyGuard()).chat(MEMORY_ID, PHONE_NUMBER, "Quitalo");
 
         assertThat(response).contains("producto");
+        verifyNoInteractions(sushiAgent, catalogAgent);
+    }
+
+    @Test
+    void bareCalpiSelectionRequestsTheExactPresentationWithoutInvokingTheModel() {
+        String response = service(new AiToolSafetyGuard()).chat(MEMORY_ID, PHONE_NUMBER, "Un Calpi por favor");
+
+        assertThat(response).contains("Calpi 500ml", "fresa", "mango", "mineral");
+        verifyNoInteractions(sushiAgent, catalogAgent);
+    }
+
+    @Test
+    void missingCalpiCorrectionRequestsTheExactPresentationWithoutInvokingTheModel() {
+        String response = service(new AiToolSafetyGuard()).chat(MEMORY_ID, PHONE_NUMBER, "Faltó el Calpi");
+
+        assertThat(response).contains("Calpi 500ml", "fresa", "mango", "mineral");
         verifyNoInteractions(sushiAgent, catalogAgent);
     }
 
@@ -103,7 +123,7 @@ class AiConversationServiceTest {
         CartService cartService = mock(CartService.class);
         when(cartService.getCartContents(PHONE_NUMBER)).thenReturn("Detalle exacto del carrito");
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        OrderTools tools = tools(cartService, guard);
         when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quiero un California"))
                 .thenAnswer(invocation -> {
                     tools.addDishToCart(PHONE_NUMBER, "California Roll", 1, 79.0);
@@ -119,18 +139,88 @@ class AiConversationServiceTest {
     }
 
     @Test
+    void naturalFollowUpAddReturnsItsAuthoritativeToolResponse() {
+        CartService cartService = mock(CartService.class);
+        when(cartService.getCartContents(PHONE_NUMBER)).thenReturn("Detalle exacto del carrito");
+        AiToolSafetyGuard guard = new AiToolSafetyGuard();
+        OrderTools tools = tools(cartService, guard);
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Y una Coca de 1.75 L"))
+                .thenAnswer(invocation -> {
+                    tools.addDishToCart(PHONE_NUMBER, "Coca 1.75 ml (Refresco)", 1, 45.0);
+                    return GENERIC_MODEL_RESPONSE;
+                });
+
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Y una Coca de 1.75 L");
+
+        assertThat(response).contains("1 x Coca 1.75 ml (Refresco)", "Detalle exacto del carrito")
+                .doesNotContain(GENERIC_MODEL_RESPONSE);
+        verify(cartService).addItem(PHONE_NUMBER, "Coca 1.75 ml (Refresco)", 1, 45.0);
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
+    void partialCompoundAddReportsTheConfirmedItemAndClarifiesTheMissingCalpi() {
+        CartService cartService = mock(CartService.class);
+        when(cartService.getCartContents(PHONE_NUMBER)).thenReturn("Detalle exacto del carrito");
+        AiToolSafetyGuard guard = new AiToolSafetyGuard();
+        OrderTools tools = tools(cartService, guard);
+        String message = "Quisiera agregar un Francés roll y un Calpi";
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, message))
+                .thenAnswer(invocation -> {
+                    tools.addDishToCart(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+                    tools.addDishToCart(PHONE_NUMBER, "Francés roll", 1, 89.0);
+                    return GENERIC_MODEL_RESPONSE;
+                });
+
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, message);
+
+        assertThat(response).contains("1 x Francés roll", "Detalle exacto del carrito", "Calpi 500ml", "fresa")
+                .doesNotContain(GENERIC_MODEL_RESPONSE);
+        verify(cartService).addItem(PHONE_NUMBER, "Francés roll", 1, 89.0);
+        verify(cartService, never()).addItem(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
+    void compoundAddReturnsOneConsolidatedConfirmationAndOnlyTheFinalCart() {
+        CartService cartService = mock(CartService.class);
+        when(cartService.getCartContents(PHONE_NUMBER))
+                .thenReturn("Carrito parcial: Avocado roll", "Carrito final: Avocado roll y Calpi");
+        AiToolSafetyGuard guard = new AiToolSafetyGuard();
+        OrderTools tools = tools(cartService, guard);
+        String message = "Quisiera un Avocado roll y un Calpi 500ml";
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, message))
+                .thenAnswer(invocation -> {
+                    tools.addDishToCart(PHONE_NUMBER, "Avocado roll", 1, 89.0);
+                    tools.addDishToCart(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+                    return GENERIC_MODEL_RESPONSE;
+                });
+
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, message);
+
+        assertThat(response)
+                .contains("Agregué 1 x Avocado roll y 1 x Calpi 500ml (Bebida Japonesa) a tu carrito")
+                .containsOnlyOnce("¡Listo!")
+                .contains("Carrito final: Avocado roll y Calpi")
+                .doesNotContain("Carrito parcial", GENERIC_MODEL_RESPONSE);
+        verify(cartService).addItem(PHONE_NUMBER, "Avocado roll", 1, 89.0);
+        verify(cartService).addItem(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
     void successfulRemoveReturnsItsAuthoritativeToolResponseInsteadOfGenericModelText() {
         CartService cartService = mock(CartService.class);
         when(cartService.removeItem(PHONE_NUMBER, "Coca Cola", 1)).thenReturn("El carrito est\u00e1 vac\u00edo.");
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
-        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca"))
+        OrderTools tools = tools(cartService, guard);
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca Cola"))
                 .thenAnswer(invocation -> {
                     tools.removeDishFromCart(PHONE_NUMBER, "Coca Cola", 1);
                     return GENERIC_MODEL_RESPONSE;
                 });
 
-        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca");
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca Cola");
 
         assertThat(response).contains("1 x Coca Cola", "El carrito est\u00e1 vac\u00edo")
                 .doesNotContain(GENERIC_MODEL_RESPONSE);
@@ -144,7 +234,7 @@ class AiConversationServiceTest {
         String authoritativeCartContents = "Detalle exacto de la orden:\n- 1x California Roll\nTOTAL A PAGAR: $79.0 MXN";
         when(cartService.getCartContents(PHONE_NUMBER)).thenReturn(authoritativeCartContents);
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        OrderTools tools = tools(cartService, guard);
         when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Que llevo?"))
                 .thenAnswer(invocation -> {
                     tools.checkCart(PHONE_NUMBER);
@@ -162,7 +252,7 @@ class AiConversationServiceTest {
     void blockedAddCannotBecomeAModelSuccessClaim() {
         CartService cartService = mock(CartService.class);
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        OrderTools tools = tools(cartService, guard);
         when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Necesito ayuda"))
                 .thenAnswer(invocation -> {
                     tools.addDishToCart(PHONE_NUMBER, "California Roll", 1, 100.0);
@@ -176,10 +266,22 @@ class AiConversationServiceTest {
     }
 
     @Test
+    void modelCannotClaimAnAddWhenNoToolWasExecuted() {
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Una Charola Familiar por favor"))
+                .thenReturn("Listo, agregué una charola a tu carrito.");
+
+        String response = service(new AiToolSafetyGuard())
+                .chat(MEMORY_ID, PHONE_NUMBER, "Una Charola Familiar por favor");
+
+        assertThat(response).contains("No pude verificar").doesNotContain("agregué una charola");
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
     void blockedRemoveCannotBecomeAModelSuccessClaim() {
         CartService cartService = mock(CartService.class);
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        OrderTools tools = tools(cartService, guard);
         when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Necesito ayuda"))
                 .thenAnswer(invocation -> {
                     tools.removeDishFromCart(PHONE_NUMBER, "California Roll", 1);
@@ -198,7 +300,7 @@ class AiConversationServiceTest {
         doThrow(new IllegalArgumentException("invalid money"))
                 .when(cartService).addItem(anyString(), anyString(), anyInt(), anyDouble());
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        OrderTools tools = tools(cartService, guard);
         when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quiero un California"))
                 .thenAnswer(invocation -> {
                     tools.addDishToCart(PHONE_NUMBER, "California Roll", 1, 100.0);
@@ -208,7 +310,7 @@ class AiConversationServiceTest {
         String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Quiero un California");
 
         assertThat(response).contains("No se pudo modificar");
-        verify(cartService).addItem(PHONE_NUMBER, "California Roll", 1, 100.0);
+        verify(cartService).addItem(PHONE_NUMBER, "California Roll", 1, 79.0);
         verifyNoInteractions(catalogAgent);
     }
 
@@ -218,7 +320,7 @@ class AiConversationServiceTest {
         when(cartService.removeItem(PHONE_NUMBER, "California Roll", 1))
                 .thenReturn("Error interno: item unavailable");
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
-        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        OrderTools tools = tools(cartService, guard);
         when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quita el California"))
                 .thenAnswer(invocation -> {
                     tools.removeDishFromCart(PHONE_NUMBER, "California Roll", 1);
@@ -234,5 +336,21 @@ class AiConversationServiceTest {
 
     private AiConversationService service(AiToolSafetyGuard guard) {
         return new AiConversationService(sushiAgent, catalogAgent, guard, retrievalPolicy);
+    }
+
+    private OrderTools tools(CartService cartService, AiToolSafetyGuard guard) {
+        AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
+        lenient().when(menuItemResolver.resolveExact(anyString())).thenAnswer(invocation -> {
+            String name = invocation.getArgument(0);
+            double price = switch (name) {
+                case "California Roll" -> 79.0;
+                case "Coca 1.75 ml (Refresco)" -> 45.0;
+                case "Calpi 500ml (Bebida Japonesa)" -> 25.0;
+                case "Francés roll", "Avocado roll" -> 89.0;
+                default -> 100.0;
+            };
+            return new ResolvedMenuItem(name, java.math.BigDecimal.valueOf(price));
+        });
+        return new OrderTools(mock(OrderRepository.class), cartService, guard, menuItemResolver);
     }
 }

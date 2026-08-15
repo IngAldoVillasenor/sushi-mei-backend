@@ -18,6 +18,8 @@ public interface MenuCatalogRepository extends JpaRepository<MenuItem, Long> {
     @EntityGraph(attributePaths = "tags")
     List<MenuItem> findByActiveTrueAndStandaloneOrderableTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
 
+    List<MenuItem> findByNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(String name);
+
     @Override
     @EntityGraph(attributePaths = "tags")
     Optional<MenuItem> findById(Long id);

@@ -1,8 +1,8 @@
 package com.sushimei.sushimei.backend.conversation;
 
 /**
- * Persistence definitions for a future deterministic checkout lifecycle.
- * Phase 1 does not derive or transition this state from inbound messages.
+ * Persistence definitions for the deterministic checkout lifecycle.
+ * Raw AI output never derives these states; the trusted WhatsApp checkout adapter does.
  */
 public enum ConversationState {
     ORDERING,

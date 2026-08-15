@@ -9,7 +9,7 @@ class OrderToolsDescriptionTest {
 
     @Test
     void cartToolDescriptionsReserveEachToolForTheRequestedOperation() throws NoSuchMethodException {
-        String addDescription = toolDescription("addDishToCart", String.class, String.class, int.class, double.class);
+        String addDescription = toolDescription("addDishToCart", String.class, String.class, int.class);
         String checkDescription = toolDescription("checkCart", String.class);
         String removeDescription = toolDescription("removeDishFromCart", String.class, String.class, int.class);
 

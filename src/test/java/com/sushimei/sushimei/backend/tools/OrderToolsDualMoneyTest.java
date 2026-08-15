@@ -6,6 +6,7 @@ import com.sushimei.sushimei.backend.checkout.MonetaryCompatibilityReason;
 import com.sushimei.sushimei.backend.checkout.ParallelMoney;
 import com.sushimei.sushimei.backend.checkout.ParallelMoneyResolver;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
+import com.sushimei.sushimei.backend.agent.AiToolSafetyGuard;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import com.sushimei.sushimei.backend.service.CartService;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,9 @@ class OrderToolsDualMoneyTest {
 
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final CartService cartService = mock(CartService.class);
-    private final OrderTools orderTools = new OrderTools(orderRepository, cartService);
+    private final AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
+    private final OrderTools orderTools = new OrderTools(
+            orderRepository, cartService, new AiToolSafetyGuard(), menuItemResolver);
     private final ParallelMoneyResolver moneyResolver = new ParallelMoneyResolver(new CheckoutMoney());
 
     @Test
@@ -62,6 +65,8 @@ class OrderToolsDualMoneyTest {
 
     @Test
     void addDishToCartMapsMonetaryFailureToTheGenericResponse() {
+        when(menuItemResolver.resolveExact("Maki"))
+                .thenReturn(new ResolvedMenuItem("Maki", new java.math.BigDecimal("10.50")));
         org.mockito.Mockito.doThrow(monetaryFailure())
                 .when(cartService).addItem("525512345678", "Maki", 1, 10.5d);
 
