@@ -60,7 +60,7 @@ class OrderToolsAiToolSafetyTest {
         String removeResponse = guard.withinTextTurn("Quita la Coca Cola", () ->
                 orderTools.removeDishFromCart("5214770000001", "Coca Cola", 1));
 
-        assertThat(addResponse).contains("California Roll", "Listo");
+        assertThat(addResponse).contains("California roll", "Listo");
         assertThat(firstCartResponse).isEqualTo("Carrito");
         assertThat(secondCartResponse).contains("no solicitó consultar el carrito");
         assertThat(removeResponse).contains("Coca Cola", "El carrito est\u00e1 vac\u00edo");

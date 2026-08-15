@@ -37,6 +37,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V11_SCRIPT = "V11__add_authoritative_catalog_rules.sql";
     private static final String V12_SCRIPT = "V12__add_authoritative_promotion_rules.sql";
     private static final String V13_SCRIPT = "V13__repair_classic_roll_promotion_targets.sql";
+    private static final String V14_SCRIPT = "V14__persist_whatsapp_inbound_failure_diagnostics.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -79,7 +80,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 12)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 13, "SQL", V13_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 13)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("13");
+        assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 14)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("14");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -153,7 +156,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 12)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 13, "SQL", V13_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 13)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("13");
+        assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 14)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("14");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))

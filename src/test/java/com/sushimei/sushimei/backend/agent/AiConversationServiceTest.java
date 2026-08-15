@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -339,7 +340,7 @@ class AiConversationServiceTest {
 
     private OrderTools tools(CartService cartService, AiToolSafetyGuard guard) {
         AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
-        when(menuItemResolver.resolveExact(anyString())).thenAnswer(invocation -> {
+        lenient().when(menuItemResolver.resolveExact(anyString())).thenAnswer(invocation -> {
             String name = invocation.getArgument(0);
             double price = switch (name) {
                 case "California Roll" -> 79.0;
