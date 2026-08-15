@@ -26,6 +26,12 @@ public class AiConversationService {
             "Puedo ayudarte con informaci\u00f3n del men\u00fa. \u00bfQu\u00e9 producto deseas consultar?";
     private static final String UNVERIFIED_OPERATION_CLAIM_RESPONSE =
             "No pude verificar ese cambio en tu carrito. Ind\u00edcame el producto y la presentaci\u00f3n exactos para intentarlo nuevamente.";
+    private static final String CALPI_PRESENTATION_CLARIFICATION =
+            "\u00bfQu\u00e9 Calpi deseas? Escribe la presentaci\u00f3n exacta: 'Agrega Calpi 500ml', "
+                    + "'Agrega Calpi de fresa 500ml', 'Agrega Calpi de mango' o 'Agrega Calpi mineral 500ml'.";
+    private static final String MULTI_ITEM_INCOMPLETE_RESPONSE =
+            "Agregu\u00e9 los productos confirmados, pero no pude identificar todos. "
+                    + "Env\u00edame el producto faltante con su presentaci\u00f3n exacta.";
     private static final Set<String> OPERATION_SUCCESS_TOKENS = Set.of(
             "agregue", "agrego", "agregado", "anadi", "anadio", "anadido",
             "quite", "quito", "quitado", "elimine", "elimino", "eliminado");
@@ -65,6 +71,10 @@ public class AiConversationService {
             log.info("AI conversation outcome=SAFE_AMBIGUOUS_REFERENCE_CLARIFICATION");
             return AMBIGUOUS_REFERENCE_RESPONSE;
         }
+        if (AiToolSafetyGuard.isStandaloneAmbiguousCalpiAdd(message)) {
+            log.info("AI conversation outcome=SAFE_CALPI_PRESENTATION_CLARIFICATION");
+            return CALPI_PRESENTATION_CLARIFICATION;
+        }
         if (AiToolSafetyGuard.isFinishOrderIntent(message)) {
             log.info("AI conversation outcome=SAFE_FINISH_ACKNOWLEDGEMENT");
             return FINISH_ORDER_RESPONSE;
@@ -81,7 +91,7 @@ public class AiConversationService {
 
         AiToolTurnResult<String> result = toolSafetyGuard.executeTextTurn(message,
                 () -> invokeAgent(memoryId, phoneNumber, message));
-        return safeResponseFor(result.mutationOutcome()).orElseGet(() -> authoritativeResponseFor(result).orElseGet(() -> {
+        return safeResponseFor(result, message).orElseGet(() -> authoritativeResponseFor(result, message).orElseGet(() -> {
             if (containsOperationalClaim(result.value())) {
                 log.warn("AI conversation outcome=MODEL_RESPONSE_BLOCKED reason=UNVERIFIED_OPERATIONAL_CLAIM");
                 return UNVERIFIED_OPERATION_CLAIM_RESPONSE;
@@ -91,14 +101,25 @@ public class AiConversationService {
         }));
     }
 
-    private Optional<String> authoritativeResponseFor(AiToolTurnResult<String> result) {
+    private Optional<String> authoritativeResponseFor(AiToolTurnResult<String> result, String message) {
         if (!result.mutationOutcome().isSuccessfulCartOperation() || result.authoritativeToolResponse() == null) {
             return Optional.empty();
         }
         log.info("AI conversation outcome=AUTHORITATIVE_TOOL_RESPONSE toolOutcome={}", result.mutationOutcome());
+        int requestedItemCount = AiToolSafetyGuard.requestedItemCountLowerBound(message);
+        if (result.mutationOutcome() == AiMutationTurnOutcome.ADD_SUCCEEDED
+                && result.successfulAddCount() < requestedItemCount) {
+            log.info("AI conversation outcome=PARTIAL_MULTI_ITEM_ADD addedCount={} requestedLowerBound={}",
+                    result.successfulAddCount(), requestedItemCount);
+            return Optional.of(appendResponse(result.authoritativeToolResponse(), addClarificationFor(message)));
+        }
         return Optional.of(result.authoritativeToolResponse());
     }
+
     private boolean containsOperationalClaim(String response) {
+        if (response == null || response.isBlank()) {
+            return false;
+        }
         Set<String> responseTokens = AiToolSafetyGuard.tokens(response);
         boolean namesOperationalTarget = responseTokens.stream().anyMatch(OPERATION_TARGET_TOKENS::contains);
         return namesOperationalTarget && (responseTokens.stream().anyMatch(OPERATION_SUCCESS_TOKENS::contains)
@@ -114,14 +135,34 @@ public class AiConversationService {
         }
     }
 
-    private Optional<String> safeResponseFor(AiMutationTurnOutcome mutationOutcome) {
+    private Optional<String> safeResponseFor(AiToolTurnResult<String> result, String message) {
+        AiMutationTurnOutcome mutationOutcome = result.mutationOutcome();
         return switch (mutationOutcome) {
             case NONE, ADD_SUCCEEDED, REMOVE_SUCCEEDED, CART_QUERY_SUCCEEDED -> Optional.empty();
-            case ADD_BLOCKED -> safeToolResponse(mutationOutcome, ADD_CLARIFICATION_RESPONSE);
-            case REMOVE_BLOCKED -> safeToolResponse(mutationOutcome, REMOVE_CLARIFICATION_RESPONSE);
-            case ADD_FAILED, REMOVE_FAILED -> safeToolResponse(mutationOutcome, MUTATION_FAILURE_RESPONSE);
-            case CONFIRMATION_BLOCKED -> safeToolResponse(mutationOutcome, CONFIRMATION_BLOCKED_RESPONSE);
+            case ADD_BLOCKED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), addClarificationFor(message)));
+            case REMOVE_BLOCKED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), REMOVE_CLARIFICATION_RESPONSE));
+            case ADD_FAILED, REMOVE_FAILED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), MUTATION_FAILURE_RESPONSE));
+            case CONFIRMATION_BLOCKED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), CONFIRMATION_BLOCKED_RESPONSE));
         };
+    }
+
+    private String addClarificationFor(String message) {
+        if (AiToolSafetyGuard.mentionsAmbiguousCalpi(message)) {
+            return CALPI_PRESENTATION_CLARIFICATION;
+        }
+        return AiToolSafetyGuard.requestedItemCountLowerBound(message) > 1
+                ? MULTI_ITEM_INCOMPLETE_RESPONSE
+                : ADD_CLARIFICATION_RESPONSE;
+    }
+
+    private String appendResponse(String authoritativeResponse, String fallback) {
+        return authoritativeResponse == null || authoritativeResponse.isBlank()
+                ? fallback
+                : authoritativeResponse + "\n\n" + fallback;
     }
 
     private Optional<String> safeToolResponse(AiMutationTurnOutcome outcome, String response) {

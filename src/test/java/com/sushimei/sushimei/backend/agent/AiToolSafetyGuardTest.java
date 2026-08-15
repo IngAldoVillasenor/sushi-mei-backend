@@ -43,6 +43,29 @@ class AiToolSafetyGuardTest {
     }
 
     @Test
+    void calpiRequiresItsExactPresentationAndFlavor() {
+        assertBlocked("Agrega un Calpi", () -> guard.requireAddAllowed("Calpi 500ml (Bebida Japonesa)"),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+        guard.withinTextTurn("Agrega Calpi 500ml", () -> {
+            guard.requireAddAllowed("Calpi 500ml (Bebida Japonesa)");
+            return null;
+        });
+        assertBlocked("Agrega Calpi 500ml", () ->
+                        guard.requireAddAllowed("Calpi de Fresa 500ml (Bebida Japonesa)"),
+                AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);
+    }
+
+    @Test
+    void countsTheMinimumItemsNamedInACompoundRequest() {
+        org.assertj.core.api.Assertions.assertThat(
+                AiToolSafetyGuard.requestedItemCountLowerBound("Quiero un Francés roll y un Calpi"))
+                .isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(
+                AiToolSafetyGuard.requestedItemCountLowerBound("Quiero un Francés roll"))
+                .isEqualTo(1);
+    }
+
+    @Test
     void orderingVerbCanAddTheNamedProduct() {
         guard.withinTextTurn("Deseo ordenar una Clásica Familiar", () -> {
             guard.requireAddAllowed("Clásica Familiar");
@@ -76,7 +99,7 @@ class AiToolSafetyGuardTest {
 
     @Test
     void removalRequiresTheNamedProductInTheCurrentMessage() {
-        guard.withinTextTurn("Quita la Coca", () -> {
+        guard.withinTextTurn("Quita la Coca Cola", () -> {
             guard.requireRemoveAllowed("Coca Cola");
             return null;
         });

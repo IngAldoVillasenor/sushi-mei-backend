@@ -44,7 +44,7 @@ public class ConversationRetrievalPolicy {
         return tokens.stream().anyMatch(token -> Set.of("hola", "buenas", "buenos", "gracias", "como", "estas").contains(token))
                 && !containsCatalogSignal(tokens)
                 && !containsAction(tokens, Set.of("quiero", "quisiera", "dame", "ponme", "agrega", "agregame", "anade", "incluye",
-                "ordena", "ordenar", "ordenarme", "pido", "pedir"));
+                "ordena", "ordenar", "ordenarme", "pido", "pedir", "falta", "falto", "faltaba"));
     }
 
     private boolean isFinishIntent(String normalized) {
@@ -84,7 +84,7 @@ public class ConversationRetrievalPolicy {
         return tokens.stream().anyMatch(token -> !Set.of(
                 "a", "al", "con", "de", "del", "el", "la", "las", "lo", "los", "me", "mi", "para", "por", "que",
                 "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye", "un",
-                "ordena", "ordenar", "ordenarme", "pido", "pedir", "una", "unos", "unas", "y", "favor", "otro", "otra", "orden", "ordenes", "pedido", "platillo", "platillos", "producto", "productos",
+                "ordena", "ordenar", "ordenarme", "pido", "pedir", "falta", "falto", "faltaba", "una", "unos", "unas", "y", "favor", "otro", "otra", "orden", "ordenes", "pedido", "platillo", "platillos", "producto", "productos",
                 "roll", "rollo", "rollos", "bebida", "bebidas", "refresco", "refrescos", "sushi", "comida", "algo", "eso",
                 "esa", "ese", "esta", "este").contains(token));
     }

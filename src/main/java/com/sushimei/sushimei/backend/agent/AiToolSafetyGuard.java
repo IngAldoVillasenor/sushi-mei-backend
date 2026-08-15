@@ -17,7 +17,7 @@ public class AiToolSafetyGuard {
 
     private static final Set<String> ADD_ACTIONS = Set.of(
             "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye",
-            "ordena", "ordenar", "ordenarme", "pido", "pedir");
+            "ordena", "ordenar", "ordenarme", "pido", "pedir", "falta", "falto", "faltaba");
     private static final Set<String> REMOVE_ACTIONS = Set.of(
             "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta", "restar", "saca", "sacar");
     private static final Set<String> SIMPLE_GREETING_TOKENS = Set.of(
@@ -35,10 +35,10 @@ public class AiToolSafetyGuard {
             "a", "al", "con", "de", "del", "el", "ella", "ellos", "esa", "ese", "esto", "la", "las", "lo", "los",
             "me", "mi", "para", "por", "que", "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega",
             "agregame", "anade", "incluye", "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta",
-            "ordena", "ordenar", "ordenarme", "pido", "pedir", "restar", "saca", "sacar", "tambien", "un", "una",
+            "ordena", "ordenar", "ordenarme", "pido", "pedir", "falta", "falto", "faltaba", "restar", "saca", "sacar", "tambien", "un", "una",
             "unos", "unas", "y", "favor", "otro", "otra", "orden", "ordenes", "pedido",
             "platillo", "platillos", "producto", "productos", "roll", "rollo", "rollos", "bebida", "bebidas", "refresco",
-            "refrescos", "sushi", "comida", "algo", "eso", "esta", "este");
+            "refrescos", "japonesa", "sushi", "comida", "algo", "eso", "esta", "este");
 
     private final ThreadLocal<TurnContext> activeTurn = new ThreadLocal<>();
 
@@ -51,7 +51,8 @@ public class AiToolSafetyGuard {
         TurnContext current = new TurnContext(normalize(message));
         activeTurn.set(current);
         try {
-            return new AiToolTurnResult<>(operation.get(), current.mutationOutcome(), current.authoritativeToolResponse());
+            return new AiToolTurnResult<>(operation.get(), current.mutationOutcome(), current.authoritativeToolResponse(),
+                    current.successfulAddCount());
         } finally {
             if (previous == null) {
                 activeTurn.remove();
@@ -150,6 +151,32 @@ public class AiToolSafetyGuard {
         return containsAnyToken(messageTokens, ADD_ACTIONS) || isImplicitAddSelection(messageTokens);
     }
 
+    static boolean mentionsAmbiguousCalpi(String message) {
+        Set<String> messageTokens = tokens(message);
+        return messageTokens.contains("calpi")
+                && messageTokens.stream().noneMatch(Set.of(
+                "fresa", "mango", "mineral", "natural", "500", "500ml")::contains);
+    }
+
+    static boolean isStandaloneAmbiguousCalpiAdd(String message) {
+        Set<String> messageTokens = tokens(message);
+        return isAddRequest(message) && mentionsAmbiguousCalpi(message) && !messageTokens.contains("y");
+    }
+
+    static int requestedItemCountLowerBound(String message) {
+        if (!isAddRequest(message)) {
+            return 0;
+        }
+        String normalized = normalize(message);
+        int itemCount = 1;
+        int fromIndex = 0;
+        while ((fromIndex = normalized.indexOf(" y ", fromIndex)) >= 0) {
+            itemCount++;
+            fromIndex += 3;
+        }
+        return itemCount;
+    }
+
     private static boolean isImplicitAddSelection(Set<String> messageTokens) {
         return !messageTokens.isEmpty()
                 && containsAnyToken(messageTokens, IMPLICIT_ADD_MARKERS)
@@ -194,24 +221,30 @@ public class AiToolSafetyGuard {
             return false;
         }
 
-        Set<String> numericIdentityTokens = identityTokens.stream()
-                .filter(token -> token.chars().allMatch(Character::isDigit))
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        if (!messageTokens.containsAll(numericIdentityTokens)) {
+        Set<String> numericIdentityTokens = numericFragments(identityTokens);
+        Set<String> numericMessageTokens = numericFragments(messageTokens);
+        if (!numericMessageTokens.containsAll(numericIdentityTokens)) {
             return false;
         }
 
         Set<String> distinctiveTokens = identityTokens.stream()
-                .filter(token -> !token.chars().allMatch(Character::isDigit))
+                .filter(token -> token.chars().noneMatch(Character::isDigit))
                 .filter(token -> !AMBIGUOUS_PRODUCT_MODIFIERS.contains(token))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        if (!distinctiveTokens.isEmpty()) {
-            return distinctiveTokens.stream().anyMatch(messageTokens::contains);
+        if (distinctiveTokens.isEmpty()) {
+            return false;
         }
+        if (distinctiveTokens.contains("calpi")) {
+            return messageTokens.containsAll(distinctiveTokens);
+        }
+        return distinctiveTokens.stream().anyMatch(messageTokens::contains);
+    }
 
-        return identityTokens.stream()
-                .filter(token -> !token.chars().allMatch(Character::isDigit))
-                .anyMatch(messageTokens::contains);
+    private static Set<String> numericFragments(Set<String> sourceTokens) {
+        return sourceTokens.stream()
+                .flatMap(token -> Arrays.stream(token.split("\\D+")))
+                .filter(token -> !token.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     static Set<String> dishTokens(String value) {
@@ -267,9 +300,12 @@ public class AiToolSafetyGuard {
         if (context == null || response == null || response.isBlank()) {
             return;
         }
+        if (outcome == AiMutationTurnOutcome.ADD_SUCCEEDED) {
+            context.incrementSuccessfulAddCount();
+        }
+        context.appendAuthoritativeToolResponse(response);
         if (context.mutationOutcome() == AiMutationTurnOutcome.NONE || context.mutationOutcome().isSuccessfulCartOperation()) {
             context.setMutationOutcome(outcome);
-            context.appendAuthoritativeToolResponse(response);
         }
     }
 
@@ -287,6 +323,7 @@ public class AiToolSafetyGuard {
         private boolean cartQueryPerformed;
         private AiMutationTurnOutcome mutationOutcome = AiMutationTurnOutcome.NONE;
         private String authoritativeToolResponse;
+        private int successfulAddCount;
 
         private TurnContext(String normalizedMessage) {
             this.normalizedMessage = normalizedMessage;
@@ -319,6 +356,14 @@ public class AiToolSafetyGuard {
 
         private String authoritativeToolResponse() {
             return authoritativeToolResponse;
+        }
+
+        private int successfulAddCount() {
+            return successfulAddCount;
+        }
+
+        private void incrementSuccessfulAddCount() {
+            successfulAddCount++;
         }
 
         private void appendAuthoritativeToolResponse(String response) {

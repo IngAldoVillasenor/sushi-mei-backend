@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -54,6 +55,22 @@ class AiConversationServiceTest {
         String response = service(new AiToolSafetyGuard()).chat(MEMORY_ID, PHONE_NUMBER, "Quitalo");
 
         assertThat(response).contains("producto");
+        verifyNoInteractions(sushiAgent, catalogAgent);
+    }
+
+    @Test
+    void bareCalpiSelectionRequestsTheExactPresentationWithoutInvokingTheModel() {
+        String response = service(new AiToolSafetyGuard()).chat(MEMORY_ID, PHONE_NUMBER, "Un Calpi por favor");
+
+        assertThat(response).contains("Calpi 500ml", "fresa", "mango", "mineral");
+        verifyNoInteractions(sushiAgent, catalogAgent);
+    }
+
+    @Test
+    void missingCalpiCorrectionRequestsTheExactPresentationWithoutInvokingTheModel() {
+        String response = service(new AiToolSafetyGuard()).chat(MEMORY_ID, PHONE_NUMBER, "Faltó el Calpi");
+
+        assertThat(response).contains("Calpi 500ml", "fresa", "mango", "mineral");
         verifyNoInteractions(sushiAgent, catalogAgent);
     }
 
@@ -139,18 +156,41 @@ class AiConversationServiceTest {
     }
 
     @Test
+    void partialCompoundAddReportsTheConfirmedItemAndClarifiesTheMissingCalpi() {
+        CartService cartService = mock(CartService.class);
+        when(cartService.getCartContents(PHONE_NUMBER)).thenReturn("Detalle exacto del carrito");
+        AiToolSafetyGuard guard = new AiToolSafetyGuard();
+        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        String message = "Quisiera agregar un Francés roll y un Calpi";
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, message))
+                .thenAnswer(invocation -> {
+                    tools.addDishToCart(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+                    tools.addDishToCart(PHONE_NUMBER, "Francés roll", 1, 89.0);
+                    return GENERIC_MODEL_RESPONSE;
+                });
+
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, message);
+
+        assertThat(response).contains("1 x Francés roll", "Detalle exacto del carrito", "Calpi 500ml", "fresa")
+                .doesNotContain(GENERIC_MODEL_RESPONSE);
+        verify(cartService).addItem(PHONE_NUMBER, "Francés roll", 1, 89.0);
+        verify(cartService, never()).addItem(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
     void successfulRemoveReturnsItsAuthoritativeToolResponseInsteadOfGenericModelText() {
         CartService cartService = mock(CartService.class);
         when(cartService.removeItem(PHONE_NUMBER, "Coca Cola", 1)).thenReturn("El carrito est\u00e1 vac\u00edo.");
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
         OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
-        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca"))
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca Cola"))
                 .thenAnswer(invocation -> {
                     tools.removeDishFromCart(PHONE_NUMBER, "Coca Cola", 1);
                     return GENERIC_MODEL_RESPONSE;
                 });
 
-        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca");
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, "Quita la Coca Cola");
 
         assertThat(response).contains("1 x Coca Cola", "El carrito est\u00e1 vac\u00edo")
                 .doesNotContain(GENERIC_MODEL_RESPONSE);

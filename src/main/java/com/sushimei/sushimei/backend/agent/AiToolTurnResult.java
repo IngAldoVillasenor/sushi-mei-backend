@@ -5,5 +5,6 @@ package com.sushimei.sushimei.backend.agent;
  */
 public record AiToolTurnResult<T>(T value,
                                   AiMutationTurnOutcome mutationOutcome,
-                                  String authoritativeToolResponse) {
+                                  String authoritativeToolResponse,
+                                  int successfulAddCount) {
 }

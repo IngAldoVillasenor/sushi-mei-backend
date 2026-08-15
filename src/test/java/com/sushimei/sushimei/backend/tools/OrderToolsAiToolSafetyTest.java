@@ -52,7 +52,7 @@ class OrderToolsAiToolSafetyTest {
             orderTools.checkCart("5214770000001");
             return orderTools.checkCart("5214770000001");
         });
-        String removeResponse = guard.withinTextTurn("Quita la Coca", () ->
+        String removeResponse = guard.withinTextTurn("Quita la Coca Cola", () ->
                 orderTools.removeDishFromCart("5214770000001", "Coca Cola", 1));
 
         assertThat(addResponse).contains("California Roll", "Listo");
