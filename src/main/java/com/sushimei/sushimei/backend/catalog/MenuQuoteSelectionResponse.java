@@ -10,6 +10,7 @@ public record MenuQuoteSelectionResponse(
         int quantity,
         BigDecimal catalogUnitPrice,
         BigDecimal priceAdjustment,
+        boolean displayOnTicket,
         List<MenuQuoteGroupResponse> groups
 ) {
     public MenuQuoteSelectionResponse {

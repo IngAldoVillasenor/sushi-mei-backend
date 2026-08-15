@@ -72,7 +72,7 @@ class ManualPosOrderCreationTransaction {
             order.addOrderLine(paid);
             for (PromotionRewardQuoteResponse reward : quoteLine.rewards()) {
                 AppliedPromotionResponse rewardPromotion = reward.promotion();
-                OrderLineRecord rewardLine = OrderLineRecord.createPromotionReward(paid, linePosition++, reward.name(),
+                OrderLineRecord rewardLine = OrderLineRecord.createPromotionReward(paid, reward.menuItemId(), linePosition++, reward.name(),
                         reward.catalogBaseUnitPrice(), reward.configurationAdjustmentTotal(), nonNegative(reward.total()),
                         nonNegative(reward.total()), rewardPromotion.id(), rewardPromotion.name(),
                         rewardPromotion.benefitType().name(), reward.rewardOrdinal());
@@ -127,7 +127,7 @@ class ManualPosOrderCreationTransaction {
             for (MenuQuoteSelectionResponse selection : group.selections()) {
                 OrderLineSelectionSnapshot snapshot = OrderLineSelectionSnapshot.create(null, group.groupId(), group.name(),
                         position++, selection.menuItemId(), selection.name(), selection.quantity(), selection.catalogUnitPrice(),
-                        selection.priceAdjustment());
+                        selection.priceAdjustment(), selection.displayOnTicket());
                 line.addSelectionSnapshot(snapshot);
                 nestedSnapshots(line, snapshot, selection.groups());
             }
@@ -140,7 +140,7 @@ class ManualPosOrderCreationTransaction {
             for (MenuQuoteSelectionResponse selection : group.selections()) {
                 OrderLineSelectionSnapshot snapshot = OrderLineSelectionSnapshot.create(parent, group.groupId(), group.name(),
                         position++, selection.menuItemId(), selection.name(), selection.quantity(), selection.catalogUnitPrice(),
-                        selection.priceAdjustment());
+                        selection.priceAdjustment(), selection.displayOnTicket());
                 line.addSelectionSnapshot(snapshot);
                 nestedSnapshots(line, snapshot, selection.groups());
             }

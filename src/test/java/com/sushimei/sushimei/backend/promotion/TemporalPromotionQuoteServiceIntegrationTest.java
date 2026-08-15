@@ -135,6 +135,39 @@ class TemporalPromotionQuoteServiceIntegrationTest {
     }
 
     @Test
+    void flexibleBuyOneGetOneQuotesTheExplicitEligibleRewardAtZeroBasePrice() {
+        TestClock.set(THURSDAY);
+        MenuItemResponse california = item("California", "79.00");
+        MenuItemResponse empanizado = item("Empanizado ebi", "99.00");
+        MenuItemResponse premium = item("Mango", "109.00");
+        CatalogTagResponse classic = tag("ROLL_CLASSIC");
+        california = assign(california, classic);
+        empanizado = assign(empanizado, classic);
+        flexibleBogoPromotion("Jueves flexible", 10, Set.of(4), targetTag(classic), 1, 1, true);
+
+        PromotionQuoteResponse response = quote(line("pair", california.id(), 1, List.of(),
+                List.of(new PromotionRewardConfigurationRequest(1, empanizado.id(), List.of()))));
+
+        assertThat(response.lines().get(0).rewards()).singleElement().satisfies(reward -> {
+            assertThat(reward.menuItemId()).isEqualTo(empanizado.id());
+            assertThat(reward.name()).isEqualTo("Empanizado ebi");
+            assertThat(reward.catalogBaseUnitPrice()).isEqualByComparingTo("99.00");
+            assertThat(reward.chargedBaseUnitPrice()).isEqualByComparingTo("0.00");
+        });
+        assertThat(response.total()).isEqualByComparingTo("79.00");
+
+        Long premiumId = premium.id();
+        assertThatThrownBy(() -> quote(line("invalid", california.id(), 1, List.of(),
+                List.of(new PromotionRewardConfigurationRequest(1, premiumId, List.of())))))
+                .isInstanceOf(PromotionException.class)
+                .extracting(exception -> ((PromotionException) exception).getError())
+                .isEqualTo(PromotionError.PROMOTION_REWARD_INVALID);
+        assertThat(quote(line("compatible", california.id(), 1, List.of(), List.of()))
+                .lines().get(0).rewards()).singleElement()
+                .satisfies(reward -> assertThat(reward.menuItemId()).isEqualTo(california.id()));
+    }
+
+    @Test
     void rootOnlyTargetResolutionHonorsDatesTagsItemsPrioritiesAndTies() {
         TestClock.set(THURSDAY);
         MenuItemResponse california = item("California", "79.00");
@@ -217,7 +250,7 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         assertThat(quote(line("inactive-tag", california.id(), 1, List.of(), List.of())).lines().get(0).rewards()).isEmpty();
         assertThat(PromotionRewardConfigurationRequest.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
-                .containsExactly("rewardOrdinal", "groups");
+                .containsExactly("rewardOrdinal", "menuItemId", "groups");
     }
 
     @Test
@@ -275,6 +308,12 @@ class TemporalPromotionQuoteServiceIntegrationTest {
                                             int buy, int reward, boolean repeat) {
         return promotionService.create(new CreatePromotionRequest(name, true, priority, PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM,
                 null, buy, reward, repeat, null, null, weekdays, List.of(target)));
+    }
+    private PromotionResponse flexibleBogoPromotion(String name, int priority, Set<Integer> weekdays,
+                                                    PromotionTargetRequest target, int buy, int reward, boolean repeat) {
+        return promotionService.create(new CreatePromotionRequest(name, true, priority,
+                PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM, null, buy, reward, repeat,
+                null, null, weekdays, List.of(target)));
     }
     private PromotionTargetRequest targetTag(CatalogTagResponse tag) { return new PromotionTargetRequest(PromotionTargetType.TAG, tag.id()); }
     private PromotionTargetRequest targetItem(MenuItemResponse item) { return new PromotionTargetRequest(PromotionTargetType.ITEM, item.id()); }

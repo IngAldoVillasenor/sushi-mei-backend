@@ -160,7 +160,8 @@ public class OperationalOrderReadService {
                 snapshot.getSelectedItemName(),
                 snapshot.getQuantity(),
                 snapshot.getCatalogUnitPrice(),
-                snapshot.getPriceAdjustmentAmount());
+                snapshot.getPriceAdjustmentAmount(),
+                snapshot.isDisplayOnTicket());
     }
 
     private BigDecimal total(OrderRecord order) {

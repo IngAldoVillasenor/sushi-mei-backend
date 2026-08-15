@@ -72,6 +72,6 @@ class ManualPosOrderReadService {
                 snapshot.getParentSelection() == null ? null : snapshot.getParentSelection().getId(), snapshot.getGroupId(),
                 snapshot.getGroupName(), snapshot.getSelectionPosition(), snapshot.getSelectedMenuItemId(),
                 snapshot.getSelectedItemName(), snapshot.getQuantity(), snapshot.getCatalogUnitPrice(),
-                snapshot.getPriceAdjustmentAmount());
+                snapshot.getPriceAdjustmentAmount(), snapshot.isDisplayOnTicket());
     }
 }

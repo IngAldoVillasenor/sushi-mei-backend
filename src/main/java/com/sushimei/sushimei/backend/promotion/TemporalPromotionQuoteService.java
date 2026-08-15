@@ -110,7 +110,8 @@ public class TemporalPromotionQuoteService {
             chargedBaseUnit = promotion.getFixedUnitPriceAmount();
             promotionAdjustment = multiplySigned(chargedBaseUnit.subtract(catalogBaseUnit), line.quantity());
             rejectRewardConfigurations(line.rewardConfigurations());
-        } else if (promotion != null && promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM) {
+        } else if (promotion != null && (promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM
+                || promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM)) {
             int rewardCount = rewardCount(promotion, line.quantity());
             rewards = quoteRewards(lineKey, rootItem, promotion, line.rewardConfigurations(), rewardCount);
         } else {
@@ -141,14 +142,37 @@ public class TemporalPromotionQuoteService {
         List<PromotionRewardQuoteResponse> rewards = new ArrayList<>();
         for (int ordinal = 1; ordinal <= rewardCount; ordinal++) {
             PromotionRewardConfigurationRequest configuration = configurationsByOrdinal.get(ordinal);
-            MenuItemQuoteResponse rewardQuote = catalogConfigurationService.quote(sourceItem.getId(),
+            MenuItem rewardItem = rewardItem(sourceItem, promotion, configuration);
+            MenuItemQuoteResponse rewardQuote = catalogConfigurationService.quote(rewardItem.getId(),
                     new MenuItemQuoteRequest(1, configuration == null ? List.of() : configuration.groups()));
             BigDecimal configurationTotal = rewardQuote.unitAdjustmentTotal();
             rewards.add(new PromotionRewardQuoteResponse(lineKey, ordinal, AppliedPromotionResponse.from(promotion),
-                    sourceItem.getId(), sourceItem.getName(), rewardQuote.baseUnitPrice(), zero(), rewardQuote,
+                    rewardItem.getId(), rewardItem.getName(), rewardQuote.baseUnitPrice(), zero(), rewardQuote,
                     configurationTotal, configurationTotal));
         }
         return List.copyOf(rewards);
+    }
+
+    private MenuItem rewardItem(MenuItem sourceItem,
+                                Promotion promotion,
+                                PromotionRewardConfigurationRequest configuration) {
+        if (promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM) {
+            if (configuration != null && configuration.menuItemId() != null
+                    && !configuration.menuItemId().equals(sourceItem.getId())) {
+                throw new PromotionException(PromotionError.PROMOTION_REWARD_INVALID);
+            }
+            return sourceItem;
+        }
+        Long rewardMenuItemId = configuration == null || configuration.menuItemId() == null
+                ? sourceItem.getId()
+                : configuration.menuItemId();
+        MenuItem rewardItem = menuCatalogRepository.findById(rewardMenuItemId)
+                .orElseThrow(() -> new PromotionException(PromotionError.PROMOTION_REWARD_INVALID));
+        if (!rewardItem.isActive() || !rewardItem.isAvailable() || !rewardItem.isStandaloneOrderable()
+                || !targets(promotion, rewardItem)) {
+            throw new PromotionException(PromotionError.PROMOTION_REWARD_INVALID);
+        }
+        return rewardItem;
     }
 
     private Map<Integer, PromotionRewardConfigurationRequest> indexRewardConfigurations(

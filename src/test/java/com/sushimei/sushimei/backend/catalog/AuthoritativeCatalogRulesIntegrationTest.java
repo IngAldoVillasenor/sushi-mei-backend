@@ -272,6 +272,13 @@ class AuthoritativeCatalogRulesIntegrationTest {
                 group(rollGroup.id(), selection(24L, 2)),
                 group(extraGroup.id(), selection(packageId, 1, group(drinks.id(), selection(25L, 1), selection(41L, 1)))));
         assertThat(mixedPair.total()).isEqualByComparingTo("338.00");
+        MenuQuoteSelectionResponse packageSelection = mixedPair.groups().stream()
+                .flatMap(group -> group.selections().stream())
+                .filter(selection -> selection.menuItemId().equals(packageId))
+                .findFirst().orElseThrow();
+        assertThat(packageSelection.displayOnTicket()).isFalse();
+        assertThat(packageSelection.groups()).flatMap(MenuQuoteGroupResponse::selections)
+                .allSatisfy(selection -> assertThat(selection.displayOnTicket()).isTrue());
 
         MenuItemQuoteResponse duplicatePair = quote(96L,
                 group(rollGroup.id(), selection(24L, 2)),

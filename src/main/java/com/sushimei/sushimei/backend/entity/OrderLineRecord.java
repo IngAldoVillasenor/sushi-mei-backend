@@ -159,6 +159,7 @@ public class OrderLineRecord {
     }
 
     public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
+                                                        Long sourceMenuItemId,
                                                         int linePosition,
                                                         String dishName,
                                                         BigDecimal catalogBaseUnitPrice,
@@ -172,7 +173,7 @@ public class OrderLineRecord {
         OrderLineRecord source = Objects.requireNonNull(sourcePaidLine, "sourcePaidLine must not be null");
         return new OrderLineRecord(
                 null,
-                requirePositiveId(source.getSourceMenuItemId(), "sourceMenuItemId"),
+                requirePositiveId(sourceMenuItemId, "sourceMenuItemId"),
                 null,
                 OrderLineKind.PROMOTION_REWARD,
                 linePosition,
@@ -188,6 +189,22 @@ public class OrderLineRecord {
                 requireNonBlank(appliedPromotionBenefitType, "appliedPromotionBenefitType"),
                 requirePositive(rewardOrdinal, "rewardOrdinal"),
                 source);
+    }
+
+    public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
+                                                        int linePosition,
+                                                        String dishName,
+                                                        BigDecimal catalogBaseUnitPrice,
+                                                        BigDecimal configurationAdjustmentAmount,
+                                                        BigDecimal finalUnitAmount,
+                                                        BigDecimal finalLineTotal,
+                                                        Long appliedPromotionId,
+                                                        String appliedPromotionName,
+                                                        String appliedPromotionBenefitType,
+                                                        int rewardOrdinal) {
+        return createPromotionReward(sourcePaidLine, sourcePaidLine.getSourceMenuItemId(), linePosition, dishName,
+                catalogBaseUnitPrice, configurationAdjustmentAmount, finalUnitAmount, finalLineTotal,
+                appliedPromotionId, appliedPromotionName, appliedPromotionBenefitType, rewardOrdinal);
     }
 
     private OrderLineRecord(Long sourceCartItemId,
