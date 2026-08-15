@@ -179,6 +179,33 @@ class AiConversationServiceTest {
     }
 
     @Test
+    void compoundAddReturnsOneConsolidatedConfirmationAndOnlyTheFinalCart() {
+        CartService cartService = mock(CartService.class);
+        when(cartService.getCartContents(PHONE_NUMBER))
+                .thenReturn("Carrito parcial: Avocado roll", "Carrito final: Avocado roll y Calpi");
+        AiToolSafetyGuard guard = new AiToolSafetyGuard();
+        OrderTools tools = new OrderTools(mock(OrderRepository.class), cartService, guard);
+        String message = "Quisiera un Avocado roll y un Calpi 500ml";
+        when(sushiAgent.chat(MEMORY_ID, PHONE_NUMBER, message))
+                .thenAnswer(invocation -> {
+                    tools.addDishToCart(PHONE_NUMBER, "Avocado roll", 1, 89.0);
+                    tools.addDishToCart(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+                    return GENERIC_MODEL_RESPONSE;
+                });
+
+        String response = service(guard).chat(MEMORY_ID, PHONE_NUMBER, message);
+
+        assertThat(response)
+                .contains("Agregué 1 x Avocado roll y 1 x Calpi 500ml (Bebida Japonesa) a tu carrito")
+                .containsOnlyOnce("¡Listo!")
+                .contains("Carrito final: Avocado roll y Calpi")
+                .doesNotContain("Carrito parcial", GENERIC_MODEL_RESPONSE);
+        verify(cartService).addItem(PHONE_NUMBER, "Avocado roll", 1, 89.0);
+        verify(cartService).addItem(PHONE_NUMBER, "Calpi 500ml (Bebida Japonesa)", 1, 25.0);
+        verifyNoInteractions(catalogAgent);
+    }
+
+    @Test
     void successfulRemoveReturnsItsAuthoritativeToolResponseInsteadOfGenericModelText() {
         CartService cartService = mock(CartService.class);
         when(cartService.removeItem(PHONE_NUMBER, "Coca Cola", 1)).thenReturn("El carrito est\u00e1 vac\u00edo.");

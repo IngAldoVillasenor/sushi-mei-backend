@@ -3,8 +3,10 @@ package com.sushimei.sushimei.backend.agent;
 import org.springframework.stereotype.Component;
 
 import java.text.Normalizer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -103,12 +105,12 @@ public class AiToolSafetyGuard {
         }
     }
 
-    public void recordAddSucceeded(String response) {
-        recordAuthoritativeToolResponse(AiMutationTurnOutcome.ADD_SUCCEEDED, response);
+    public void recordAddSucceeded(String dishName, int quantity, String cartContents) {
+        recordSuccessfulMutation(AiMutationTurnOutcome.ADD_SUCCEEDED, dishName, quantity, cartContents);
     }
 
-    public void recordRemoveSucceeded(String response) {
-        recordAuthoritativeToolResponse(AiMutationTurnOutcome.REMOVE_SUCCEEDED, response);
+    public void recordRemoveSucceeded(String dishName, int quantity, String cartContents) {
+        recordSuccessfulMutation(AiMutationTurnOutcome.REMOVE_SUCCEEDED, dishName, quantity, cartContents);
     }
 
     public void recordCartQuerySucceeded(String response) {
@@ -300,10 +302,24 @@ public class AiToolSafetyGuard {
         if (context == null || response == null || response.isBlank()) {
             return;
         }
+        context.setAuthoritativeToolResponse(response);
+        if (context.mutationOutcome() == AiMutationTurnOutcome.NONE || context.mutationOutcome().isSuccessfulCartOperation()) {
+            context.setMutationOutcome(outcome);
+        }
+    }
+
+    private void recordSuccessfulMutation(AiMutationTurnOutcome outcome,
+                                          String dishName,
+                                          int quantity,
+                                          String cartContents) {
+        TurnContext context = activeTurn.get();
+        if (context == null || dishName == null || dishName.isBlank()) {
+            return;
+        }
+        context.addSuccessfulMutation(outcome, quantity + " x " + dishName, cartContents);
         if (outcome == AiMutationTurnOutcome.ADD_SUCCEEDED) {
             context.incrementSuccessfulAddCount();
         }
-        context.appendAuthoritativeToolResponse(response);
         if (context.mutationOutcome() == AiMutationTurnOutcome.NONE || context.mutationOutcome().isSuccessfulCartOperation()) {
             context.setMutationOutcome(outcome);
         }
@@ -323,6 +339,8 @@ public class AiToolSafetyGuard {
         private boolean cartQueryPerformed;
         private AiMutationTurnOutcome mutationOutcome = AiMutationTurnOutcome.NONE;
         private String authoritativeToolResponse;
+        private final List<SuccessfulMutation> successfulMutations = new ArrayList<>();
+        private String latestCartContents;
         private int successfulAddCount;
 
         private TurnContext(String normalizedMessage) {
@@ -355,6 +373,9 @@ public class AiToolSafetyGuard {
         }
 
         private String authoritativeToolResponse() {
+            if (!successfulMutations.isEmpty()) {
+                return consolidatedMutationResponse();
+            }
             return authoritativeToolResponse;
         }
 
@@ -366,12 +387,47 @@ public class AiToolSafetyGuard {
             successfulAddCount++;
         }
 
-        private void appendAuthoritativeToolResponse(String response) {
-            if (authoritativeToolResponse == null) {
-                authoritativeToolResponse = response;
-            } else {
-                authoritativeToolResponse += "\n\n" + response;
-            }
+        private void setAuthoritativeToolResponse(String response) {
+            authoritativeToolResponse = response;
         }
+
+        private void addSuccessfulMutation(AiMutationTurnOutcome outcome, String itemDescription, String cartContents) {
+            successfulMutations.add(new SuccessfulMutation(outcome, itemDescription));
+            latestCartContents = cartContents;
+        }
+
+        private String consolidatedMutationResponse() {
+            List<String> additions = successfulMutations.stream()
+                    .filter(mutation -> mutation.outcome() == AiMutationTurnOutcome.ADD_SUCCEEDED)
+                    .map(SuccessfulMutation::itemDescription)
+                    .toList();
+            List<String> removals = successfulMutations.stream()
+                    .filter(mutation -> mutation.outcome() == AiMutationTurnOutcome.REMOVE_SUCCEEDED)
+                    .map(SuccessfulMutation::itemDescription)
+                    .toList();
+            List<String> clauses = new ArrayList<>();
+            if (!additions.isEmpty()) {
+                clauses.add("agregué " + joinInSpanish(additions) + " a tu carrito");
+            }
+            if (!removals.isEmpty()) {
+                clauses.add("quité " + joinInSpanish(removals) + " de tu carrito");
+            }
+            String summary = joinInSpanish(clauses);
+            String response = "¡Listo! " + Character.toUpperCase(summary.charAt(0)) + summary.substring(1) + ".";
+            return latestCartContents == null || latestCartContents.isBlank()
+                    ? response
+                    : response + "\n" + latestCartContents;
+        }
+
+        private static String joinInSpanish(List<String> values) {
+            if (values.size() == 1) {
+                return values.get(0);
+            }
+            return String.join(", ", values.subList(0, values.size() - 1))
+                    + " y " + values.get(values.size() - 1);
+        }
+    }
+
+    private record SuccessfulMutation(AiMutationTurnOutcome outcome, String itemDescription) {
     }
 }

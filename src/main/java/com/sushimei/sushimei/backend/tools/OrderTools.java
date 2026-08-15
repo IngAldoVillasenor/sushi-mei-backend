@@ -54,7 +54,7 @@ public class OrderTools {
             cartService.addItem(phoneNumber, dishName, quantity, unitPrice);
             String cartContents = cartService.getCartContents(phoneNumber);
             String response = "\u00a1Listo! Agregu\u00e9 " + quantity + " x " + dishName + " a tu carrito.\n" + cartContents;
-            toolSafetyGuard.recordAddSucceeded(response);
+            toolSafetyGuard.recordAddSucceeded(dishName, quantity, cartContents);
             log.info("AI tool outcome=ADD_CART_ITEM result=SUCCESS");
             return response;
         } catch (AiToolSafetyException exception) {
@@ -99,7 +99,7 @@ public class OrderTools {
                 return result;
             }
             String response = "\u00a1Listo! Quit\u00e9 " + quantity + " x " + dishName + " de tu carrito.\n" + result;
-            toolSafetyGuard.recordRemoveSucceeded(response);
+            toolSafetyGuard.recordRemoveSucceeded(dishName, quantity, result);
             log.info("AI tool outcome=REMOVE_CART_ITEM result=SUCCESS");
             return response;
         } catch (AiToolSafetyException exception) {
