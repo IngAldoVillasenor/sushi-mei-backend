@@ -52,13 +52,7 @@ public class OrderTools {
         try {
             toolSafetyGuard.requireAddAllowed(dishName, quantity);
             ResolvedMenuItem resolvedItem = menuItemResolver.resolveExact(dishName);
-            cartService.addItem(phoneNumber, resolvedItem.name(), quantity, resolvedItem.unitPrice().doubleValue());
-            String cartContents = cartService.getCartContents(phoneNumber);
-            String response = "\u00a1Listo! Agregu\u00e9 " + quantity + " x " + resolvedItem.name()
-                    + " a tu carrito.\n" + cartContents;
-            toolSafetyGuard.recordAddSucceeded(resolvedItem.name(), quantity, cartContents);
-            log.info("AI tool outcome=ADD_CART_ITEM result=SUCCESS");
-            return response;
+            return addServerResolvedDishToCart(phoneNumber, resolvedItem, quantity);
         } catch (AiToolSafetyException exception) {
             toolSafetyGuard.recordAddBlocked();
             return toolSafetyFailureResponse("ADD_CART_ITEM", exception);
@@ -66,6 +60,22 @@ public class OrderTools {
             toolSafetyGuard.recordAddBlocked();
             log.warn("AI tool outcome=ADD_CART_ITEM result=BLOCKED reason=CATALOG_ITEM_NOT_RESOLVED");
             return "No agregues ese producto todavía. Pide al cliente el nombre y la presentación exactos del menú.";
+        } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
+            toolSafetyGuard.recordAddFailed();
+            return checkoutDataFailureResponse("ADD_CART_ITEM", exception);
+        }
+    }
+
+    /** Internal deterministic path for catalog items resolved by the server from the current message. */
+    public String addServerResolvedDishToCart(String phoneNumber, ResolvedMenuItem resolvedItem, int quantity) {
+        try {
+            cartService.addItem(phoneNumber, resolvedItem.name(), quantity, resolvedItem.unitPrice().doubleValue());
+            String cartContents = cartService.getCartContents(phoneNumber);
+            String response = "\u00a1Listo! Agregu\u00e9 " + quantity + " x " + resolvedItem.name()
+                    + " a tu carrito.\n" + cartContents;
+            toolSafetyGuard.recordAddSucceeded(resolvedItem.name(), quantity, cartContents);
+            log.info("AI tool outcome=ADD_CART_ITEM result=SUCCESS source=SERVER_RESOLVED");
+            return response;
         } catch (MonetaryCompatibilityException | InvalidCartItemException | IllegalArgumentException | ArithmeticException exception) {
             toolSafetyGuard.recordAddFailed();
             return checkoutDataFailureResponse("ADD_CART_ITEM", exception);

@@ -43,15 +43,18 @@ public class AiConversationService {
     private final CatalogAgent catalogAgent;
     private final AiToolSafetyGuard toolSafetyGuard;
     private final ConversationRetrievalPolicy retrievalPolicy;
+    private final DeterministicCartAddRouter deterministicCartAddRouter;
 
     public AiConversationService(SushiAgent sushiAgent,
                                  CatalogAgent catalogAgent,
                                  AiToolSafetyGuard toolSafetyGuard,
-                                 ConversationRetrievalPolicy retrievalPolicy) {
+                                 ConversationRetrievalPolicy retrievalPolicy,
+                                 DeterministicCartAddRouter deterministicCartAddRouter) {
         this.sushiAgent = sushiAgent;
         this.catalogAgent = catalogAgent;
         this.toolSafetyGuard = toolSafetyGuard;
         this.retrievalPolicy = retrievalPolicy;
+        this.deterministicCartAddRouter = deterministicCartAddRouter;
     }
 
     public String chat(String memoryId, String phoneNumber, String message) {
@@ -90,7 +93,8 @@ public class AiConversationService {
         }
 
         AiToolTurnResult<String> result = toolSafetyGuard.executeTextTurn(message,
-                () -> invokeAgent(memoryId, phoneNumber, message));
+                () -> deterministicCartAddRouter.tryAdd(phoneNumber, message)
+                        .orElseGet(() -> invokeAgent(memoryId, phoneNumber, message)));
         return safeResponseFor(result, message).orElseGet(() -> authoritativeResponseFor(result, message).orElseGet(() -> {
             if (containsOperationalClaim(result.value())) {
                 log.warn("AI conversation outcome=MODEL_RESPONSE_BLOCKED reason=UNVERIFIED_OPERATIONAL_CLAIM");
@@ -142,7 +146,9 @@ public class AiConversationService {
             case ADD_BLOCKED -> safeToolResponse(mutationOutcome,
                     appendResponse(result.authoritativeToolResponse(), addClarificationFor(message)));
             case REMOVE_BLOCKED -> safeToolResponse(mutationOutcome,
-                    appendResponse(result.authoritativeToolResponse(), REMOVE_CLARIFICATION_RESPONSE));
+                    appendResponse(result.authoritativeToolResponse(), AiToolSafetyGuard.isAddRequest(message)
+                            ? addClarificationFor(message)
+                            : REMOVE_CLARIFICATION_RESPONSE));
             case ADD_FAILED, REMOVE_FAILED -> safeToolResponse(mutationOutcome,
                     appendResponse(result.authoritativeToolResponse(), MUTATION_FAILURE_RESPONSE));
             case CONFIRMATION_BLOCKED -> safeToolResponse(mutationOutcome,

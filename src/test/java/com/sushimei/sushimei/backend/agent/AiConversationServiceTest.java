@@ -35,6 +35,9 @@ class AiConversationServiceTest {
     @Mock
     private CatalogAgent catalogAgent;
 
+    @Mock
+    private DeterministicCartAddRouter deterministicCartAddRouter;
+
     private final ConversationRetrievalPolicy retrievalPolicy = new ConversationRetrievalPolicy();
 
     @Test
@@ -335,7 +338,9 @@ class AiConversationServiceTest {
     }
 
     private AiConversationService service(AiToolSafetyGuard guard) {
-        return new AiConversationService(sushiAgent, catalogAgent, guard, retrievalPolicy);
+        lenient().when(deterministicCartAddRouter.tryAdd(anyString(), anyString()))
+                .thenReturn(java.util.Optional.empty());
+        return new AiConversationService(sushiAgent, catalogAgent, guard, retrievalPolicy, deterministicCartAddRouter);
     }
 
     private OrderTools tools(CartService cartService, AiToolSafetyGuard guard) {
