@@ -141,30 +141,74 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         MenuItemResponse empanizado = item("Empanizado ebi", "99.00");
         MenuItemResponse premium = item("Mango", "109.00");
         CatalogTagResponse classic = tag("ROLL_CLASSIC");
+
         california = assign(california, classic);
         empanizado = assign(empanizado, classic);
-        flexibleBogoPromotion("Jueves flexible", 10, Set.of(4), targetTag(classic), 1, 1, true);
 
-        PromotionQuoteResponse response = quote(line("pair", california.id(), 1, List.of(),
-                List.of(new PromotionRewardConfigurationRequest(1, empanizado.id(), List.of()))));
+        final Long californiaId = california.id();
+        final Long empanizadoId = empanizado.id();
 
-        assertThat(response.lines().get(0).rewards()).singleElement().satisfies(reward -> {
-            assertThat(reward.menuItemId()).isEqualTo(empanizado.id());
-            assertThat(reward.name()).isEqualTo("Empanizado ebi");
-            assertThat(reward.catalogBaseUnitPrice()).isEqualByComparingTo("99.00");
-            assertThat(reward.chargedBaseUnitPrice()).isEqualByComparingTo("0.00");
-        });
+        flexibleBogoPromotion(
+                "Jueves flexible",
+                10,
+                Set.of(4),
+                targetTag(classic),
+                1,
+                1,
+                true
+        );
+
+        PromotionQuoteResponse response = quote(line(
+                "pair",
+                californiaId,
+                1,
+                List.of(),
+                List.of(new PromotionRewardConfigurationRequest(
+                        1,
+                        empanizadoId,
+                        List.of()
+                ))
+        ));
+
+        assertThat(response.lines().get(0).rewards())
+                .singleElement()
+                .satisfies(reward -> {
+                    assertThat(reward.menuItemId()).isEqualTo(empanizadoId);
+                    assertThat(reward.name()).isEqualTo("Empanizado ebi");
+                    assertThat(reward.catalogBaseUnitPrice()).isEqualByComparingTo("99.00");
+                    assertThat(reward.chargedBaseUnitPrice()).isEqualByComparingTo("0.00");
+                });
+
         assertThat(response.total()).isEqualByComparingTo("79.00");
 
         Long premiumId = premium.id();
-        assertThatThrownBy(() -> quote(line("invalid", california.id(), 1, List.of(),
-                List.of(new PromotionRewardConfigurationRequest(1, premiumId, List.of())))))
+
+        assertThatThrownBy(() -> quote(line(
+                "invalid",
+                californiaId,
+                1,
+                List.of(),
+                List.of(new PromotionRewardConfigurationRequest(
+                        1,
+                        premiumId,
+                        List.of()
+                ))
+        )))
                 .isInstanceOf(PromotionException.class)
                 .extracting(exception -> ((PromotionException) exception).getError())
                 .isEqualTo(PromotionError.PROMOTION_REWARD_INVALID);
-        assertThat(quote(line("compatible", california.id(), 1, List.of(), List.of()))
-                .lines().get(0).rewards()).singleElement()
-                .satisfies(reward -> assertThat(reward.menuItemId()).isEqualTo(california.id()));
+
+        assertThat(quote(line(
+                "compatible",
+                californiaId,
+                1,
+                List.of(),
+                List.of()
+        )).lines().get(0).rewards())
+                .singleElement()
+                .satisfies(reward ->
+                        assertThat(reward.menuItemId()).isEqualTo(californiaId)
+                );
     }
 
     @Test
