@@ -35,6 +35,18 @@ class AiToolSafetyGuardTest {
     }
 
     @Test
+    void explicitQuantityAndPluralProductNameCanAddWithoutRepeatingTheVerb() {
+        guard.withinTextTurn("2 Calpis de Mango", () -> {
+            guard.requireAddAllowed("Calpi de mango (Bebida Japonesa)", 2);
+            return null;
+        });
+        guard.withinTextTurn("Me agregas 2 Cocas de 600 ml por favor", () -> {
+            guard.requireAddAllowed("Coca 600 ml (Refresco)", 2);
+            return null;
+        });
+    }
+
+    @Test
     void naturalFollowUpCannotSelectADifferentSizeOrAmbiguousFamilyVariant() {
         assertBlocked("Y una Coca de 1.75 L", () -> guard.requireAddAllowed("Coca 600 ml (Refresco)"),
                 AiToolSafetyReason.ADD_NOT_EXPLICITLY_REQUESTED);

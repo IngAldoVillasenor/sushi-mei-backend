@@ -19,7 +19,8 @@ import java.util.function.Supplier;
 public class AiToolSafetyGuard {
 
     private static final Set<String> ADD_ACTIONS = Set.of(
-            "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "anade", "incluye",
+            "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega", "agregame", "agregar", "agregas",
+            "anade", "incluye",
             "ordena", "ordenar", "ordenarme", "pido", "pedir", "falta", "falto", "faltaba");
     private static final Set<String> REMOVE_ACTIONS = Set.of(
             "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta", "restar", "saca", "sacar");
@@ -41,7 +42,7 @@ public class AiToolSafetyGuard {
     private static final Set<String> NON_PRODUCT_TOKENS = Set.of(
             "a", "al", "con", "de", "del", "el", "ella", "ellos", "esa", "ese", "esto", "la", "las", "lo", "los",
             "me", "mi", "para", "por", "que", "quiero", "quisiera", "dame", "damelo", "ponme", "pon", "agrega",
-            "agregame", "anade", "incluye", "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta",
+            "agregame", "agregar", "agregas", "anade", "incluye", "quita", "quitar", "elimina", "eliminar", "cancela", "cancelar", "resta",
             "ordena", "ordenar", "ordenarme", "pido", "pedir", "falta", "falto", "faltaba", "restar", "saca", "sacar", "tambien", "un", "una",
             "unos", "unas", "y", "favor", "otro", "otra", "orden", "ordenes", "pedido",
             "platillo", "platillos", "producto", "productos", "roll", "rollo", "rollos", "bebida", "bebidas", "refresco",
@@ -161,12 +162,25 @@ public class AiToolSafetyGuard {
     static boolean isAddRequest(String message) {
         String normalized = normalize(message);
         Set<String> messageTokens = tokens(normalized);
-        return containsAnyToken(messageTokens, ADD_ACTIONS) || isImplicitAddSelection(messageTokens);
+        return containsAnyToken(messageTokens, ADD_ACTIONS)
+                || explicitItemMarkerCount(normalized) > 0
+                || isImplicitAddSelection(messageTokens);
+    }
+
+    static boolean isRemoveRequest(String message) {
+        return containsAnyToken(tokens(message), REMOVE_ACTIONS);
+    }
+
+    static boolean isInformationRequest(String message) {
+        Set<String> messageTokens = tokens(message);
+        return messageTokens.stream().anyMatch(Set.of(
+                "cuanto", "cuantos", "cuesta", "cuestan", "precio", "precios", "tienen", "venden", "lleva",
+                "ingredientes", "contiene")::contains);
     }
 
     static boolean mentionsAmbiguousCalpi(String message) {
         Set<String> messageTokens = tokens(message);
-        return messageTokens.contains("calpi")
+        return messageTokens.stream().map(AiToolSafetyGuard::canonicalProductToken).anyMatch("calpi"::equals)
                 && messageTokens.stream().noneMatch(Set.of(
                 "fresa", "mango", "mineral", "natural", "500", "500ml")::contains);
     }
@@ -252,7 +266,7 @@ public class AiToolSafetyGuard {
         for (int start = 0; start <= messageTokens.size() - identityTokens.size(); start++) {
             boolean matches = true;
             for (int offset = 0; offset < identityTokens.size(); offset++) {
-                if (!messageTokens.get(start + offset).value().equals(identityTokens.get(offset))) {
+                if (!equivalentProductToken(messageTokens.get(start + offset).value(), identityTokens.get(offset))) {
                     matches = false;
                     break;
                 }
@@ -281,6 +295,17 @@ public class AiToolSafetyGuard {
 
     private static List<String> productTokens(String value) {
         return positionedProductTokens(value).stream().map(PositionedToken::value).toList();
+    }
+
+    private static boolean equivalentProductToken(String left, String right) {
+        return canonicalProductToken(left).equals(canonicalProductToken(right));
+    }
+
+    private static String canonicalProductToken(String token) {
+        if (Set.of("roll", "rolls", "rollo", "rollos").contains(token)) {
+            return "roll";
+        }
+        return token.length() > 3 && token.endsWith("s") ? token.substring(0, token.length() - 1) : token;
     }
 
     private static boolean isProductIdentityToken(String token) {
