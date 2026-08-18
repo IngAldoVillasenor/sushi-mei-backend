@@ -186,7 +186,7 @@ class AuthoritativePromotionRulesIntegrationTest {
     private void assertThursdayPromotion(PromotionResponse promotion) {
         assertThat(promotion).isNotNull();
         assertThat(promotion.active()).isTrue();
-        assertThat(promotion.benefitType()).isEqualTo(PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM);
+        assertThat(promotion.benefitType()).isEqualTo(PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM);
         assertThat(promotion.fixedUnitPrice()).isNull();
         assertThat(promotion.buyQuantity()).isEqualTo(1);
         assertThat(promotion.rewardQuantity()).isEqualTo(1);

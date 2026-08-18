@@ -151,7 +151,7 @@ class AuthoritativePromotionRulesService {
                 "Jueves 2x1",
                 true,
                 PRIORITY,
-                PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM,
+                PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM,
                 null,
                 1,
                 1,

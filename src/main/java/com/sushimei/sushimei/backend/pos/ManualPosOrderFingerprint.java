@@ -54,6 +54,7 @@ public class ManualPosOrderFingerprint {
                 if (reward == null) { output.writeBoolean(false); continue; }
                 output.writeBoolean(true);
                 writeInteger(output, reward.rewardOrdinal());
+                if (reward.menuItemId() != null) writeLong(output, reward.menuItemId());
                 writeGroups(output, reward.groups());
             }
         }

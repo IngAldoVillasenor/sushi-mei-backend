@@ -9,9 +9,15 @@ import java.util.List;
 
 public record PromotionRewardConfigurationRequest(
         @NotNull @Min(1) Integer rewardOrdinal,
+        @Min(1) Long menuItemId,
         List<@NotNull @Valid MenuQuoteGroupRequest> groups
 ) {
     public PromotionRewardConfigurationRequest {
         groups = List.copyOf(groups == null ? List.of() : groups);
+    }
+
+    public PromotionRewardConfigurationRequest(Integer rewardOrdinal,
+                                               List<MenuQuoteGroupRequest> groups) {
+        this(rewardOrdinal, null, groups);
     }
 }

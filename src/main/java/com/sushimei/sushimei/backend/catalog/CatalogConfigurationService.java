@@ -311,7 +311,8 @@ public class CatalogConfigurationService {
                 BigDecimal contributionPerUnit = normalizeNonNegative(adjustment.add(nested.unitAdjustmentTotal()));
                 adjustments = normalizeNonNegative(adjustments.add(multiply(contributionPerUnit, selection.quantity())));
                 quotedSelections.add(new MenuQuoteSelectionResponse(selectedItem.getId(), selectedItem.getName(),
-                        selection.quantity(), requirePositiveMoney(selectedItem.getPriceAmount()), adjustment, nested.groups()));
+                        selection.quantity(), requirePositiveMoney(selectedItem.getPriceAmount()), adjustment,
+                        selectedItem.isStandaloneOrderable() || nested.groups().isEmpty(), nested.groups()));
             }
             quotedGroups.add(new MenuQuoteGroupResponse(group.getId(), group.getName(), quotedSelections));
         }

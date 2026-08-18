@@ -13,6 +13,7 @@ public record OperationalOrderSelectionSnapshotResponse(
         String itemName,
         int quantity,
         BigDecimal catalogUnitPrice,
-        BigDecimal priceAdjustment
+        BigDecimal priceAdjustment,
+        boolean displayOnTicket
 ) {
 }

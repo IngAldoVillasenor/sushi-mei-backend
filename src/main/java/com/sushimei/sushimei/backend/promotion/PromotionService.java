@@ -140,7 +140,8 @@ public class PromotionService {
             }
             return new RuleParameters(normalizePositiveMoney(fixedUnitPrice), null, null, null);
         }
-        if (benefitType == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM) {
+        if (benefitType == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM
+                || benefitType == PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM) {
             if (fixedUnitPrice != null || buyQuantity == null || buyQuantity <= 0 || rewardQuantity == null
                     || rewardQuantity <= 0 || repeat == null) {
                 throw invalid();

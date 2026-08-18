@@ -55,6 +55,9 @@ public class OrderLineSelectionSnapshot {
     @Column(name = "price_adjustment_amount", nullable = false, precision = 19, scale = 2, updatable = false)
     private BigDecimal priceAdjustmentAmount;
 
+    @Column(name = "display_on_ticket", nullable = false, updatable = false)
+    private boolean displayOnTicket;
+
     protected OrderLineSelectionSnapshot() {
     }
 
@@ -66,7 +69,8 @@ public class OrderLineSelectionSnapshot {
                                                     String selectedItemName,
                                                     int quantity,
                                                     BigDecimal catalogUnitPrice,
-                                                    BigDecimal priceAdjustmentAmount) {
+                                                    BigDecimal priceAdjustmentAmount,
+                                                    boolean displayOnTicket) {
         OrderLineSelectionSnapshot snapshot = new OrderLineSelectionSnapshot();
         snapshot.parentSelection = parentSelection;
         snapshot.groupId = positiveId(groupId, "groupId");
@@ -77,7 +81,21 @@ public class OrderLineSelectionSnapshot {
         snapshot.quantity = positive(quantity, "quantity");
         snapshot.catalogUnitPrice = positiveMoney(catalogUnitPrice, "catalogUnitPrice");
         snapshot.priceAdjustmentAmount = nonNegativeMoney(priceAdjustmentAmount, "priceAdjustmentAmount");
+        snapshot.displayOnTicket = displayOnTicket;
         return snapshot;
+    }
+
+    public static OrderLineSelectionSnapshot create(OrderLineSelectionSnapshot parentSelection,
+                                                    Long groupId,
+                                                    String groupName,
+                                                    int selectionPosition,
+                                                    Long selectedMenuItemId,
+                                                    String selectedItemName,
+                                                    int quantity,
+                                                    BigDecimal catalogUnitPrice,
+                                                    BigDecimal priceAdjustmentAmount) {
+        return create(parentSelection, groupId, groupName, selectionPosition, selectedMenuItemId, selectedItemName,
+                quantity, catalogUnitPrice, priceAdjustmentAmount, true);
     }
 
     void attachTo(OrderLineRecord orderLine) {
@@ -95,6 +113,7 @@ public class OrderLineSelectionSnapshot {
     public int getQuantity() { return quantity; }
     public BigDecimal getCatalogUnitPrice() { return catalogUnitPrice; }
     public BigDecimal getPriceAdjustmentAmount() { return priceAdjustmentAmount; }
+    public boolean isDisplayOnTicket() { return displayOnTicket; }
 
     private static Long positiveId(Long value, String name) {
         if (value == null || value <= 0) throw new IllegalArgumentException(name + " must be positive");

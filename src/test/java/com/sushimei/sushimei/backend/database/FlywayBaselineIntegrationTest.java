@@ -52,6 +52,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V12_SCRIPT = "V12__add_authoritative_promotion_rules.sql";
     private static final String V13_SCRIPT = "V13__repair_classic_roll_promotion_targets.sql";
     private static final String V14_SCRIPT = "V14__persist_whatsapp_inbound_failure_diagnostics.sql";
+    private static final String V15_SCRIPT = "V15__add_flexible_promotion_rewards.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -89,7 +90,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 12, "SQL", V12_SCRIPT);
         assertSqlMigration(jdbcTemplate, 13, "SQL", V13_SCRIPT);
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("14");
+        assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("15");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -155,7 +157,7 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV14AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV15AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -175,7 +177,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 12, "SQL", V12_SCRIPT);
         assertSqlMigration(jdbcTemplate, 13, "SQL", V13_SCRIPT);
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("14");
+        assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("15");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -323,6 +326,7 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 12, "SQL", V12_SCRIPT);
         assertSqlMigration(jdbcTemplate, 13, "SQL", V13_SCRIPT);
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
@@ -336,7 +340,8 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 12)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 13)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 14)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("14");
+        assertThat(historyCount(jdbcTemplate, 15)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("15");
         assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 17);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
