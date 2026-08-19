@@ -20,6 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import com.sushimei.sushimei.backend.entity.OrderSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,13 +63,42 @@ public class OperationalOrderReadService {
         }
 
         List<Long> orderIds = orders.stream().map(OrderRecord::getId).toList();
-        Set<Long> structuredOrderIds = new HashSet<>(orderRepository.findIdsWithOrderLines(orderIds));
+        Set<Long> structuredOrderIds = orderIds.isEmpty() ? java.util.Set.of() : new java.util.HashSet<>(orderRepository.findIdsWithOrderLines(orderIds));
         return orders.stream()
                 .map(order -> summary(order, structuredOrderIds.contains(order.getId())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
+    public Page<HistoricalOrderSummaryResponse> historicalOrders(Instant from, Instant to, OrderSource source, String status, int page, int size) {
+        if (page < 0) page = 0;
+        if (size > 100) size = 100;
+        if (size < 1) size = 50;
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+
+        LocalDateTime fromLdt = from != null ? LocalDateTime.ofInstant(from, ZoneOffset.UTC) : null;
+        LocalDateTime toLdt = to != null ? LocalDateTime.ofInstant(to, ZoneOffset.UTC) : null;
+
+        Page<OrderRecord> orders = orderRepository.findHistoricalOrders(fromLdt, toLdt, source, status, pageable);
+
+        List<Long> orderIds = orders.stream().map(OrderRecord::getId).toList();
+        Set<Long> structuredOrderIds = orderIds.isEmpty() ? java.util.Set.of() : new java.util.HashSet<>(orderRepository.findIdsWithOrderLines(orderIds));
+
+        return orders.map(order -> new HistoricalOrderSummaryResponse(
+                order.getId(),
+                order.getExternalOrderId(),
+                order.getExternalReference(),
+                order.getOrderSource(),
+                order.getStatus(),
+                order.getFulfillmentType(),
+                order.getPaymentMethod(),
+                order.getPickupName(),
+                total(order),
+                asUtcInstant(order.getCreatedAt()),
+                structuredOrderIds.contains(order.getId())
+        ));
+    }
+
     public OperationalOrderDetailResponse order(Long orderId) {
         if (orderId == null || orderId <= 0) {
             throw new OperationalOrderReadException();
@@ -77,6 +112,8 @@ public class OperationalOrderReadService {
                 .toList();
         return new OperationalOrderDetailResponse(
                 order.getId(),
+                order.getExternalOrderId(),
+                order.getExternalReference(),
                 order.getClientRequestId(),
                 order.getOrderSource(),
                 order.getCreatedByUserId(),
@@ -136,6 +173,7 @@ public class OperationalOrderReadService {
                 line.getLineKind(),
                 line.getClientLineKey(),
                 line.getSourceMenuItemId(),
+                line.getExternalProductReference(),
                 line.getDishName(),
                 line.getQuantity(),
                 line.getCatalogBaseUnitPrice(),

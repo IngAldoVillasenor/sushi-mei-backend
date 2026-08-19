@@ -11,6 +11,8 @@ import java.util.UUID;
 /** Stable evidence view for one persisted operational order. */
 public record OperationalOrderDetailResponse(
         Long id,
+        String externalOrderId,
+        String externalReference,
         UUID requestId,
         OrderSource orderSource,
         Long createdByUserId,

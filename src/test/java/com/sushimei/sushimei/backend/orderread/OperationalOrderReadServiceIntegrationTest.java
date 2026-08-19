@@ -28,6 +28,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -40,6 +42,22 @@ import static org.mockito.Mockito.mock;
 @Import({com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration.class,
         OperationalOrderReadServiceIntegrationTest.TestInfrastructureConfiguration.class})
 class OperationalOrderReadServiceIntegrationTest {
+
+    @Test
+    void historyEndpointPaginationInputSafety() {
+        OrderRecord order1 = legacyOrder("COMPLETED", 1);
+
+        Page<HistoricalOrderSummaryResponse> negativePage = operationalOrderReadService.historicalOrders(null, null, null, null, -5, 50);
+        assertThat(negativePage.getNumber()).isEqualTo(0);
+        assertThat(negativePage.getContent()).isNotEmpty();
+    }
+
+    @Test
+    void historyEndpointEmptyPageSafety() {
+        Page<HistoricalOrderSummaryResponse> emptyPage = operationalOrderReadService.historicalOrders(null, null, null, null, 1000, 50);
+        assertThat(emptyPage.getContent()).isEmpty();
+        assertThat(emptyPage.getTotalElements()).isGreaterThanOrEqualTo(0);
+    }
 
     @Autowired
     private OperationalOrderReadService operationalOrderReadService;
@@ -148,6 +166,76 @@ class OperationalOrderReadServiceIntegrationTest {
         assertThat(afterLiveCatalogChange.lines().get(0).configuration().get(1).itemName())
                 .isEqualTo("Olas histórica");
         assertThat(afterLiveCatalogChange.lines().get(1).promotion().name()).isEqualTo("Jueves histórico");
+    }
+
+
+    @Test
+    void historyEndpointDefaultPaginationAndOrdering() {
+        OrderRecord order1 = legacyOrder("COMPLETED", 1);
+        OrderRecord order2 = legacyOrder("COMPLETED", 2);
+
+        Page<HistoricalOrderSummaryResponse> page = operationalOrderReadService.historicalOrders(null, null, null, null, 0, 50);
+        assertThat(page.getContent()).hasSizeGreaterThanOrEqualTo(2);
+
+        // Check order: createdAt DESC
+        assertThat(page.getContent().get(0).id()).isEqualTo(order2.getId());
+        assertThat(page.getContent().get(1).id()).isEqualTo(order1.getId());
+    }
+
+    @Test
+    void historyEndpointFiltering() {
+        OrderRecord order1 = legacyOrder("COMPLETED", 1);
+        order1.setOrderSource(OrderSource.VENDIS_IMPORT);
+        orderRepository.saveAndFlush(order1);
+
+        OrderRecord order2 = legacyOrder("CANCELLED_CLARIFICATION", 2);
+        order2.setOrderSource(OrderSource.VENDIS_IMPORT);
+        orderRepository.saveAndFlush(order2);
+
+        OrderRecord order3 = legacyOrder("COMPLETED", 3);
+        order3.setOrderSource(OrderSource.ANDROID_MANUAL);
+        orderRepository.saveAndFlush(order3);
+
+        Page<HistoricalOrderSummaryResponse> vendisOnly = operationalOrderReadService.historicalOrders(null, null, OrderSource.VENDIS_IMPORT, null, 0, 50);
+        assertThat(vendisOnly.getContent()).extracting(HistoricalOrderSummaryResponse::id).containsExactly(order2.getId(), order1.getId());
+
+        Page<HistoricalOrderSummaryResponse> completedOnly = operationalOrderReadService.historicalOrders(null, null, null, "COMPLETED", 0, 50);
+        assertThat(completedOnly.getContent()).extracting(HistoricalOrderSummaryResponse::id).contains(order3.getId(), order1.getId());
+
+        Page<HistoricalOrderSummaryResponse> filteredTime = operationalOrderReadService.historicalOrders(
+            order2.getCreatedAt().toInstant(java.time.ZoneOffset.UTC),
+            order2.getCreatedAt().toInstant(java.time.ZoneOffset.UTC),
+            null, null, 0, 50);
+        assertThat(filteredTime.getContent()).extracting(HistoricalOrderSummaryResponse::id).containsExactly(order2.getId());
+    }
+
+    @Test
+    void duplicateExternalOrderIdentityCannotBePersisted() {
+        OrderRecord order1 = legacyOrder("COMPLETED", 1);
+        order1.setOrderSource(OrderSource.VENDIS_IMPORT);
+        order1.setExternalOrderId("11155060");
+        orderRepository.saveAndFlush(order1);
+
+        OrderRecord order2 = legacyOrder("COMPLETED", 2);
+        order2.setOrderSource(OrderSource.VENDIS_IMPORT);
+        order2.setExternalOrderId("11155060");
+
+        assertThatThrownBy(() -> orderRepository.saveAndFlush(order2))
+            .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void existingOrdersWithNullExternalFieldsStillWork() {
+        OrderRecord order1 = legacyOrder("COMPLETED", 1);
+        order1.setOrderSource(OrderSource.ANDROID_MANUAL);
+        orderRepository.saveAndFlush(order1);
+
+        OrderRecord order2 = legacyOrder("COMPLETED", 2);
+        order2.setOrderSource(OrderSource.ANDROID_MANUAL);
+        orderRepository.saveAndFlush(order2);
+
+        Page<HistoricalOrderSummaryResponse> page = operationalOrderReadService.historicalOrders(null, null, OrderSource.ANDROID_MANUAL, null, 0, 50);
+        assertThat(page.getContent()).extracting(HistoricalOrderSummaryResponse::id).contains(order2.getId(), order1.getId());
     }
 
     @Test

@@ -31,6 +31,10 @@ public class OrderLineRecord {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "external_product_reference", length = 120)
+    private String externalProductReference;
+
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "order_id", nullable = false, updatable = false)
     private OrderRecord order;
@@ -123,6 +127,42 @@ public class OrderLineRecord {
                 null,
                 null,
                 null);
+    }
+
+
+    public static OrderLineRecord createExternalHistoricalPaid(
+            String externalProductReference,
+            int linePosition,
+            String dishName,
+            int quantity,
+            BigDecimal catalogBaseUnitPrice,
+            BigDecimal chargedBaseUnitPrice,
+            BigDecimal configurationAdjustmentAmount,
+            BigDecimal finalUnitAmount,
+            BigDecimal finalLineTotal,
+            Long appliedPromotionId,
+            String appliedPromotionName,
+            String appliedPromotionBenefitType) {
+        OrderLineRecord record = new OrderLineRecord(
+                null,
+                null,
+                null,
+                OrderLineKind.PAID,
+                linePosition,
+                dishName,
+                quantity,
+                finalUnitAmount,
+                finalLineTotal,
+                catalogBaseUnitPrice,
+                chargedBaseUnitPrice,
+                configurationAdjustmentAmount,
+                appliedPromotionId,
+                appliedPromotionName,
+                appliedPromotionBenefitType,
+                null,
+                null);
+        record.setExternalProductReference(requireNonBlank(externalProductReference, "externalProductReference"));
+        return record;
     }
 
     public static OrderLineRecord createManualPaid(String clientLineKey,
@@ -259,6 +299,8 @@ public class OrderLineRecord {
     }
 
     public Long getId() { return id; }
+    public String getExternalProductReference() { return externalProductReference; }
+    public void setExternalProductReference(String externalProductReference) { this.externalProductReference = externalProductReference; }
     public Long getSourceCartItemId() { return sourceCartItemId; }
     public Long getSourceMenuItemId() { return sourceMenuItemId; }
     public String getClientLineKey() { return clientLineKey; }
