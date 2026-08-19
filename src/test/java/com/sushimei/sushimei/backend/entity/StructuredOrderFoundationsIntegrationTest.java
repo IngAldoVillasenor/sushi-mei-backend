@@ -31,6 +31,42 @@ import static org.mockito.Mockito.mock;
 @Transactional
 class StructuredOrderFoundationsIntegrationTest {
 
+    @Test
+    void paidHistoricalLineCanExistWithExternalProductReferenceAndNoSourceIds() {
+        OrderRecord order = new OrderRecord();
+        order.setPhoneNumber("5551234");
+        order.setTotalAmount(150.0);
+        order.setTotalAmountAmount(new BigDecimal("150.00"));
+        order.setStatus("COMPLETED");
+        order.setCreatedAt(LocalDateTime.now());
+        order.setOrderSource(OrderSource.VENDIS_IMPORT);
+
+        OrderLineRecord historicalLine = OrderLineRecord.createExternalHistoricalPaid(
+                "1863190",
+                1,
+                "California VENDIS",
+                2,
+                new BigDecimal("75.00"),
+                new BigDecimal("75.00"),
+                new BigDecimal("0.00"),
+                new BigDecimal("75.00"),
+                new BigDecimal("150.00"),
+                null, null, null
+        );
+
+        order.addOrderLine(historicalLine);
+
+        OrderRecord saved = orderRepository.saveAndFlush(order);
+        entityManager.clear();
+
+        OrderRecord retrieved = orderRepository.findById(saved.getId()).orElseThrow();
+        OrderLineRecord retrievedLine = retrieved.getOrderLines().get(0);
+
+        assertThat(retrievedLine.getSourceCartItemId()).isNull();
+        assertThat(retrievedLine.getSourceMenuItemId()).isNull();
+        assertThat(retrievedLine.getExternalProductReference()).isEqualTo("1863190");
+    }
+
     @Autowired
     private OrderRepository orderRepository;
 

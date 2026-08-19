@@ -31,6 +31,15 @@ public class OrderRecord {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @JsonIgnore
+    @Column(name = "external_order_id", length = 120)
+    private String externalOrderId;
+
+    @JsonIgnore
+    @Column(name = "external_reference", length = 120)
+    private String externalReference;
+
+
     private String phoneNumber;
     private String deliveryType;
 

@@ -47,4 +47,17 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
     Optional<OrderRecord> findBySourceCartId(Long sourceCartId);
 
     Optional<OrderRecord> findByClientRequestId(UUID clientRequestId);
+
+    @Query("select o from OrderRecord o " +
+           "where (:from IS NULL OR o.createdAt >= :from) " +
+           "and (:to IS NULL OR o.createdAt <= :to) " +
+           "and (:source IS NULL OR o.orderSource = :source) " +
+           "and (:status IS NULL OR o.status = :status)")
+    org.springframework.data.domain.Page<OrderRecord> findHistoricalOrders(
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to,
+            @Param("source") com.sushimei.sushimei.backend.entity.OrderSource source,
+            @Param("status") String status,
+            org.springframework.data.domain.Pageable pageable);
+
 }

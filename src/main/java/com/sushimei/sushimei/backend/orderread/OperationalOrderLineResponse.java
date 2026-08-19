@@ -10,6 +10,7 @@ public record OperationalOrderLineResponse(
         OrderLineKind lineKind,
         String lineKey,
         Long sourceMenuItemId,
+        String externalProductReference,
         String name,
         int quantity,
         BigDecimal catalogBaseUnitPrice,

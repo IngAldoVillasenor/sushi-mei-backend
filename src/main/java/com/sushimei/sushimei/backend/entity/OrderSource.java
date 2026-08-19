@@ -7,5 +7,6 @@ package com.sushimei.sushimei.backend.entity;
 public enum OrderSource {
     WHATSAPP_AI,
     ANDROID_MANUAL,
-    COUNTER
+    COUNTER,
+    VENDIS_IMPORT
 }

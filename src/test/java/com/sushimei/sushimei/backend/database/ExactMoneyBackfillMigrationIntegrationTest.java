@@ -39,6 +39,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V13_SCRIPT = "V13__repair_classic_roll_promotion_targets.sql";
     private static final String V14_SCRIPT = "V14__persist_whatsapp_inbound_failure_diagnostics.sql";
     private static final String V15_SCRIPT = "V15__add_flexible_promotion_rewards.sql";
+    private static final String V16_SCRIPT = "V16__add_historical_order_provenance.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -84,8 +85,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 14)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
-        assertThat(historyCount(jdbcTemplate, 15)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("15");
+        assertSqlMigration(jdbcTemplate, 16, "SQL", V16_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 16)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("16");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -162,8 +164,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 14)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
-        assertThat(historyCount(jdbcTemplate, 15)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("15");
+        assertSqlMigration(jdbcTemplate, 16, "SQL", V16_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 16)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("16");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))
