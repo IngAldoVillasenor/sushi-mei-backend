@@ -204,9 +204,16 @@ class OperationalOrderReadServiceIntegrationTest {
 
         Page<HistoricalOrderSummaryResponse> filteredTime = operationalOrderReadService.historicalOrders(
             order2.getCreatedAt().toInstant(java.time.ZoneOffset.UTC),
-            order2.getCreatedAt().toInstant(java.time.ZoneOffset.UTC),
+            order2.getCreatedAt().plusSeconds(1).toInstant(java.time.ZoneOffset.UTC),
             null, null, 0, 50);
         assertThat(filteredTime.getContent()).extracting(HistoricalOrderSummaryResponse::id).containsExactly(order2.getId());
+
+        // Prove exact boundary is excluded
+        Page<HistoricalOrderSummaryResponse> excludedBoundary = operationalOrderReadService.historicalOrders(
+            order2.getCreatedAt().toInstant(java.time.ZoneOffset.UTC),
+            order2.getCreatedAt().toInstant(java.time.ZoneOffset.UTC),
+            null, null, 0, 50);
+        assertThat(excludedBoundary.getContent()).isEmpty();
     }
 
     @Test
@@ -348,5 +355,90 @@ class OperationalOrderReadServiceIntegrationTest {
         ChatMemoryProvider chatMemoryProvider() {
             return memoryId -> MessageWindowChatMemory.withMaxMessages(20);
         }
+    }
+
+    @Test
+    void testHistoricalAnalyticsBounds() {
+        orderRepository.deleteAll();
+
+        com.sushimei.sushimei.backend.entity.OrderRecord order1 = new com.sushimei.sushimei.backend.entity.OrderRecord();
+        order1.setStatus("COMPLETED");
+        order1.setOrderSource(OrderSource.COUNTER);
+        order1.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 0, 0)); // 10:00 UTC
+        order1.setTotalAmountAmount(new java.math.BigDecimal("100.00"));
+        orderRepository.saveAndFlush(order1);
+
+        com.sushimei.sushimei.backend.entity.OrderRecord order2 = new com.sushimei.sushimei.backend.entity.OrderRecord();
+        order2.setStatus("COMPLETED");
+        order2.setOrderSource(OrderSource.COUNTER);
+        order2.setCreatedAt(LocalDateTime.of(2026, 8, 20, 12, 0, 0)); // 12:00 UTC
+        order2.setTotalAmountAmount(new java.math.BigDecimal("150.00"));
+        orderRepository.saveAndFlush(order2);
+
+        Instant from = Instant.parse("2026-08-20T10:00:00Z");
+        Instant to = Instant.parse("2026-08-20T12:00:00Z");
+
+        HistoricalAnalyticsResponse analytics = operationalOrderReadService.historicalAnalytics(from, to);
+
+        assertThat(analytics.completedOrderCount()).isEqualTo(1);
+        assertThat(analytics.completedRevenue()).isEqualByComparingTo("100.00");
+
+        org.springframework.data.domain.Page<HistoricalOrderSummaryResponse> page = operationalOrderReadService.historicalOrders(from, to, null, null, 0, 10);
+        assertThat(page.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
+    void testHistoricalAnalyticsInvalidRange() {
+        Instant from = Instant.parse("2026-08-20T12:00:00Z");
+        Instant to = Instant.parse("2026-08-20T10:00:00Z");
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            operationalOrderReadService.historicalAnalytics(from, to);
+        });
+    }
+
+    @Test
+    void testHistoricalAnalyticsMetricsAndSource() {
+        orderRepository.deleteAll();
+
+        com.sushimei.sushimei.backend.entity.OrderRecord order1 = new com.sushimei.sushimei.backend.entity.OrderRecord();
+        order1.setStatus("COMPLETED");
+        order1.setOrderSource(OrderSource.COUNTER);
+        order1.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 0, 0));
+        order1.setTotalAmountAmount(new java.math.BigDecimal("100.00"));
+        orderRepository.saveAndFlush(order1);
+
+        com.sushimei.sushimei.backend.entity.OrderRecord order2 = new com.sushimei.sushimei.backend.entity.OrderRecord();
+        order2.setStatus("COMPLETED");
+        order2.setOrderSource(OrderSource.ANDROID_MANUAL);
+        order2.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 5, 0));
+        order2.setTotalAmountAmount(new java.math.BigDecimal("250.00"));
+        orderRepository.saveAndFlush(order2);
+
+        com.sushimei.sushimei.backend.entity.OrderRecord order3 = new com.sushimei.sushimei.backend.entity.OrderRecord();
+        order3.setStatus("VOIDED");
+        order3.setOrderSource(OrderSource.COUNTER);
+        order3.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 10, 0));
+        order3.setTotalAmountAmount(new java.math.BigDecimal("500.00"));
+        orderRepository.saveAndFlush(order3);
+
+        Instant from = Instant.parse("2026-08-20T00:00:00Z");
+        Instant to = Instant.parse("2026-08-21T00:00:00Z");
+
+        HistoricalAnalyticsResponse analytics = operationalOrderReadService.historicalAnalytics(from, to);
+
+        assertThat(analytics.completedOrderCount()).isEqualTo(2);
+        assertThat(analytics.completedRevenue()).isEqualByComparingTo("350.00");
+        assertThat(analytics.voidedOrderCount()).isEqualTo(1);
+        assertThat(analytics.averageCompletedTicket()).isEqualByComparingTo("175.00");
+
+        assertThat(analytics.salesBySource()).hasSize(2);
+
+        assertThat(analytics.salesBySource().get(0).source()).isEqualTo(OrderSource.ANDROID_MANUAL);
+        assertThat(analytics.salesBySource().get(0).completedRevenue()).isEqualByComparingTo("250.00");
+        assertThat(analytics.salesBySource().get(0).completedOrderCount()).isEqualTo(1);
+
+        assertThat(analytics.salesBySource().get(1).source()).isEqualTo(OrderSource.COUNTER);
+        assertThat(analytics.salesBySource().get(1).completedRevenue()).isEqualByComparingTo("100.00");
+        assertThat(analytics.salesBySource().get(1).completedOrderCount()).isEqualTo(1);
     }
 }

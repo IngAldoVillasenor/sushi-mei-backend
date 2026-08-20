@@ -141,4 +141,66 @@ class OperationalOrderControllerIntegrationTest {
             return memoryId -> MessageWindowChatMemory.withMaxMessages(20);
         }
     }
+
+    @Test
+    void historyEndpointRejectsCashier() throws Exception {
+        mockMvc.perform(get("/api/v1/orders?page=0&size=50").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("CASHIER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void historyEndpointRejectsKitchen() throws Exception {
+        mockMvc.perform(get("/api/v1/orders?page=0&size=50").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("KITCHEN")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void historyEndpointAllowsOwner() throws Exception {
+        mockMvc.perform(get("/api/v1/orders?page=0&size=50").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("OWNER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void historyEndpointAllowsManager() throws Exception {
+        mockMvc.perform(get("/api/v1/orders?page=0&size=50").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("MANAGER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void analyticsEndpointRejectsCashier() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("CASHIER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void analyticsEndpointRejectsKitchen() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("KITCHEN")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void analyticsEndpointAllowsOwner() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("OWNER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void analyticsEndpointAllowsManager() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics?from=2026-01-01T00:00:00Z&to=2026-02-01T00:00:00Z").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("MANAGER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void analyticsEndpointRejectsInvalidRange() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics?from=2026-02-01T00:00:00Z&to=2026-01-01T00:00:00Z").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("OWNER")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_RANGE"));
+    }
+
+    @Test
+    void analyticsEndpointRejectsEqualRange() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics?from=2026-01-01T00:00:00Z&to=2026-01-01T00:00:00Z").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("OWNER")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_RANGE"));
+    }
 }

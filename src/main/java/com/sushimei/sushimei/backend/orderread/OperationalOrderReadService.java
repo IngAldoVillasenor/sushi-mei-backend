@@ -28,6 +28,10 @@ import org.springframework.data.domain.Sort;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.jpa.domain.Specification;
+import jakarta.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Read-only operational API boundary. It reads persisted order evidence only and never invokes
@@ -69,6 +73,43 @@ public class OperationalOrderReadService {
                 .toList();
     }
 
+
+    @Transactional(readOnly = true)
+    public HistoricalAnalyticsResponse historicalAnalytics(Instant from, Instant to) {
+        if (from != null && to != null && (from.isAfter(to) || from.equals(to))) {
+            throw new InvalidDateRangeException("Invalid date range: from must be strictly before to");
+        }
+
+        LocalDateTime fromLdt = from != null ? LocalDateTime.ofInstant(from, ZoneOffset.UTC) : null;
+        LocalDateTime toLdt = to != null ? LocalDateTime.ofInstant(to, ZoneOffset.UTC) : null;
+
+        long completedOrderCount = orderRepository.countCompletedOrders(fromLdt, toLdt);
+        long voidedOrderCount = orderRepository.countVoidedOrders(fromLdt, toLdt);
+
+        java.math.BigDecimal completedRevenue = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal averageCompletedTicket = java.math.BigDecimal.ZERO;
+
+        if (completedOrderCount > 0) {
+            java.math.BigDecimal sum = orderRepository.sumCompletedRevenue(fromLdt, toLdt);
+            if (sum != null) {
+                completedRevenue = sum;
+            }
+            averageCompletedTicket = completedRevenue.divide(new java.math.BigDecimal(completedOrderCount), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        java.util.List<SalesBySourceResponse> salesBySource = orderRepository.aggregateCompletedSalesBySource(fromLdt, toLdt);
+
+        return new HistoricalAnalyticsResponse(
+                from,
+                to,
+                completedRevenue,
+                completedOrderCount,
+                averageCompletedTicket,
+                voidedOrderCount,
+                salesBySource
+        );
+    }
+
     @Transactional(readOnly = true)
     public Page<HistoricalOrderSummaryResponse> historicalOrders(Instant from, Instant to, OrderSource source, String status, int page, int size) {
         if (page < 0) page = 0;
@@ -79,7 +120,24 @@ public class OperationalOrderReadService {
         LocalDateTime fromLdt = from != null ? LocalDateTime.ofInstant(from, ZoneOffset.UTC) : null;
         LocalDateTime toLdt = to != null ? LocalDateTime.ofInstant(to, ZoneOffset.UTC) : null;
 
-        Page<OrderRecord> orders = orderRepository.findHistoricalOrders(fromLdt, toLdt, source, status, pageable);
+                Specification<OrderRecord> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (fromLdt != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromLdt));
+            }
+            if (toLdt != null) {
+                predicates.add(cb.lessThan(root.get("createdAt"), toLdt));
+            }
+            if (source != null) {
+                predicates.add(cb.equal(root.get("orderSource"), source));
+            }
+            if (status != null && !status.isEmpty()) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Page<OrderRecord> orders = orderRepository.findAll(spec, pageable);
 
         List<Long> orderIds = orders.stream().map(OrderRecord::getId).toList();
         Set<Long> structuredOrderIds = orderIds.isEmpty() ? java.util.Set.of() : new java.util.HashSet<>(orderRepository.findIdsWithOrderLines(orderIds));
