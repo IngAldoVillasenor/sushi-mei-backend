@@ -13,7 +13,34 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
+public interface OrderRepository extends JpaRepository<OrderRecord, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<OrderRecord> {
+    @Query("SELECT COUNT(o) FROM OrderRecord o " +
+           "WHERE o.status = 'VOIDED' " +
+           "AND o.createdAt >= :from " +
+           "AND o.createdAt < :to")
+    long countVoidedOrders(@org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from, @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @Query("SELECT COUNT(o) FROM OrderRecord o " +
+           "WHERE o.status = 'COMPLETED' " +
+           "AND o.createdAt >= :from " +
+           "AND o.createdAt < :to")
+    long countCompletedOrders(@org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from, @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @Query("SELECT SUM(o.totalAmountAmount) FROM OrderRecord o " +
+           "WHERE o.status = 'COMPLETED' " +
+           "AND o.createdAt >= :from " +
+           "AND o.createdAt < :to")
+    java.math.BigDecimal sumCompletedRevenue(@org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from, @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
+    @Query("SELECT new com.sushimei.sushimei.backend.orderread.SalesBySourceResponse(o.orderSource, COUNT(o), SUM(o.totalAmountAmount)) " +
+           "FROM OrderRecord o " +
+           "WHERE o.status = 'COMPLETED' " +
+           "AND o.createdAt >= :from " +
+           "AND o.createdAt < :to " +
+           "GROUP BY o.orderSource " +
+           "ORDER BY SUM(o.totalAmountAmount) DESC, o.orderSource ASC")
+    java.util.List<com.sushimei.sushimei.backend.orderread.SalesBySourceResponse> aggregateCompletedSalesBySource(@org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from, @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
+
     OrderRecord findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(String phoneNumber, String status);
 
     List<OrderRecord> findByStatusOrderByCreatedAtAsc(String status);
@@ -52,16 +79,6 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
             com.sushimei.sushimei.backend.entity.OrderSource orderSource,
             String externalOrderId);
 
-    @Query("select o from OrderRecord o " +
-           "where (:from IS NULL OR o.createdAt >= :from) " +
-           "and (:to IS NULL OR o.createdAt <= :to) " +
-           "and (:source IS NULL OR o.orderSource = :source) " +
-           "and (:status IS NULL OR o.status = :status)")
-    org.springframework.data.domain.Page<OrderRecord> findHistoricalOrders(
-            @Param("from") java.time.LocalDateTime from,
-            @Param("to") java.time.LocalDateTime to,
-            @Param("source") com.sushimei.sushimei.backend.entity.OrderSource source,
-            @Param("status") String status,
-            org.springframework.data.domain.Pageable pageable);
+
 
 }

@@ -35,6 +35,13 @@ public class OperationalOrderController {
         return ResponseEntity.ok(operationalOrderReadService.activeOrders());
     }
 
+    @GetMapping("/analytics")
+    public ResponseEntity<com.sushimei.sushimei.backend.orderread.HistoricalAnalyticsResponse> analytics(
+            @RequestParam Instant from,
+            @RequestParam Instant to) {
+        return ResponseEntity.ok(operationalOrderReadService.historicalAnalytics(from, to));
+    }
+
     @GetMapping
     public ResponseEntity<HistoricalOrdersPageResponse> history(
             @RequestParam(required = false) Instant from,
