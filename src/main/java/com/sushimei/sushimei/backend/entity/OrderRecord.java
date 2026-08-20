@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
@@ -104,6 +105,10 @@ public class OrderRecord {
     @OneToMany(mappedBy = "order", cascade = CascadeType.PERSIST)
     @OrderBy("linePosition ASC")
     private List<OrderLineRecord> orderLines = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToOne(mappedBy = "order")
+    private VendisOrderSnapshot vendisOrderSnapshot;
 
     private String status;
     private LocalDateTime createdAt;

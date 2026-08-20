@@ -70,7 +70,9 @@ public class OrderLifecycleService {
             throw failure(OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED);
         }
         OrderLifecycleStatus current = requiredStatus(order);
-        if (current == OrderLifecycleStatus.COMPLETED || current == OrderLifecycleStatus.CANCELLED_CLARIFICATION) {
+        if (current == OrderLifecycleStatus.COMPLETED
+                || current == OrderLifecycleStatus.CANCELLED_CLARIFICATION
+                || current == OrderLifecycleStatus.VOIDED) {
             throw failure(OrderLifecycleError.ORDER_INVALID_TRANSITION);
         }
         order.setStatus(OrderLifecycleStatus.CANCELLED_CLARIFICATION.persistedValue());

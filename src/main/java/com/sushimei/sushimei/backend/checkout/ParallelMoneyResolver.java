@@ -55,6 +55,35 @@ public class ParallelMoneyResolver {
         return new ParallelMoney(normalized, legacyAmount);
     }
 
+    /**
+     * Isolated compatibility path for imported external evidence, where a
+     * legitimate historical sale can total zero. Operational checkout and POS
+     * writes continue to use {@link #forWriteFromExact(BigDecimal)}.
+     */
+    public ParallelMoney forWriteFromExternalHistorical(BigDecimal exactAmount) {
+        BigDecimal normalized = normalizeExternalHistorical(exactAmount);
+        double legacyAmount = normalized.doubleValue();
+        if (!Double.isFinite(legacyAmount)
+                || normalized.compareTo(normalizeExternalHistorical(BigDecimal.valueOf(legacyAmount))) != 0) {
+            throw new MonetaryCompatibilityException(MonetaryCompatibilityReason.INVALID_LEGACY_REPRESENTATION);
+        }
+        return new ParallelMoney(normalized, legacyAmount);
+    }
+
+    /** Read-only counterpart of {@link #forWriteFromExternalHistorical(BigDecimal)}. */
+    public BigDecimal resolveExternalHistorical(BigDecimal numericAmount, Double legacyAmount) {
+        if (numericAmount == null && legacyAmount == null) {
+            throw new MonetaryCompatibilityException(MonetaryCompatibilityReason.BOTH_REPRESENTATIONS_ABSENT);
+        }
+        BigDecimal normalizedNumeric = numericAmount == null ? null : normalizeExternalHistorical(numericAmount);
+        BigDecimal normalizedLegacy = legacyAmount == null ? null : normalizeExternalHistorical(BigDecimal.valueOf(legacyAmount));
+        if (normalizedNumeric != null && normalizedLegacy != null
+                && normalizedNumeric.compareTo(normalizedLegacy) != 0) {
+            throw new MonetaryCompatibilityException(MonetaryCompatibilityReason.REPRESENTATIONS_DISAGREE);
+        }
+        return normalizedNumeric != null ? normalizedNumeric : normalizedLegacy;
+    }
+
     private BigDecimal normalizeNumeric(BigDecimal amount) {
         try {
             return checkoutMoney.normalizeNumericAmount(amount);
@@ -68,6 +97,14 @@ public class ParallelMoneyResolver {
             return checkoutMoney.normalizeLegacyAmount(amount);
         } catch (IllegalArgumentException exception) {
             throw new MonetaryCompatibilityException(MonetaryCompatibilityReason.INVALID_LEGACY_REPRESENTATION, exception);
+        }
+    }
+
+    private BigDecimal normalizeExternalHistorical(BigDecimal amount) {
+        try {
+            return checkoutMoney.normalizeNonNegativeNumericAmount(amount);
+        } catch (IllegalArgumentException exception) {
+            throw new MonetaryCompatibilityException(MonetaryCompatibilityReason.INVALID_NUMERIC_REPRESENTATION, exception);
         }
     }
 }

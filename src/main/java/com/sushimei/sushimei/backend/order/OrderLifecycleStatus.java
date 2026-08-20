@@ -9,7 +9,9 @@ public enum OrderLifecycleStatus {
     PREPARING,
     READY,
     COMPLETED,
-    CANCELLED_CLARIFICATION;
+    CANCELLED_CLARIFICATION,
+    /** Terminal source state used only for revoked historical external sales. */
+    VOIDED;
 
     private static final List<String> ACTIVE_PERSISTED_VALUES = List.of(
             PENDING_VALIDATION.name(), PENDING.name(), PREPARING.name(), READY.name());
