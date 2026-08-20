@@ -48,6 +48,10 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long> {
 
     Optional<OrderRecord> findByClientRequestId(UUID clientRequestId);
 
+    Optional<OrderRecord> findByOrderSourceAndExternalOrderId(
+            com.sushimei.sushimei.backend.entity.OrderSource orderSource,
+            String externalOrderId);
+
     @Query("select o from OrderRecord o " +
            "where (:from IS NULL OR o.createdAt >= :from) " +
            "and (:to IS NULL OR o.createdAt <= :to) " +

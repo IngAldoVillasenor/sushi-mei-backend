@@ -54,6 +54,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V14_SCRIPT = "V14__persist_whatsapp_inbound_failure_diagnostics.sql";
     private static final String V15_SCRIPT = "V15__add_flexible_promotion_rewards.sql";
     private static final String V16_SCRIPT = "V16__add_historical_order_provenance.sql";
+    private static final String V17_SCRIPT = "V17__add_vendis_historical_sales_import.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -93,7 +94,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
         assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
         assertSqlMigration(jdbcTemplate, 16, "SQL", V16_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("16");
+        assertSqlMigration(jdbcTemplate, 17, "SQL", V17_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("17");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -117,6 +119,8 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "SECURITY_AUDIT_EVENTS");
         assertTableExists(jdbcTemplate, "ORDER_LINE_SELECTION_SNAPSHOTS");
         assertTableExists(jdbcTemplate, "PROMOTION_BOOTSTRAP_RULE_SETS");
+        assertTableExists(jdbcTemplate, "VENDIS_ORDER_SNAPSHOTS");
+        assertTableExists(jdbcTemplate, "VENDIS_PAYMENT_SNAPSHOTS");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
         assertThat(constraintCount(jdbcTemplate, "CART_ITEMS", "FOREIGN KEY")).isEqualTo(1);
@@ -154,12 +158,13 @@ class FlywayBaselineIntegrationTest {
         assertManualPosOrderSchema(jdbcTemplate);
         assertAuthoritativeCatalogRulesSchema(jdbcTemplate);
         assertAuthoritativePromotionRulesSchema(jdbcTemplate);
+        assertVendisHistoryImportSchema(jdbcTemplate);
         assertAuthoritativeCatalogBootstrapData(jdbcTemplate);
         assertAuthoritativePromotionBootstrapData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV16AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV17AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -181,7 +186,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
         assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
         assertSqlMigration(jdbcTemplate, 16, "SQL", V16_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("16");
+        assertSqlMigration(jdbcTemplate, 17, "SQL", V17_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("17");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -196,6 +202,7 @@ class FlywayBaselineIntegrationTest {
         assertManualPosOrderSchema(jdbcTemplate);
         assertAuthoritativeCatalogRulesSchema(jdbcTemplate);
         assertAuthoritativePromotionRulesSchema(jdbcTemplate);
+        assertVendisHistoryImportSchema(jdbcTemplate);
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from public.catalog_bootstrap_rule_sets
                 where rule_set_id = 'PHASE_6F1_AUTHORITATIVE_CATALOG_RULES' and applied_at is null
@@ -331,6 +338,7 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 14, "SQL", V14_SCRIPT);
         assertSqlMigration(jdbcTemplate, 15, "SQL", V15_SCRIPT);
         assertSqlMigration(jdbcTemplate, 16, "SQL", V16_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 17, "SQL", V17_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 2)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 3)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 4)).isEqualTo(1);
@@ -344,9 +352,11 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 12)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 13)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 14)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 15)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 16)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("16");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 17);
+        assertThat(historyCount(jdbcTemplate, 17)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("17");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 19);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -702,6 +712,8 @@ class FlywayBaselineIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.whatsapp_inbound_messages", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_lines", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_line_selection_snapshots", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.vendis_order_snapshots", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.vendis_payment_snapshots", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.catalog_tags", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_selection_groups", Integer.class)).isZero();
@@ -770,6 +782,27 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "PROMOTION_BOOTSTRAP_RULE_SETS");
         assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_BOOTSTRAP_RULE_SETS",
                 "PROMOTION_BOOTSTRAP_RULE_SETS_RULE_SET_ID_NOT_BLANK_CHECK")).isTrue();
+    }
+
+    private void assertVendisHistoryImportSchema(JdbcTemplate jdbcTemplate) {
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "EXTERNAL_HISTORICAL");
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "EXTERNAL_PRODUCT_DETAIL");
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "PARENT_ORDER_SOURCE");
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "SOURCE_UNIT_PRICE_AMOUNT");
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "SOURCE_LINE_TOTAL_AMOUNT");
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "SOURCE_DISCOUNT_AMOUNT");
+        assertColumnPresent(jdbcTemplate, "ORDER_LINES", "SOURCE_DISCOUNT_PERCENTAGE");
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDERS", "ORDERS_TOTAL_AMOUNT_AMOUNT_BY_SOURCE_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDERS", "ORDERS_ID_ORDER_SOURCE_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_PARENT_ORDER_SOURCE_FKEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_HISTORICAL_PARENT_SOURCE_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_HISTORICAL_SOURCE_VALUES_NONNEGATIVE_CHECK"))
+                .isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_HISTORICAL_SOURCE_REQUIRED_CHECK"))
+                .isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "VENDIS_ORDER_SNAPSHOTS", "VENDIS_ORDER_SNAPSHOTS_PKEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "VENDIS_PAYMENT_SNAPSHOTS", "VENDIS_PAYMENT_SNAPSHOTS_ORDER_POSITION_KEY"))
+                .isTrue();
     }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {

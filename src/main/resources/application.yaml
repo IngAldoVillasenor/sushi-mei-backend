@@ -55,6 +55,10 @@ development:
   ai-harness:
     enabled: ${DEV_AI_HARNESS_ENABLED:false}
 sushimei:
+  vendis-import:
+    enabled: ${SUSHIMEI_VENDIS_IMPORT_ENABLED:false}
+    file: ${SUSHIMEI_VENDIS_IMPORT_FILE:}
+    dry-run: ${SUSHIMEI_VENDIS_IMPORT_DRY_RUN:true}
   security:
     jwt:
       private-key-location: ${SUSHIMEI_JWT_PRIVATE_KEY_LOCATION:}

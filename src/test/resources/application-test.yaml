@@ -42,6 +42,9 @@ rag:
   memory:
     max-messages: 20
 sushimei:
+  vendis-import:
+    enabled: false
+    dry-run: true
   security:
     jwt:
       key-id: test-key

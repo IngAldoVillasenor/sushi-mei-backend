@@ -34,6 +34,36 @@ public class OrderLineRecord {
     @Column(name = "external_product_reference", length = 120)
     private String externalProductReference;
 
+    /** Parent-source evidence used to constrain historical relaxations at the database boundary. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "parent_order_source", length = 32, updatable = false)
+    private OrderSource parentOrderSource;
+
+    /** True only for immutable external-sale evidence, never for operational lines. */
+    @Column(name = "external_historical", nullable = false, updatable = false)
+    private boolean externalHistorical;
+
+    @Column(name = "external_product_detail", columnDefinition = "TEXT", updatable = false)
+    private String externalProductDetail;
+
+    @Column(name = "source_discount_amount", precision = 19, scale = 4, updatable = false)
+    private BigDecimal sourceDiscountAmount;
+
+    @Column(name = "source_discount_percentage", precision = 19, scale = 4, updatable = false)
+    private BigDecimal sourceDiscountPercentage;
+
+    @Column(name = "source_tax_amount", precision = 19, scale = 4, updatable = false)
+    private BigDecimal sourceTaxAmount;
+
+    @Column(name = "source_price_including_tax_amount", precision = 19, scale = 4, updatable = false)
+    private BigDecimal sourcePriceIncludingTaxAmount;
+
+    @Column(name = "source_unit_price_amount", precision = 19, scale = 4, updatable = false)
+    private BigDecimal sourceUnitPriceAmount;
+
+    @Column(name = "source_line_total_amount", precision = 19, scale = 4, updatable = false)
+    private BigDecimal sourceLineTotalAmount;
+
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "order_id", nullable = false, updatable = false)
@@ -126,7 +156,8 @@ public class OrderLineRecord {
                 null,
                 null,
                 null,
-                null);
+                null,
+                false);
     }
 
 
@@ -143,25 +174,52 @@ public class OrderLineRecord {
             Long appliedPromotionId,
             String appliedPromotionName,
             String appliedPromotionBenefitType) {
+        OrderLineRecord record = createExternalHistoricalPaid(
+                requireNonBlank(externalProductReference, "externalProductReference"), null,
+                linePosition, dishName, quantity, finalUnitAmount, finalLineTotal,
+                finalUnitAmount, finalLineTotal,
+                null, null, null, null);
+        record.catalogBaseUnitPrice = catalogBaseUnitPrice;
+        record.chargedBaseUnitPrice = chargedBaseUnitPrice;
+        record.configurationAdjustmentAmount = configurationAdjustmentAmount;
+        record.appliedPromotionId = appliedPromotionId;
+        record.appliedPromotionName = appliedPromotionName;
+        record.appliedPromotionBenefitType = appliedPromotionBenefitType;
+        return record;
+    }
+
+    /**
+     * Immutable source-evidence factory for external historical sales. It
+     * deliberately permits zero values and a nullable product reference while
+     * leaving every operational factory's positive/equality invariants intact.
+     */
+    public static OrderLineRecord createExternalHistoricalPaid(
+            String externalProductReference,
+            String externalProductDetail,
+            int linePosition,
+            String dishName,
+            int quantity,
+            BigDecimal sourceUnitPrice,
+            BigDecimal sourceLineTotal,
+            BigDecimal projectedUnitPrice,
+            BigDecimal projectedLineTotal,
+            BigDecimal sourceDiscountAmount,
+            BigDecimal sourceDiscountPercentage,
+            BigDecimal sourceTaxAmount,
+            BigDecimal sourcePriceIncludingTaxAmount) {
         OrderLineRecord record = new OrderLineRecord(
-                null,
-                null,
-                null,
-                OrderLineKind.PAID,
-                linePosition,
-                dishName,
-                quantity,
-                finalUnitAmount,
-                finalLineTotal,
-                catalogBaseUnitPrice,
-                chargedBaseUnitPrice,
-                configurationAdjustmentAmount,
-                appliedPromotionId,
-                appliedPromotionName,
-                appliedPromotionBenefitType,
-                null,
-                null);
-        record.setExternalProductReference(requireNonBlank(externalProductReference, "externalProductReference"));
+                null, null, null, OrderLineKind.PAID, linePosition, dishName, quantity,
+                projectedUnitPrice, projectedLineTotal, null, null, null,
+                null, null, null, null, null, true);
+        record.externalProductReference = normalizeNullable(externalProductReference, 120, "externalProductReference");
+        record.externalProductDetail = normalizeNullable(externalProductDetail, 10_000, "externalProductDetail");
+        record.sourceUnitPriceAmount = normalizeHistoricalAmount(sourceUnitPrice, "sourceUnitPriceAmount");
+        record.sourceLineTotalAmount = normalizeHistoricalAmount(sourceLineTotal, "sourceLineTotalAmount");
+        record.sourceDiscountAmount = normalizeHistoricalAmount(sourceDiscountAmount, "sourceDiscountAmount");
+        record.sourceDiscountPercentage = normalizeHistoricalAmount(sourceDiscountPercentage, "sourceDiscountPercentage");
+        record.sourceTaxAmount = normalizeHistoricalAmount(sourceTaxAmount, "sourceTaxAmount");
+        record.sourcePriceIncludingTaxAmount = normalizeHistoricalAmount(
+                sourcePriceIncludingTaxAmount, "sourcePriceIncludingTaxAmount");
         return record;
     }
 
@@ -195,7 +253,8 @@ public class OrderLineRecord {
                 appliedPromotionName,
                 appliedPromotionBenefitType,
                 null,
-                null);
+                null,
+                false);
     }
 
     public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
@@ -228,7 +287,8 @@ public class OrderLineRecord {
                 requireNonBlank(appliedPromotionName, "appliedPromotionName"),
                 requireNonBlank(appliedPromotionBenefitType, "appliedPromotionBenefitType"),
                 requirePositive(rewardOrdinal, "rewardOrdinal"),
-                source);
+                source,
+                false);
     }
 
     public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
@@ -263,7 +323,8 @@ public class OrderLineRecord {
                             String appliedPromotionName,
                             String appliedPromotionBenefitType,
                             Integer rewardOrdinal,
-                            OrderLineRecord sourcePaidLine) {
+                            OrderLineRecord sourcePaidLine,
+                            boolean externalHistorical) {
         this.sourceCartItemId = sourceCartItemId;
         this.sourceMenuItemId = sourceMenuItemId;
         this.clientLineKey = clientLineKey;
@@ -271,13 +332,20 @@ public class OrderLineRecord {
         this.linePosition = requirePositive(linePosition, "linePosition");
         this.dishName = normalizeDishName(dishName);
         this.quantity = requirePositive(quantity, "quantity");
-        this.unitPriceAmount = lineKind == OrderLineKind.PAID
+        this.externalHistorical = externalHistorical;
+        this.unitPriceAmount = externalHistorical
+                ? requireNonNegativeAmount(unitPriceAmount, "unitPriceAmount")
+                : lineKind == OrderLineKind.PAID
                 ? requirePositiveAmount(unitPriceAmount, "unitPriceAmount")
                 : requireNonNegativeAmount(unitPriceAmount, "unitPriceAmount");
-        this.lineTotalAmount = lineKind == OrderLineKind.PAID
+        this.lineTotalAmount = externalHistorical
+                ? requireNonNegativeAmount(lineTotalAmount, "lineTotalAmount")
+                : lineKind == OrderLineKind.PAID
                 ? requirePositiveAmount(lineTotalAmount, "lineTotalAmount")
                 : requireNonNegativeAmount(lineTotalAmount, "lineTotalAmount");
-        requireLineTotal(this.quantity, this.unitPriceAmount, this.lineTotalAmount);
+        if (!externalHistorical) {
+            requireLineTotal(this.quantity, this.unitPriceAmount, this.lineTotalAmount);
+        }
         this.catalogBaseUnitPrice = catalogBaseUnitPrice;
         this.chargedBaseUnitPrice = chargedBaseUnitPrice;
         this.configurationAdjustmentAmount = configurationAdjustmentAmount;
@@ -290,6 +358,10 @@ public class OrderLineRecord {
 
     void attachTo(OrderRecord order) {
         this.order = Objects.requireNonNull(order, "order must not be null");
+        this.parentOrderSource = order.getOrderSource();
+        if (externalHistorical && parentOrderSource != OrderSource.VENDIS_IMPORT) {
+            throw new IllegalArgumentException("external historical lines require a VENDIS_IMPORT order");
+        }
     }
 
     public void addSelectionSnapshot(OrderLineSelectionSnapshot snapshot) {
@@ -301,6 +373,15 @@ public class OrderLineRecord {
     public Long getId() { return id; }
     public String getExternalProductReference() { return externalProductReference; }
     public void setExternalProductReference(String externalProductReference) { this.externalProductReference = externalProductReference; }
+    public OrderSource getParentOrderSource() { return parentOrderSource; }
+    public boolean isExternalHistorical() { return externalHistorical; }
+    public String getExternalProductDetail() { return externalProductDetail; }
+    public BigDecimal getSourceDiscountAmount() { return sourceDiscountAmount; }
+    public BigDecimal getSourceDiscountPercentage() { return sourceDiscountPercentage; }
+    public BigDecimal getSourceTaxAmount() { return sourceTaxAmount; }
+    public BigDecimal getSourcePriceIncludingTaxAmount() { return sourcePriceIncludingTaxAmount; }
+    public BigDecimal getSourceUnitPriceAmount() { return sourceUnitPriceAmount; }
+    public BigDecimal getSourceLineTotalAmount() { return sourceLineTotalAmount; }
     public Long getSourceCartItemId() { return sourceCartItemId; }
     public Long getSourceMenuItemId() { return sourceMenuItemId; }
     public String getClientLineKey() { return clientLineKey; }
@@ -382,6 +463,34 @@ public class OrderLineRecord {
         BigDecimal normalized = value.setScale(CheckoutMoney.SCALE, RoundingMode.UNNECESSARY);
         if (normalized.precision() > CheckoutMoney.PRECISION) {
             throw new IllegalArgumentException(fieldName + " exceeds checkout precision");
+        }
+        return normalized;
+    }
+
+    private static BigDecimal normalizeHistoricalAmount(BigDecimal value, String fieldName) {
+        if (value == null) {
+            return null;
+        }
+        if (value.signum() < 0 || value.stripTrailingZeros().scale() > 4) {
+            throw new IllegalArgumentException(fieldName + " must be a non-negative historical source amount");
+        }
+        BigDecimal normalized = value.setScale(4, RoundingMode.UNNECESSARY);
+        if (normalized.precision() > CheckoutMoney.PRECISION) {
+            throw new IllegalArgumentException(fieldName + " exceeds historical source precision");
+        }
+        return normalized;
+    }
+
+    private static String normalizeNullable(String value, int maximumLength, String fieldName) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > maximumLength) {
+            throw new IllegalArgumentException(fieldName + " is outside the supported length");
         }
         return normalized;
     }

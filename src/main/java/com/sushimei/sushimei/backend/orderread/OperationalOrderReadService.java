@@ -174,6 +174,14 @@ public class OperationalOrderReadService {
                 line.getClientLineKey(),
                 line.getSourceMenuItemId(),
                 line.getExternalProductReference(),
+                line.isExternalHistorical(),
+                line.getExternalProductDetail(),
+                line.getSourceUnitPriceAmount(),
+                line.getSourceLineTotalAmount(),
+                line.getSourceDiscountAmount(),
+                line.getSourceDiscountPercentage(),
+                line.getSourceTaxAmount(),
+                line.getSourcePriceIncludingTaxAmount(),
                 line.getDishName(),
                 line.getQuantity(),
                 line.getCatalogBaseUnitPrice(),
@@ -206,7 +214,9 @@ public class OperationalOrderReadService {
         if (order.getTotalAmountAmount() == null && order.getTotalAmount() == null) {
             return null;
         }
-        return parallelMoneyResolver.resolve(order.getTotalAmountAmount(), order.getTotalAmount());
+        return order.getOrderSource() == OrderSource.VENDIS_IMPORT
+                ? parallelMoneyResolver.resolveExternalHistorical(order.getTotalAmountAmount(), order.getTotalAmount())
+                : parallelMoneyResolver.resolve(order.getTotalAmountAmount(), order.getTotalAmount());
     }
 
     private boolean requiresPaymentValidation(OrderRecord order) {
