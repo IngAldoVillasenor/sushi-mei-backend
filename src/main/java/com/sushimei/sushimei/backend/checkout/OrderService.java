@@ -5,6 +5,7 @@ import com.sushimei.sushimei.backend.conversation.ConversationSessionRepository;
 import com.sushimei.sushimei.backend.conversation.ConversationStateMachine;
 import com.sushimei.sushimei.backend.conversation.FulfillmentType;
 import com.sushimei.sushimei.backend.conversation.PaymentMethod;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
 import com.sushimei.sushimei.backend.entity.Cart;
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderLineRecord;
@@ -44,6 +45,7 @@ public class OrderService {
     private final ParallelMoneyResolver parallelMoneyResolver;
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
+    private final BusinessDayService businessDayService;
     private final LegacyOrderDetailsFormatter legacyOrderDetailsFormatter = new LegacyOrderDetailsFormatter();
 
     public OrderService(CartRepository cartRepository,
@@ -53,7 +55,8 @@ public class OrderService {
                         ConversationStateMachine conversationStateMachine,
                         ParallelMoneyResolver parallelMoneyResolver,
                         CheckoutMoney checkoutMoney,
-                        Clock clock) {
+                        Clock clock,
+                        BusinessDayService businessDayService) {
         this.cartRepository = Objects.requireNonNull(cartRepository, "cartRepository must not be null");
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
         this.conversationSessionRepository = Objects.requireNonNull(conversationSessionRepository,
@@ -65,6 +68,7 @@ public class OrderService {
                 "parallelMoneyResolver must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.businessDayService = Objects.requireNonNull(businessDayService, "businessDayService must not be null");
     }
 
     /**
@@ -94,6 +98,7 @@ public class OrderService {
                 .orElseThrow(() -> failure(CheckoutCompletionFailureReason.CONVERSATION_SESSION_NOT_FOUND));
         validateCashDenomination(session, snapshot.total());
         Instant now = clock.instant();
+        businessDayService.assertPhysicalOrderCreationAllowed(request.orderSource(), now);
 
         OrderRecord order = buildOrder(request, snapshot, session, now);
         OrderRecord savedOrder = orderRepository.save(order);

@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.checkout;
 
 import com.sushimei.sushimei.backend.conversation.ConversationSessionRepository;
 import com.sushimei.sushimei.backend.conversation.ConversationStateMachine;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
 import com.sushimei.sushimei.backend.entity.Cart;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.repository.CartRepository;
@@ -43,6 +44,8 @@ class OrderServiceTest {
     private CheckoutMoney checkoutMoney;
     @Mock
     private Clock clock;
+    @Mock
+    private BusinessDayService businessDayService;
 
     @InjectMocks
     private OrderService orderService;

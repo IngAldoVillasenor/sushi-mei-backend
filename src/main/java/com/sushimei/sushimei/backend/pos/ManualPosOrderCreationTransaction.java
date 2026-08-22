@@ -3,6 +3,7 @@ package com.sushimei.sushimei.backend.pos;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteResponse;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupResponse;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionResponse;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
 import com.sushimei.sushimei.backend.checkout.ParallelMoney;
 import com.sushimei.sushimei.backend.checkout.ParallelMoneyResolver;
@@ -34,17 +35,20 @@ class ManualPosOrderCreationTransaction {
     private final TemporalPromotionQuoteService promotionQuoteService;
     private final ParallelMoneyResolver parallelMoneyResolver;
     private final CheckoutMoney checkoutMoney;
+    private final BusinessDayService businessDayService;
 
     ManualPosOrderCreationTransaction(OrderRepository orderRepository,
                                       AppUserRepository appUserRepository,
                                       TemporalPromotionQuoteService promotionQuoteService,
                                       ParallelMoneyResolver parallelMoneyResolver,
-                                      CheckoutMoney checkoutMoney) {
+                                      CheckoutMoney checkoutMoney,
+                                      BusinessDayService businessDayService) {
         this.orderRepository = orderRepository;
         this.appUserRepository = appUserRepository;
         this.promotionQuoteService = promotionQuoteService;
         this.parallelMoneyResolver = parallelMoneyResolver;
         this.checkoutMoney = checkoutMoney;
+        this.businessDayService = businessDayService;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.REPEATABLE_READ)
@@ -57,6 +61,7 @@ class ManualPosOrderCreationTransaction {
         appUserRepository.findById(userId).orElseThrow(() -> new ManualPosOrderException(ManualPosOrderError.ORDER_FORBIDDEN_OPERATION));
         PromotionQuoteResponse quote = promotionQuoteService.quote(new PromotionQuoteRequest(request.lines()));
         validateDeliveryCashDenomination(request, quote.total());
+        businessDayService.assertPhysicalOrderCreationAllowed(OrderSource.ANDROID_MANUAL, quote.quotedAt());
         OrderRecord order = createOrder(userId, request, quote);
         int linePosition = 1;
         for (PromotionQuoteLineResponse quoteLine : quote.lines()) {

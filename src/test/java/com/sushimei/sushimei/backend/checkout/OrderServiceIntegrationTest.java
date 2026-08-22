@@ -4,6 +4,11 @@ import com.sushimei.sushimei.backend.conversation.ConversationSession;
 import com.sushimei.sushimei.backend.conversation.ConversationSessionRepository;
 import com.sushimei.sushimei.backend.conversation.ConversationState;
 import com.sushimei.sushimei.backend.conversation.ConversationTransitionService;
+import com.sushimei.sushimei.backend.businessday.BusinessDayError;
+import com.sushimei.sushimei.backend.businessday.BusinessDayException;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
+import com.sushimei.sushimei.backend.businessday.CloseBusinessDayRequest;
+import com.sushimei.sushimei.backend.businessday.OpenBusinessDayRequest;
 import com.sushimei.sushimei.backend.entity.Cart;
 import com.sushimei.sushimei.backend.entity.CartItem;
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
@@ -62,10 +67,15 @@ class OrderServiceIntegrationTest {
     private ConversationTransitionService conversationTransitionService;
 
     @Autowired
+    private BusinessDayService businessDayService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void clearFixtures() {
+        jdbcTemplate.update("delete from public.business_day_closures");
+        jdbcTemplate.update("delete from public.business_days");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
         jdbcTemplate.update("delete from public.cart_items");
@@ -307,6 +317,30 @@ class OrderServiceIntegrationTest {
         assertRollbackState(cart.getId(), phoneNumber);
     }
 
+    @Test
+    void closedBusinessDayRejectsCounterCheckoutWithoutChangingTheCartOrCreatingAnOrder() {
+        Long userId = insertBusinessDayUser();
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("0.00")));
+        businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("0.00")));
+
+        String phoneNumber = "5214770000113";
+        Cart cart = persistOpenCart(phoneNumber, item("Maki", 1, "10.50"));
+        readyPickupCard(phoneNumber, "Li");
+
+        assertThatThrownBy(() -> orderService.completeCheckout(new CheckoutCompletionCommand(
+                phoneNumber, cart.getId(), OrderSource.COUNTER)))
+                .isInstanceOf(BusinessDayException.class)
+                .extracting(exception -> ((BusinessDayException) exception).getError())
+                .isEqualTo(BusinessDayError.BUSINESS_DAY_CLOSED);
+
+        assertRollbackState(cart.getId(), phoneNumber);
+
+        businessDayService.reopen(userId);
+        CheckoutCompletionResult afterReopen = orderService.completeCheckout(new CheckoutCompletionCommand(
+                phoneNumber, cart.getId(), OrderSource.COUNTER));
+        assertThat(afterReopen.outcome()).isEqualTo(CheckoutCompletionOutcome.CREATED);
+    }
+
     private OrderRecord completedOrder(String phoneNumber, Long cartId) {
         CheckoutCompletionResult result = orderService.completeCheckout(command(phoneNumber, cartId));
         assertThat(result.outcome()).isEqualTo(CheckoutCompletionOutcome.CREATED);
@@ -315,6 +349,15 @@ class OrderServiceIntegrationTest {
 
     private CheckoutCompletionCommand command(String phoneNumber, Long cartId) {
         return new CheckoutCompletionCommand(phoneNumber, cartId, OrderSource.WHATSAPP_AI);
+    }
+
+    private Long insertBusinessDayUser() {
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active, failed_login_attempts,
+                    password_changed_at, created_at, updated_at, version)
+                values ('business-day-checkout', 'Business day checkout', '{bcrypt}not-used', 'OWNER', true, 0, ?, ?, ?, 0)
+                """, Timestamp.from(COMPLETION_TIME), Timestamp.from(COMPLETION_TIME), Timestamp.from(COMPLETION_TIME));
+        return jdbcTemplate.queryForObject("select id from public.app_users where username = 'business-day-checkout'", Long.class);
     }
 
     private Cart persistOpenCart(String phoneNumber, CartItem... items) {
