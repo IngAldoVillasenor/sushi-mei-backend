@@ -13,6 +13,11 @@ import com.sushimei.sushimei.backend.catalog.MenuSelectionGroupResponse;
 import com.sushimei.sushimei.backend.catalog.SelectionPricingPolicy;
 import com.sushimei.sushimei.backend.catalog.SelectionRuleTargetType;
 import com.sushimei.sushimei.backend.catalog.UpdateMenuItemRequest;
+import com.sushimei.sushimei.backend.businessday.BusinessDayError;
+import com.sushimei.sushimei.backend.businessday.BusinessDayException;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
+import com.sushimei.sushimei.backend.businessday.CloseBusinessDayRequest;
+import com.sushimei.sushimei.backend.businessday.OpenBusinessDayRequest;
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderLineKind;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
@@ -68,9 +73,12 @@ class ManualPosOrderServiceIntegrationTest {
     @Autowired private CatalogConfigurationService catalogConfigurationService;
     @Autowired private PromotionService promotionService;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private BusinessDayService businessDayService;
 
     @BeforeEach
     void clean() {
+        jdbcTemplate.update("delete from public.business_day_closures");
+        jdbcTemplate.update("delete from public.business_days");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
@@ -127,6 +135,42 @@ class ManualPosOrderServiceIntegrationTest {
                 .isInstanceOf(ManualPosOrderException.class)
                 .extracting(exception -> ((ManualPosOrderException) exception).getError())
                 .isEqualTo(ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void physicalManualOrdersAreAllowedWithoutOrWithAnOpenDayRejectedAfterCloseAndAllowedAgainAfterReopen() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-business-day");
+
+        ManualPosOrderResponse beforeOpening = manualPosOrderService.create(userId,
+                request(UUID.randomUUID(), california.id(), 1));
+
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("0.00")));
+        ManualPosOrderResponse whileOpen = manualPosOrderService.create(userId,
+                request(UUID.randomUUID(), california.id(), 1));
+
+        jdbcTemplate.update("update public.orders set status = 'COMPLETED'");
+        businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("158.00")));
+        assertThatThrownBy(() -> manualPosOrderService.create(userId,
+                request(UUID.randomUUID(), california.id(), 1)))
+                .isInstanceOf(BusinessDayException.class)
+                .extracting(exception -> ((BusinessDayException) exception).getError())
+                .isEqualTo(BusinessDayError.BUSINESS_DAY_CLOSED);
+
+        ManualPosOrderResponse existingAfterClose = manualPosOrderService.create(userId,
+                request(whileOpen.requestId(), california.id(), 1));
+        assertThat(existingAfterClose.result()).isEqualTo(ManualOrderResult.ALREADY_CREATED);
+        assertThat(existingAfterClose.id()).isEqualTo(whileOpen.id());
+        assertThat(beforeOpening.id()).isNotEqualTo(whileOpen.id());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("select expected_closing_cash_amount from public.business_days", BigDecimal.class))
+                .isEqualByComparingTo("158.00");
+
+        businessDayService.reopen(userId);
+        ManualPosOrderResponse afterReopen = manualPosOrderService.create(userId,
+                request(UUID.randomUUID(), california.id(), 1));
+        assertThat(afterReopen.result()).isEqualTo(ManualOrderResult.CREATED);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isEqualTo(3);
     }
 
     @Test

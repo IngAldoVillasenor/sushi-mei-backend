@@ -3,6 +3,8 @@ package com.sushimei.sushimei.backend.controller;
 import com.sushimei.sushimei.backend.catalog.CatalogConfigurationException;
 import com.sushimei.sushimei.backend.catalog.CatalogDomainError;
 import com.sushimei.sushimei.backend.catalog.MenuCatalogItemNotFoundException;
+import com.sushimei.sushimei.backend.businessday.BusinessDayError;
+import com.sushimei.sushimei.backend.businessday.BusinessDayException;
 import com.sushimei.sushimei.backend.pos.ManualPosOrderError;
 import com.sushimei.sushimei.backend.pos.ManualPosOrderException;
 import com.sushimei.sushimei.backend.promotion.PromotionError;
@@ -61,14 +63,27 @@ public class ManualPosOrderApiExceptionHandler {
                 "La solicitud de orden no es valida.");
     }
 
+    @ExceptionHandler(BusinessDayException.class)
+    public ResponseEntity<ManualPosOrderApiError> businessDay(BusinessDayException exception) {
+        if (exception.getError() == BusinessDayError.BUSINESS_DAY_CLOSED) {
+            return error(HttpStatus.CONFLICT, exception.getError().name(), "El día de negocio ya fue cerrado.");
+        }
+        return error(HttpStatus.BAD_REQUEST, ManualPosOrderError.ORDER_INVALID,
+                "La solicitud de orden no es valida.");
+    }
+
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class, IllegalArgumentException.class})
     public ResponseEntity<ManualPosOrderApiError> invalid(Exception exception) {
         return error(HttpStatus.BAD_REQUEST, ManualPosOrderError.ORDER_INVALID, "La solicitud de orden no es valida.");
     }
 
     private ResponseEntity<ManualPosOrderApiError> error(HttpStatus status, ManualPosOrderError code, String message) {
+        return error(status, code.name(), message);
+    }
+
+    private ResponseEntity<ManualPosOrderApiError> error(HttpStatus status, String code, String message) {
         LOGGER.warn("manual_pos_api_error requestId={} status={} code={}",
-                MDC.get("requestId"), status.value(), code.name());
-        return ResponseEntity.status(status).body(new ManualPosOrderApiError(code.name(), message));
+                MDC.get("requestId"), status.value(), code);
+        return ResponseEntity.status(status).body(new ManualPosOrderApiError(code, message));
     }
 }

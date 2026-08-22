@@ -41,6 +41,23 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long>, org.s
            "ORDER BY SUM(o.totalAmountAmount) DESC, o.orderSource ASC")
     java.util.List<com.sushimei.sushimei.backend.orderread.SalesBySourceResponse> aggregateCompletedSalesBySource(@org.springframework.data.repository.query.Param("from") java.time.LocalDateTime from, @org.springframework.data.repository.query.Param("to") java.time.LocalDateTime to);
 
+    @Query("SELECT o FROM OrderRecord o " +
+           "WHERE o.status = 'COMPLETED' " +
+           "AND o.createdAt >= :from " +
+           "AND o.createdAt < :to")
+    List<OrderRecord> findCompletedForBusinessDate(
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to);
+
+    @Query("SELECT COUNT(o) FROM OrderRecord o "
+            + "WHERE o.createdAt >= :from "
+            + "AND o.createdAt < :to "
+            + "AND (o.status IS NULL OR o.status NOT IN :terminalStatuses)")
+    long countNonTerminalForBusinessDate(
+            @Param("from") java.time.LocalDateTime from,
+            @Param("to") java.time.LocalDateTime to,
+            @Param("terminalStatuses") List<String> terminalStatuses);
+
     OrderRecord findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(String phoneNumber, String status);
 
     List<OrderRecord> findByStatusOrderByCreatedAtAsc(String status);

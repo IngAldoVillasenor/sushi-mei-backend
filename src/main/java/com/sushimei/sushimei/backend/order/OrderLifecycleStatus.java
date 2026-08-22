@@ -16,6 +16,9 @@ public enum OrderLifecycleStatus {
     private static final List<String> ACTIVE_PERSISTED_VALUES = List.of(
             PENDING_VALIDATION.name(), PENDING.name(), PREPARING.name(), READY.name());
 
+    private static final List<String> TERMINAL_PERSISTED_VALUES = List.of(
+            COMPLETED.name(), CANCELLED_CLARIFICATION.name(), VOIDED.name());
+
     public static OrderLifecycleStatus fromPersisted(String value) {
         if (value == null) {
             throw new IllegalArgumentException("Order lifecycle status is absent");
@@ -29,6 +32,10 @@ public enum OrderLifecycleStatus {
 
     public static List<String> activePersistedValues() {
         return ACTIVE_PERSISTED_VALUES;
+    }
+
+    public static List<String> terminalPersistedValues() {
+        return TERMINAL_PERSISTED_VALUES;
     }
 
     public String persistedValue() {
