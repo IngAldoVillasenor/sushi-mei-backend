@@ -145,6 +145,26 @@ public class BusinessDayService {
         }
     }
 
+    /**
+     * Open Sales are immediate counter revenue and therefore require an open
+     * drawer for their own local business date. This is intentionally stricter
+     * than normal catalog ordering, which may precede a forgotten opening.
+     */
+    @Transactional
+    public void assertOpenBusinessDayForOpenSale(Instant createdAt) {
+        if (createdAt == null) {
+            throw failure(BusinessDayError.BUSINESS_DAY_INVALID);
+        }
+        lockCurrentDayOperations();
+        LocalDate businessDate = createdAt.atZone(businessZone).toLocalDate();
+        BusinessDayStatus status = businessDayRepository.findByBusinessDate(businessDate)
+                .map(BusinessDay::getStatus)
+                .orElse(null);
+        if (status != BusinessDayStatus.OPEN) {
+            throw failure(BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED);
+        }
+    }
+
     @Transactional
     public BusinessDayResponse close(Long closedByUserId, CloseBusinessDayRequest request) {
         requireActor(closedByUserId);

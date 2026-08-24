@@ -1,6 +1,8 @@
 package com.sushimei.sushimei.backend.pos;
 
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteResponse;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponent;
+import com.sushimei.sushimei.backend.catalog.MenuItemComponentService;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupResponse;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionResponse;
 import com.sushimei.sushimei.backend.businessday.BusinessDayService;
@@ -9,12 +11,15 @@ import com.sushimei.sushimei.backend.checkout.ParallelMoney;
 import com.sushimei.sushimei.backend.checkout.ParallelMoneyResolver;
 import com.sushimei.sushimei.backend.entity.OrderLineRecord;
 import com.sushimei.sushimei.backend.entity.OrderLineSelectionSnapshot;
+import com.sushimei.sushimei.backend.entity.OrderLineComponentOmissionSnapshot;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.promotion.AppliedPromotionResponse;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteLineResponse;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteResponse;
+import com.sushimei.sushimei.backend.promotion.PromotionQuoteLineRequest;
+import com.sushimei.sushimei.backend.promotion.PromotionRewardConfigurationRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionRewardQuoteResponse;
 import com.sushimei.sushimei.backend.promotion.TemporalPromotionQuoteService;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -36,19 +41,22 @@ class ManualPosOrderCreationTransaction {
     private final ParallelMoneyResolver parallelMoneyResolver;
     private final CheckoutMoney checkoutMoney;
     private final BusinessDayService businessDayService;
+    private final MenuItemComponentService menuItemComponentService;
 
     ManualPosOrderCreationTransaction(OrderRepository orderRepository,
                                       AppUserRepository appUserRepository,
                                       TemporalPromotionQuoteService promotionQuoteService,
                                       ParallelMoneyResolver parallelMoneyResolver,
                                       CheckoutMoney checkoutMoney,
-                                      BusinessDayService businessDayService) {
+                                      BusinessDayService businessDayService,
+                                      MenuItemComponentService menuItemComponentService) {
         this.orderRepository = orderRepository;
         this.appUserRepository = appUserRepository;
         this.promotionQuoteService = promotionQuoteService;
         this.parallelMoneyResolver = parallelMoneyResolver;
         this.checkoutMoney = checkoutMoney;
         this.businessDayService = businessDayService;
+        this.menuItemComponentService = menuItemComponentService;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.REPEATABLE_READ)
@@ -63,8 +71,11 @@ class ManualPosOrderCreationTransaction {
         validateDeliveryCashDenomination(request, quote.total());
         businessDayService.assertPhysicalOrderCreationAllowed(OrderSource.ANDROID_MANUAL, quote.quotedAt());
         OrderRecord order = createOrder(userId, request, quote);
+        java.util.Map<String, PromotionQuoteLineRequest> requestsByLineKey = request.lines().stream()
+                .collect(java.util.stream.Collectors.toMap(PromotionQuoteLineRequest::lineKey, value -> value));
         int linePosition = 1;
         for (PromotionQuoteLineResponse quoteLine : quote.lines()) {
+            PromotionQuoteLineRequest requestedLine = requestsByLineKey.get(quoteLine.lineKey());
             BigDecimal paidUnit = positive(quoteLine.chargedBaseUnitPrice().add(quoteLine.configuration().unitAdjustmentTotal()));
             BigDecimal paidTotal = positive(paidUnit.multiply(BigDecimal.valueOf(quoteLine.quantity())));
             AppliedPromotionResponse promotion = quoteLine.appliedPromotion();
@@ -72,8 +83,9 @@ class ManualPosOrderCreationTransaction {
                     quoteLine.quantity(), quoteLine.catalogBaseUnitPrice(), quoteLine.chargedBaseUnitPrice(),
                     quoteLine.configuration().unitAdjustmentTotal(), paidUnit, paidTotal,
                     promotion == null ? null : promotion.id(), promotion == null ? null : promotion.name(),
-                    promotion == null ? null : promotion.benefitType().name());
+                    promotion == null ? null : promotion.benefitType().name(), requestedLine.note());
             snapshots(paid, quoteLine.configuration());
+            componentOmissions(paid, quoteLine.menuItemId(), requestedLine.omittedComponentIds());
             order.addOrderLine(paid);
             for (PromotionRewardQuoteResponse reward : quoteLine.rewards()) {
                 AppliedPromotionResponse rewardPromotion = reward.promotion();
@@ -87,6 +99,15 @@ class ManualPosOrderCreationTransaction {
         }
         OrderRecord saved = orderRepository.saveAndFlush(order);
         return ManualPosOrderReadService.response(saved, ManualOrderResult.CREATED);
+    }
+
+    private void componentOmissions(OrderLineRecord line, Long menuItemId, java.util.List<Long> componentIds) {
+        for (MenuItemDefaultComponent component : menuItemComponentService
+                .resolveActiveOmittedComponents(menuItemId, componentIds)) {
+            line.addComponentOmissionSnapshot(OrderLineComponentOmissionSnapshot.create(component.getId(),
+                    component.getComponentCode(), component.getDisplayName(), component.getDetail(),
+                    component.getDisplayOrder()));
+        }
     }
 
     private OrderRecord createOrder(Long userId, NormalizedManualPosOrder request, PromotionQuoteResponse quote) {

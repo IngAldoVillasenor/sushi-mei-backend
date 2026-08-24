@@ -318,6 +318,24 @@ class SecurityIntegrationTest {
         mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content(manualOrder))
                 .andExpect(status().isNotFound());
+        String openSale = """
+                {"requestId":"00000000-0000-0000-0000-000000000124","description":"Venta libre",
+                "amount":25.00,"paymentMethod":"CASH","cashDenomination":25.00}
+                """;
+        mockMvc.perform(post("/api/v1/open-sales").contentType(MediaType.APPLICATION_JSON).content(openSale))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/open-sales").with(user("kitchen").roles("KITCHEN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(openSale))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/open-sales").header("Authorization", "Bearer " + cashierToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(openSale))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/open-sales").header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(openSale))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/open-sales").header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(openSale))
+                .andExpect(status().isConflict());
         mockMvc.perform(get("/api/orders/active").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/1/prepare").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isNotFound());
         mockMvc.perform(put("/api/orders/1/validate-payment").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isForbidden());

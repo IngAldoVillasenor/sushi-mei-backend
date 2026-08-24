@@ -7,5 +7,7 @@ package com.sushimei.sushimei.backend.entity;
  */
 public enum OrderLineKind {
     PAID,
-    PROMOTION_REWARD
+    PROMOTION_REWARD,
+    /** Explicit non-catalog physical POS revenue entered through the Open Sale command. */
+    OPEN_SALE
 }

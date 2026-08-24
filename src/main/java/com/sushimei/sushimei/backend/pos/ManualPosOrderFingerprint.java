@@ -18,19 +18,21 @@ import org.springframework.stereotype.Component;
 @Component
 public class ManualPosOrderFingerprint {
 
-    public String fingerprint(ManualPosOrderRequest request,
+    public String fingerprint(com.sushimei.sushimei.backend.entity.OrderFulfillmentType fulfillmentType,
+                              com.sushimei.sushimei.backend.entity.OrderPaymentMethod paymentMethod,
                               String deliveryAddress,
                               String pickupName,
-                              BigDecimal cashDenomination) {
+                              BigDecimal cashDenomination,
+                              List<PromotionQuoteLineRequest> lines) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             DataOutputStream output = new DataOutputStream(bytes);
-            writeString(output, request.fulfillmentType() == null ? null : request.fulfillmentType().name());
-            writeString(output, request.paymentMethod() == null ? null : request.paymentMethod().name());
+            writeString(output, fulfillmentType == null ? null : fulfillmentType.name());
+            writeString(output, paymentMethod == null ? null : paymentMethod.name());
             writeString(output, deliveryAddress);
             writeString(output, pickupName);
             writeString(output, cashDenomination == null ? null : cashDenomination.toPlainString());
-            writeLines(output, request.lines());
+            writeLines(output, lines);
             output.flush();
             return hex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
         } catch (IOException | NoSuchAlgorithmException exception) {
@@ -48,6 +50,8 @@ public class ManualPosOrderFingerprint {
             writeLong(output, line.menuItemId());
             writeInteger(output, line.quantity());
             writeGroups(output, line.groups());
+            writeComponentIds(output, line.omittedComponentIds());
+            writeString(output, line.note());
             List<PromotionRewardConfigurationRequest> rewards = line.rewardConfigurations();
             output.writeInt(rewards == null ? -1 : rewards.size());
             if (rewards != null) for (PromotionRewardConfigurationRequest reward : rewards) {
@@ -58,6 +62,11 @@ public class ManualPosOrderFingerprint {
                 writeGroups(output, reward.groups());
             }
         }
+    }
+
+    private void writeComponentIds(DataOutputStream output, List<Long> ids) throws IOException {
+        output.writeInt(ids == null ? -1 : ids.size());
+        if (ids != null) for (Long id : ids) writeLong(output, id);
     }
 
     private void writeGroups(DataOutputStream output, List<MenuQuoteGroupRequest> groups) throws IOException {

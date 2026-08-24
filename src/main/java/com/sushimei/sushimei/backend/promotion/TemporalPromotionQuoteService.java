@@ -6,6 +6,7 @@ import com.sushimei.sushimei.backend.catalog.MenuCatalogRepository;
 import com.sushimei.sushimei.backend.catalog.MenuItem;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteRequest;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteResponse;
+import com.sushimei.sushimei.backend.catalog.MenuItemComponentService;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
 import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
@@ -35,6 +36,7 @@ public class TemporalPromotionQuoteService {
     private final PromotionRepository promotionRepository;
     private final MenuCatalogRepository menuCatalogRepository;
     private final CatalogConfigurationService catalogConfigurationService;
+    private final MenuItemComponentService menuItemComponentService;
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
     private final ZoneId businessZone;
@@ -42,6 +44,7 @@ public class TemporalPromotionQuoteService {
     public TemporalPromotionQuoteService(PromotionRepository promotionRepository,
                                          MenuCatalogRepository menuCatalogRepository,
                                          CatalogConfigurationService catalogConfigurationService,
+                                         MenuItemComponentService menuItemComponentService,
                                          CheckoutMoney checkoutMoney,
                                          Clock clock,
                                          @Value("${sushimei.business-zone:America/Mexico_City}") String businessZone) {
@@ -49,6 +52,8 @@ public class TemporalPromotionQuoteService {
         this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository, "menuCatalogRepository must not be null");
         this.catalogConfigurationService = Objects.requireNonNull(catalogConfigurationService,
                 "catalogConfigurationService must not be null");
+        this.menuItemComponentService = Objects.requireNonNull(menuItemComponentService,
+                "menuItemComponentService must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.businessZone = ZoneId.of(Objects.requireNonNull(businessZone, "businessZone must not be null"));
@@ -97,6 +102,7 @@ public class TemporalPromotionQuoteService {
         String lineKey = line.lineKey().trim();
         MenuItemQuoteResponse catalogQuote = catalogConfigurationService.quote(line.menuItemId(),
                 new MenuItemQuoteRequest(line.quantity(), line.groups()));
+        menuItemComponentService.resolveActiveOmittedComponents(line.menuItemId(), line.omittedComponentIds());
         MenuItem rootItem = menuCatalogRepository.findById(line.menuItemId()).orElseThrow(this::invalidQuote);
         Promotion promotion = resolvePromotion(rootItem, applicablePromotions);
         BigDecimal catalogBaseUnit = catalogQuote.baseUnitPrice();

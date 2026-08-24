@@ -68,6 +68,7 @@ class VendisHistoryImportServiceIntegrationTest {
     void cleanImportedEvidence() {
         jdbcTemplate.update("delete from public.vendis_payment_snapshots");
         jdbcTemplate.update("delete from public.vendis_order_snapshots");
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");

@@ -20,4 +20,5 @@ public record PromotionRewardConfigurationRequest(
                                                List<MenuQuoteGroupRequest> groups) {
         this(rewardOrdinal, null, groups);
     }
+
 }

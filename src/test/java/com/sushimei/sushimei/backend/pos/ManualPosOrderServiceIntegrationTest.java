@@ -7,6 +7,9 @@ import com.sushimei.sushimei.backend.catalog.CatalogConfigurationService;
 import com.sushimei.sushimei.backend.catalog.MenuCatalogService;
 import com.sushimei.sushimei.backend.catalog.MenuItemPricingMode;
 import com.sushimei.sushimei.backend.catalog.MenuItemResponse;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponent;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponentRepository;
+import com.sushimei.sushimei.backend.catalog.MenuCatalogRepository;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest;
 import com.sushimei.sushimei.backend.catalog.MenuSelectionGroupResponse;
@@ -74,11 +77,14 @@ class ManualPosOrderServiceIntegrationTest {
     @Autowired private PromotionService promotionService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private BusinessDayService businessDayService;
+    @Autowired private MenuCatalogRepository menuCatalogRepository;
+    @Autowired private MenuItemDefaultComponentRepository componentRepository;
 
     @BeforeEach
     void clean() {
         jdbcTemplate.update("delete from public.business_day_closures");
         jdbcTemplate.update("delete from public.business_days");
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
@@ -88,9 +94,50 @@ class ManualPosOrderServiceIntegrationTest {
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
         jdbcTemplate.update("delete from public.menu_item_tags");
+        jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
         TestClock.set(Instant.parse("2026-08-10T18:00:00Z"));
+    }
+
+    @Test
+    void persistsServerAuthorizedComponentOmissionsAndNormalizedNotesWithoutChangingTheQuotePrice() {
+        MenuItemResponse california = item("California", "79.00");
+        MenuItemDefaultComponent alga = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(california.id()).orElseThrow(), "ALGA", "Alga", null, true, true, 1));
+        MenuItemDefaultComponent surimi = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(california.id()).orElseThrow(), "SURIMI", "Surimi", null, true, true, 2));
+        Long userId = insertUser("cashier-omissions");
+        ManualPosOrderRequest request = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("california-custom", california.id(), 1, List.of(), List.of(),
+                        List.of(surimi.getId(), alga.getId()), "  Sin   ajonjolí   ")));
+
+        ManualPosOrderResponse response = manualPosOrderService.create(userId, request);
+
+        assertThat(response.total()).isEqualByComparingTo("79.00");
+        assertThat(response.lines()).singleElement().satisfies(line -> {
+            assertThat(line.note()).isEqualTo("Sin ajonjolí");
+            assertThat(line.omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                    .containsExactly("ALGA", "SURIMI");
+            assertThat(line.finalLineTotal()).isEqualByComparingTo("79.00");
+        });
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_line_component_omissions", Integer.class))
+                .isEqualTo(2);
+
+        ManualPosOrderRequest changedCustomizationWithSameRequestId = new ManualPosOrderRequest(
+                request.requestId(), OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("california-custom", california.id(), 1, List.of(), List.of(),
+                        List.of(alga.getId()), "Sin ajonjolí")));
+        assertError(() -> manualPosOrderService.create(userId, changedCustomizationWithSameRequestId),
+                ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+
+        ManualPosOrderRequest invalid = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("invalid-custom", california.id(), 1, List.of(), List.of(),
+                        List.of(999_999L), null)));
+        assertThatThrownBy(() -> manualPosOrderService.create(userId, invalid))
+                .isInstanceOf(com.sushimei.sushimei.backend.catalog.CatalogConfigurationException.class);
     }
 
     @Test

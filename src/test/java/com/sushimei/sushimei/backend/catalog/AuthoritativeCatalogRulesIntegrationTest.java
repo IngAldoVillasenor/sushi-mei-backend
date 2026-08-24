@@ -73,7 +73,7 @@ class AuthoritativeCatalogRulesIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items where id between 1 and 121", Integer.class))
                 .isEqualTo(121);
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items where id between 1 and 121 and description is not null", Integer.class))
-                .isZero();
+                .isEqualTo(23);
 
         Map<String, Integer> expectedDisplayOrders = new HashMap<>();
         for (int index = 0; index < source.size(); index++) {

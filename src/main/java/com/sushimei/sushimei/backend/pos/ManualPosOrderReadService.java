@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.pos;
 
 import com.sushimei.sushimei.backend.entity.OrderLineRecord;
 import com.sushimei.sushimei.backend.entity.OrderLineSelectionSnapshot;
+import com.sushimei.sushimei.backend.entity.OrderLineComponentOmissionSnapshot;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -64,7 +65,14 @@ class ManualPosOrderReadService {
         return new ManualPosOrderLineResponse(line.getId(), line.getLineKind(), line.getClientLineKey(), line.getSourceMenuItemId(), line.getDishName(),
                 line.getQuantity(), line.getCatalogBaseUnitPrice(), line.getChargedBaseUnitPrice(),
                 line.getConfigurationAdjustmentAmount(), line.getUnitPriceAmount(), line.getLineTotalAmount(), promotion,
-                line.getRewardOrdinal(), snapshots, rewards);
+                line.getRewardOrdinal(), line.getLineNote(), line.getComponentOmissionSnapshots().stream()
+                .map(ManualPosOrderReadService::componentOmissionResponse).toList(), snapshots, rewards);
+    }
+
+    private static ManualOrderComponentOmissionResponse componentOmissionResponse(OrderLineComponentOmissionSnapshot omission) {
+        return new ManualOrderComponentOmissionResponse(omission.getId(), omission.getSourceComponentId(),
+                omission.getComponentCode(), omission.getComponentName(), omission.getComponentDetail(),
+                omission.getComponentDisplayOrder());
     }
 
     private static ManualOrderSelectionSnapshotResponse snapshotResponse(OrderLineSelectionSnapshot snapshot) {

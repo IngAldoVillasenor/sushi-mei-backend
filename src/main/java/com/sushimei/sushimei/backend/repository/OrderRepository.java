@@ -92,6 +92,10 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long>, org.s
 
     Optional<OrderRecord> findByClientRequestId(UUID clientRequestId);
 
+    @Query("select distinct orderRecord from OrderRecord orderRecord left join fetch orderRecord.orderLines "
+            + "where orderRecord.clientRequestId = :clientRequestId")
+    Optional<OrderRecord> findByClientRequestIdWithOrderLines(@Param("clientRequestId") UUID clientRequestId);
+
     Optional<OrderRecord> findByOrderSourceAndExternalOrderId(
             com.sushimei.sushimei.backend.entity.OrderSource orderSource,
             String externalOrderId);

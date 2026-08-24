@@ -56,6 +56,7 @@ class BusinessDayControllerIntegrationTest {
 
     @BeforeEach
     void clean() {
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
