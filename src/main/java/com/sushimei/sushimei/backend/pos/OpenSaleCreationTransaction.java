@@ -51,7 +51,6 @@ class OpenSaleCreationTransaction {
         order.setOrderSource(OrderSource.COUNTER);
         order.setPaymentMethod(request.paymentMethod());
         order.setCashDenomination(request.cashDenomination());
-        order.setPaymentNotes(request.paymentMethod().name());
         order.setTotalAmountAmount(money.numericAmount());
         order.setTotalAmount(money.legacyAmount());
         order.setStatus("COMPLETED");

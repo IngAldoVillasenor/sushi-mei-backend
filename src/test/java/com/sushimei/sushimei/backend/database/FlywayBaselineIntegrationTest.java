@@ -59,6 +59,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V18_SCRIPT = "V18__add_business_day_cash_reconciliation.sql";
     private static final String V19_SCRIPT = "V19__add_business_day_reopen_history.sql";
     private static final String V20_SCRIPT = "V20__add_order_flexibility.sql";
+    private static final String V21_SCRIPT = "V21__enforce_unique_promotion_targets.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -102,7 +103,10 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 18, "SQL", V18_SCRIPT);
         assertSqlMigration(jdbcTemplate, 19, "SQL", V19_SCRIPT);
         assertSqlMigration(jdbcTemplate, 20, "SQL", V20_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("20");
+        assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 20, "SQL", V20_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("21");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -176,7 +180,7 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV20AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV21AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -202,7 +206,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 18, "SQL", V18_SCRIPT);
         assertSqlMigration(jdbcTemplate, 19, "SQL", V19_SCRIPT);
         assertSqlMigration(jdbcTemplate, 20, "SQL", V20_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("20");
+        assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("21");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -280,6 +285,7 @@ class FlywayBaselineIntegrationTest {
 
         assertSqlMigration(jdbcTemplate, 19, "SQL", V19_SCRIPT);
         assertSqlMigration(jdbcTemplate, 20, "SQL", V20_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.business_day_closures", Integer.class))
                 .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select close_number from public.business_day_closures", Integer.class))
@@ -290,6 +296,73 @@ class FlywayBaselineIntegrationTest {
                 .isEqualByComparingTo("125.00");
         assertThat(jdbcTemplate.queryForObject("select cash_difference_amount from public.business_day_closures", BigDecimal.class))
                 .isEqualByComparingTo("5.00");
+    }
+
+    @Test
+    void v21DeduplicatesLogicalPromotionTargetsAndEnforcesBothTargetKinds() {
+        JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
+        newFlyway(isolatedDataSource, MigrationVersion.fromVersion("20")).migrate();
+
+        jdbcTemplate.update("""
+                insert into public.catalog_tags (code, name, active, display_order, created_at, updated_at, version)
+                values ('PROMOTION_TARGET_TEST', 'Promotion target test', true, 0, current_timestamp, current_timestamp, 0)
+                """);
+        Long tagId = jdbcTemplate.queryForObject(
+                "select id from public.catalog_tags where code = 'PROMOTION_TARGET_TEST'", Long.class);
+        jdbcTemplate.update("""
+                insert into public.menu_items (name, category, price_amount, pricing_mode, active, available,
+                    standalone_orderable, display_order, created_at, updated_at, version)
+                values ('Promotion target item', 'Migration test', 1.00, 'BASE_PLUS_ADJUSTMENTS', true, true,
+                    true, 0, current_timestamp, current_timestamp, 0)
+                """);
+        Long itemId = jdbcTemplate.queryForObject(
+                "select id from public.menu_items where name = 'Promotion target item'", Long.class);
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    created_at, updated_at, version)
+                values ('Promotion target migration test', true, 1, 'FIXED_UNIT_PRICE', 1.00,
+                    current_timestamp, current_timestamp, 0)
+                """);
+        Long promotionId = jdbcTemplate.queryForObject(
+                "select id from public.promotions where name = 'Promotion target migration test'", Long.class);
+
+        jdbcTemplate.update("insert into public.promotion_targets (promotion_id, target_tag_id) values (?, ?)",
+                promotionId, tagId);
+        Long canonicalTagTargetId = jdbcTemplate.queryForObject(
+                "select min(id) from public.promotion_targets where promotion_id = ? and target_tag_id = ?",
+                Long.class, promotionId, tagId);
+        jdbcTemplate.update("insert into public.promotion_targets (promotion_id, target_tag_id) values (?, ?)",
+                promotionId, tagId);
+        jdbcTemplate.update("insert into public.promotion_targets (promotion_id, target_menu_item_id) values (?, ?)",
+                promotionId, itemId);
+        Long canonicalItemTargetId = jdbcTemplate.queryForObject(
+                "select min(id) from public.promotion_targets where promotion_id = ? and target_menu_item_id = ?",
+                Long.class, promotionId, itemId);
+        jdbcTemplate.update("insert into public.promotion_targets (promotion_id, target_menu_item_id) values (?, ?)",
+                promotionId, itemId);
+
+        newFlyway(isolatedDataSource).migrate();
+
+        assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
+        assertThat(jdbcTemplate.queryForObject("""
+                select id from public.promotion_targets
+                where promotion_id = ? and target_tag_id = ?
+                """, Long.class, promotionId, tagId)).isEqualTo(canonicalTagTargetId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select id from public.promotion_targets
+                where promotion_id = ? and target_menu_item_id = ?
+                """, Long.class, promotionId, itemId)).isEqualTo(canonicalItemTargetId);
+        assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_TARGETS",
+                "PROMOTION_TARGETS_PROMOTION_MENU_ITEM_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_TARGETS",
+                "PROMOTION_TARGETS_PROMOTION_TAG_KEY")).isTrue();
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "insert into public.promotion_targets (promotion_id, target_tag_id) values (?, ?)", promotionId, tagId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "insert into public.promotion_targets (promotion_id, target_menu_item_id) values (?, ?)", promotionId,
+                itemId)).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -422,7 +495,10 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 16)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 17)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 18)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("20");
+        assertThat(historyCount(jdbcTemplate, 19)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 20)).isEqualTo(1);
+        assertThat(historyCount(jdbcTemplate, 21)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("21");
         assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 24);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
@@ -699,6 +775,10 @@ class FlywayBaselineIntegrationTest {
         assertThat(namedConstraintExists(jdbcTemplate, "PROMOTIONS", "PROMOTIONS_BENEFIT_PARAMETERS_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_WEEKDAYS", "PROMOTION_WEEKDAYS_PKEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_TARGETS", "PROMOTION_TARGETS_TARGET_XOR_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_TARGETS",
+                "PROMOTION_TARGETS_PROMOTION_MENU_ITEM_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "PROMOTION_TARGETS",
+                "PROMOTION_TARGETS_PROMOTION_TAG_KEY")).isTrue();
         assertThat(jdbcTemplate.queryForObject("""
                 select data_type from information_schema.columns
                 where table_schema = 'PUBLIC' and table_name = 'PROMOTIONS' and column_name = 'FIXED_UNIT_PRICE_AMOUNT'

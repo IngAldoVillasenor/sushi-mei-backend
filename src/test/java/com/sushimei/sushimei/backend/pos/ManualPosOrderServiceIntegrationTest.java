@@ -25,6 +25,8 @@ import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderLineKind;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderSource;
+import com.sushimei.sushimei.backend.orderread.OperationalOrderDetailResponse;
+import com.sushimei.sushimei.backend.orderread.OperationalOrderReadService;
 import com.sushimei.sushimei.backend.promotion.CreatePromotionRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionBenefitType;
 import com.sushimei.sushimei.backend.promotion.PromotionService;
@@ -79,6 +81,7 @@ class ManualPosOrderServiceIntegrationTest {
     @Autowired private BusinessDayService businessDayService;
     @Autowired private MenuCatalogRepository menuCatalogRepository;
     @Autowired private MenuItemDefaultComponentRepository componentRepository;
+    @Autowired private OperationalOrderReadService operationalOrderReadService;
 
     @BeforeEach
     void clean() {
@@ -182,6 +185,28 @@ class ManualPosOrderServiceIntegrationTest {
                 .isInstanceOf(ManualPosOrderException.class)
                 .extracting(exception -> ((ManualPosOrderException) exception).getError())
                 .isEqualTo(ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void paymentMethodDoesNotBecomePaymentNotesInTheOperationalOrderDetail() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-payment-notes");
+
+        for (OrderPaymentMethod paymentMethod : List.of(OrderPaymentMethod.CASH, OrderPaymentMethod.TRANSFER,
+                OrderPaymentMethod.CARD)) {
+            ManualPosOrderResponse created = manualPosOrderService.create(userId, new ManualPosOrderRequest(
+                    UUID.randomUUID(), OrderFulfillmentType.PICKUP, paymentMethod, null, "Ana", null,
+                    List.of(new PromotionQuoteLineRequest("payment-" + paymentMethod.name(), california.id(), 1,
+                            List.of(), List.of()))));
+
+            OperationalOrderDetailResponse detail = operationalOrderReadService.order(created.id());
+
+            assertThat(detail.paymentMethod()).isEqualTo(paymentMethod);
+            assertThat(detail.paymentNotes()).isNull();
+        }
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders where payment_notes is not null",
+                Integer.class)).isZero();
     }
 
     @Test

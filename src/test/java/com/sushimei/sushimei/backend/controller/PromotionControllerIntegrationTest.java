@@ -217,6 +217,135 @@ class PromotionControllerIntegrationTest {
                 .andExpect(jsonPath("$.code").value("PROMOTION_SCHEDULE_CONFLICT"));
     }
 
+    @Test
+    void weekdayOnlyEditsKeepOneLogicalTargetAndAllowTheSafeMondayTuesdaySequence() throws Exception {
+        long tagId = createClassicRollTag();
+        PromotionVersion monday = createFixedPricePromotion("Lunes $69", 1, tagId);
+        PromotionVersion thursday = createBuyXGetYPromotion("Jueves 2x1", 4, tagId);
+
+        String mondayUpdate = mockMvc.perform(put("/api/v1/promotions/{id}", monday.id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(fixedPriceUpdate("Lunes $69", 2, tagId, monday.version())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.daysOfWeek[0]").value(2))
+                .andReturn().getResponse().getContentAsString();
+        long mondayVersion = objectMapper.readTree(mondayUpdate).required("version").asLong();
+
+        String thursdayUpdate = mockMvc.perform(put("/api/v1/promotions/{id}", thursday.id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buyXGetYUpdate("Jueves 2x1", "[1,4]", tagId, thursday.version())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.targets.length()").value(1))
+                .andExpect(jsonPath("$.targets[0].targetType").value("TAG"))
+                .andExpect(jsonPath("$.targets[0].targetId").value(tagId))
+                .andReturn().getResponse().getContentAsString();
+        long thursdayVersion = objectMapper.readTree(thursdayUpdate).required("version").asLong();
+
+        mockMvc.perform(get("/api/v1/promotions/{id}", thursday.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.targets.length()").value(1))
+                .andExpect(jsonPath("$.targets[0].targetType").value("TAG"))
+                .andExpect(jsonPath("$.targets[0].targetId").value(tagId));
+
+        mockMvc.perform(put("/api/v1/promotions/{id}", thursday.id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buyXGetYUpdate("Jueves 2x1", "[1]", tagId, thursdayVersion)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.daysOfWeek.length()").value(1))
+                .andExpect(jsonPath("$.daysOfWeek[0]").value(1));
+
+        mockMvc.perform(get("/api/v1/promotions/{id}", monday.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.daysOfWeek.length()").value(1))
+                .andExpect(jsonPath("$.daysOfWeek[0]").value(2));
+    }
+
+    @Test
+    void weekdayEditRetainsScheduleConflictProtectionWhenMondayIsStillOccupied() throws Exception {
+        long tagId = createClassicRollTag();
+        createFixedPricePromotion("Lunes $69", 1, tagId);
+        PromotionVersion thursday = createBuyXGetYPromotion("Jueves 2x1", 4, tagId);
+
+        mockMvc.perform(put("/api/v1/promotions/{id}", thursday.id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(buyXGetYUpdate("Jueves 2x1", "[1]", tagId, thursday.version())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PROMOTION_SCHEDULE_CONFLICT"));
+    }
+
+    @Test
+    void rejectsDuplicateLogicalTargetsInClientRequests() throws Exception {
+        long tagId = createClassicRollTag();
+
+        mockMvc.perform(post("/api/v1/promotions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Duplicada","active":true,"priority":100,"benefitType":"FIXED_UNIT_PRICE",
+                                 "fixedUnitPrice":69.00,"daysOfWeek":[1],
+                                 "targets":[{"targetType":"TAG","targetId":%d},{"targetType":"TAG","targetId":%d}]}
+                                """.formatted(tagId, tagId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_PROMOTION"));
+    }
+
+    private long createClassicRollTag() {
+        jdbcTemplate.update("""
+                insert into public.catalog_tags (code, name, active, display_order, created_at, updated_at, version)
+                values ('ROLLO_CLASICO', 'Rollos clasicos', true, 0, current_timestamp, current_timestamp, 0)
+                """);
+        return jdbcTemplate.queryForObject("select id from public.catalog_tags where code = 'ROLLO_CLASICO'", Long.class);
+    }
+
+    private PromotionVersion createFixedPricePromotion(String name, int weekday, long tagId) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/promotions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"%s","active":true,"priority":100,"benefitType":"FIXED_UNIT_PRICE",
+                                 "fixedUnitPrice":69.00,"daysOfWeek":[%d],
+                                 "targets":[{"targetType":"TAG","targetId":%d}]}
+                                """.formatted(name, weekday, tagId)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return promotionVersion(response);
+    }
+
+    private PromotionVersion createBuyXGetYPromotion(String name, int weekday, long tagId) throws Exception {
+        String response = mockMvc.perform(post("/api/v1/promotions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"%s","active":true,"priority":100,"benefitType":"BUY_X_GET_Y_ELIGIBLE_ITEM",
+                                 "buyQuantity":1,"rewardQuantity":1,"repeat":true,"daysOfWeek":[%d],
+                                 "targets":[{"targetType":"TAG","targetId":%d}]}
+                                """.formatted(name, weekday, tagId)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return promotionVersion(response);
+    }
+
+    private String fixedPriceUpdate(String name, int weekday, long tagId, long version) {
+        return """
+                {"name":"%s","active":true,"priority":100,"benefitType":"FIXED_UNIT_PRICE",
+                 "fixedUnitPrice":69.00,"daysOfWeek":[%d],
+                 "targets":[{"targetType":"TAG","targetId":%d}],"version":%d}
+                """.formatted(name, weekday, tagId, version);
+    }
+
+    private String buyXGetYUpdate(String name, String weekdays, long tagId, long version) {
+        return """
+                {"name":"%s","active":true,"priority":100,"benefitType":"BUY_X_GET_Y_ELIGIBLE_ITEM",
+                 "buyQuantity":1,"rewardQuantity":1,"repeat":true,"daysOfWeek":%s,
+                 "targets":[{"targetType":"TAG","targetId":%d}],"version":%d}
+                """.formatted(name, weekdays, tagId, version);
+    }
+
+    private PromotionVersion promotionVersion(String response) throws Exception {
+        var tree = objectMapper.readTree(response);
+        return new PromotionVersion(tree.required("id").asLong(), tree.required("version").asLong());
+    }
+
+    private record PromotionVersion(long id, long version) {
+    }
+
     @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
         @Bean

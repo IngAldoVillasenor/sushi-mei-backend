@@ -128,7 +128,6 @@ class ManualPosOrderCreationTransaction {
         order.setPickupName(request.pickupName());
         order.setCashDenomination(request.cashDenomination());
         order.setDeliveryType(request.fulfillmentType().name());
-        order.setPaymentNotes(request.paymentMethod().name());
         order.setTransferReceiptPath(null);
         order.setPhoneNumber(null);
         order.setTotalAmountAmount(money.numericAmount());

@@ -99,6 +99,27 @@ class AuthoritativePromotionRulesIntegrationTest {
     }
 
     @Test
+    @DirtiesContext
+    void appliedBootstrapDoesNotOverwriteALaterLegitimateWeekdayEdit() {
+        PromotionResponse monday = promotionService.list(true).stream()
+                .filter(promotion -> promotion.name().equals("Lunes $69"))
+                .findFirst()
+                .orElseThrow();
+
+        promotionService.update(monday.id(), new UpdatePromotionRequest(
+                monday.name(), monday.active(), monday.priority(), monday.benefitType(), monday.fixedUnitPrice(),
+                monday.buyQuantity(), monday.rewardQuantity(), monday.repeat(), monday.validFrom(), monday.validUntil(),
+                Set.of(2), monday.targets().stream()
+                        .map(target -> new PromotionTargetRequest(target.targetType(), target.targetId()))
+                        .toList(), monday.version()));
+
+        rulesService.synchronize();
+
+        assertThat(promotionService.get(monday.id()).daysOfWeek()).containsExactly(2);
+        assertClassicRollTagTarget(promotionService.get(monday.id()));
+    }
+
+    @Test
     void mondayAndThursdayQuotesUseOnlyTheReviewedRootItemPromotions() {
         TestClock.set(MONDAY);
         for (Long classicRollId : ELIGIBLE_CLASSIC_ROLL_IDS) {
