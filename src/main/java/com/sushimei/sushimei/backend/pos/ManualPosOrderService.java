@@ -34,7 +34,8 @@ public class ManualPosOrderService {
 
     public ManualPosOrderResponse create(Long authenticatedUserId, ManualPosOrderRequest request) {
         if (authenticatedUserId == null || authenticatedUserId <= 0 || request == null || request.requestId() == null
-                || request.fulfillmentType() == null || request.paymentMethod() == null || request.lines().isEmpty()) {
+                || request.fulfillmentType() == null || request.paymentMethod() == null
+                || (request.lines().isEmpty() && request.manualLines().isEmpty())) {
             throw new ManualPosOrderException(ManualPosOrderError.ORDER_INVALID);
         }
         String deliveryAddress = normalizeOptional(request.deliveryAddress());
@@ -42,10 +43,12 @@ public class ManualPosOrderService {
         BigDecimal cashDenomination = validateFulfillmentAndPayment(request.fulfillmentType(), request.paymentMethod(),
                 deliveryAddress, pickupName, request.cashDenomination());
         List<PromotionQuoteLineRequest> lines = normalizeLines(request.lines());
+        List<NormalizedManualPricedLine> manualLines = normalizeManualLines(request.manualLines());
+        ensureDistinctLineKeys(lines, manualLines);
         String canonicalFingerprint = fingerprint.fingerprint(request.fulfillmentType(), request.paymentMethod(),
-                deliveryAddress, pickupName, cashDenomination, lines);
+                deliveryAddress, pickupName, cashDenomination, lines, manualLines);
         NormalizedManualPosOrder normalized = new NormalizedManualPosOrder(request.requestId(), request.fulfillmentType(),
-                request.paymentMethod(), deliveryAddress, pickupName, cashDenomination, lines, canonicalFingerprint);
+                request.paymentMethod(), deliveryAddress, pickupName, cashDenomination, lines, manualLines, canonicalFingerprint);
         if (orderRepository.findByClientRequestId(request.requestId()).isPresent()) {
             return readService.existing(request.requestId(), authenticatedUserId, canonicalFingerprint);
         }
@@ -87,7 +90,7 @@ public class ManualPosOrderService {
     private List<PromotionQuoteLineRequest> normalizeLines(List<PromotionQuoteLineRequest> lines) {
         return lines.stream().map(line -> {
             if (line == null) throw invalid();
-            return new PromotionQuoteLineRequest(normalizeLineKey(line.lineKey()), line.menuItemId(), line.quantity(), line.groups(),
+            return new PromotionQuoteLineRequest(normalizeLineKey(line.lineKey()), line.menuItemId(), line.quantity(), normalizeGroups(line.groups()),
                     normalizeRewardConfigurations(line.rewardConfigurations()), normalizeComponentIds(line.omittedComponentIds()),
                     normalizeNote(line.note()));
         }).toList();
@@ -98,7 +101,51 @@ public class ManualPosOrderService {
         return configurations.stream().map(configuration -> {
             if (configuration == null) throw invalid();
             return new PromotionRewardConfigurationRequest(configuration.rewardOrdinal(), configuration.menuItemId(),
-                    configuration.groups());
+                    normalizeGroups(configuration.groups()), normalizeComponentIds(configuration.omittedComponentIds()),
+                    normalizeNote(configuration.note()));
+        }).toList();
+    }
+
+    private List<NormalizedManualPricedLine> normalizeManualLines(List<ManualPricedLineRequest> lines) {
+        if (lines == null || lines.isEmpty()) return List.of();
+        return lines.stream().map(line -> {
+            if (line == null) throw invalid();
+            String key = normalizeLineKey(line.lineKey());
+            String description = normalizeDescription(line.description());
+            int quantity;
+            BigDecimal unit;
+            BigDecimal total;
+            try {
+                quantity = checkoutMoney.requirePositiveQuantity(line.quantity());
+                unit = checkoutMoney.normalizeNumericAmount(line.unitAmount());
+                total = checkoutMoney.normalizeNumericAmount(unit.multiply(BigDecimal.valueOf(quantity)));
+            } catch (IllegalArgumentException | ArithmeticException exception) {
+                throw new ManualPosOrderException(ManualPosOrderError.ORDER_INVALID, exception);
+            }
+            return new NormalizedManualPricedLine(key, description, quantity, unit, total);
+        }).toList();
+    }
+
+    private void ensureDistinctLineKeys(List<PromotionQuoteLineRequest> catalogLines,
+                                        List<NormalizedManualPricedLine> manualLines) {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        for (PromotionQuoteLineRequest line : catalogLines) if (!keys.add(line.lineKey())) throw invalid();
+        for (NormalizedManualPricedLine line : manualLines) if (!keys.add(line.lineKey())) throw invalid();
+    }
+
+    private List<com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest> normalizeGroups(
+            List<com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest> groups) {
+        if (groups == null || groups.isEmpty()) return List.of();
+        return groups.stream().map(group -> {
+            if (group == null) throw invalid();
+            List<com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest> selections = group.selections().stream()
+                    .map(selection -> {
+                        if (selection == null) throw invalid();
+                        return new com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest(selection.menuItemId(),
+                                selection.quantity(), normalizeGroups(selection.groups()),
+                                normalizeComponentIds(selection.omittedComponentIds()), normalizeNote(selection.note()));
+                    }).toList();
+            return new com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest(group.groupId(), selections);
         }).toList();
     }
 
@@ -119,6 +166,11 @@ public class ManualPosOrderService {
         String normalized = value.trim().replaceAll("\\s+", " ");
         if (normalized.isEmpty()) return null;
         if (normalized.length() > 500) throw invalid();
+        return normalized;
+    }
+    private String normalizeDescription(String value) {
+        String normalized = normalizeNote(value);
+        if (normalized == null) throw invalid();
         return normalized;
     }
     private static boolean bounded(String value, int minimum, int maximum) { return value != null && value.length() >= minimum && value.length() <= maximum; }

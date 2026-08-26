@@ -39,7 +39,8 @@ class ManualPosOrderReadService {
 
     static ManualPosOrderResponse response(OrderRecord order, ManualOrderResult result) {
         List<ManualPosOrderLineResponse> paid = order.getOrderLines().stream()
-                .filter(line -> line.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.PAID)
+                .filter(line -> line.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.PAID
+                        || line.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.MANUAL_PRICED_LINE)
                 .map(line -> lineResponse(line, order.getOrderLines()))
                 .toList();
         return new ManualPosOrderResponse(order.getId(), order.getClientRequestId(), result, order.getOrderSource(),
@@ -80,6 +81,9 @@ class ManualPosOrderReadService {
                 snapshot.getParentSelection() == null ? null : snapshot.getParentSelection().getId(), snapshot.getGroupId(),
                 snapshot.getGroupName(), snapshot.getSelectionPosition(), snapshot.getSelectedMenuItemId(),
                 snapshot.getSelectedItemName(), snapshot.getQuantity(), snapshot.getCatalogUnitPrice(),
-                snapshot.getPriceAdjustmentAmount(), snapshot.isDisplayOnTicket());
+                snapshot.getPriceAdjustmentAmount(), snapshot.isDisplayOnTicket(), snapshot.getSelectionNote(),
+                snapshot.getComponentOmissionSnapshots().stream().map(omission -> new ManualOrderComponentOmissionResponse(
+                        omission.getId(), omission.getSourceComponentId(), omission.getComponentCode(),
+                        omission.getComponentName(), omission.getComponentDetail(), omission.getComponentDisplayOrder())).toList());
     }
 }

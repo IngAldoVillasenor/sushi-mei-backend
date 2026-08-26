@@ -10,7 +10,7 @@ public record DefaultComponentResponse(
         int displayOrder,
         boolean active) {
 
-    static DefaultComponentResponse from(MenuItemDefaultComponent component) {
+    public static DefaultComponentResponse from(MenuItemDefaultComponent component) {
         return new DefaultComponentResponse(
                 component.getId(),
                 component.getComponentCode(),

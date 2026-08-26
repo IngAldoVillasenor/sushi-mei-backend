@@ -295,7 +295,7 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         assertThat(quote(line("inactive-tag", california.id(), 1, List.of(), List.of())).lines().get(0).rewards()).isEmpty();
         assertThat(PromotionRewardConfigurationRequest.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
-                .containsExactly("rewardOrdinal", "menuItemId", "groups");
+                .containsExactly("rewardOrdinal", "menuItemId", "groups", "omittedComponentIds", "note");
     }
 
     @Test

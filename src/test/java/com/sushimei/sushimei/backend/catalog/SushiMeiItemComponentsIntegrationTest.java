@@ -11,6 +11,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,7 +41,22 @@ class SushiMeiItemComponentsIntegrationTest {
     private SushiMeiItemComponentsService bootstrapService;
 
     @Autowired
+    private SushiMeiOptionalSelectionGroupsService optionalSelectionGroupsService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private MenuSelectionGroupRepository selectionGroupRepository;
+
+    @Autowired
+    private MenuSelectionRuleRepository selectionRuleRepository;
+
+    @Autowired
+    private MenuCatalogService menuCatalogService;
+
+    @Autowired
+    private CatalogConfigurationService catalogConfigurationService;
 
     @Test
     void synchronizesTheReviewedTwentyTwoRollsAndTheirGenericDefaultComponents() {
@@ -126,6 +142,89 @@ class SushiMeiItemComponentsIntegrationTest {
         for (long yakimeshiId : List.of(55L, 114L, 115L, 116L, 117L, 118L, 119L, 120L, 121L)) {
             assertThat(components(yakimeshiId)).isEmpty();
         }
+    }
+
+    @Test
+    void reviewedOptionalSelectionDataUsesTheGenericGroupAndTagRuleModel() {
+        for (Long itemId : REVIEWED_ROLL_IDS) {
+            List<MenuSelectionGroup> groups = selectionGroupRepository
+                    .findByParentMenuItemIdAndActiveTrueOrderByDisplayOrderAscIdAsc(itemId).stream()
+                    .filter(group -> group.getName().equals("Toppings")).toList();
+            assertThat(groups).singleElement().satisfies(group -> {
+                assertThat(group.getMinSelections()).isZero();
+                assertThat(group.getMaxSelections()).isEqualTo(1);
+                assertThat(group.isAllowDuplicates()).isFalse();
+                assertThat(selectionRuleRepository.findBySelectionGroupIdAndActiveTrueOrderByPriorityDescIdAsc(group.getId()))
+                        .singleElement().satisfies(rule -> {
+                            assertThat(jdbcTemplate.queryForObject("""
+                                    select code from public.catalog_tags
+                                    where id = (select target_tag_id from public.menu_selection_rules where id = ?)
+                                    """, String.class, rule.getId())).isEqualTo("TOPPING");
+                            assertThat(rule.getPricingPolicy()).isEqualTo(SelectionPricingPolicy.FULL_ITEM_PRICE);
+                        });
+            });
+            assertThat(menuCatalogService.get(itemId).requiresConfiguration()).isFalse();
+        }
+    }
+
+    @Test
+    void optionalToppingsAreServerResolvedThroughTheGenericSelectionQuote() {
+        MenuItemConfigurationResponse configuration = catalogConfigurationService.operationalConfiguration(24L);
+        MenuSelectionGroupConfigurationResponse toppings = configuration.groups().stream()
+                .filter(group -> group.name().equals("Toppings")).findFirst().orElseThrow();
+        assertThat(toppings.options()).extracting(MenuSelectionOptionResponse::menuItemId)
+                .containsExactlyInAnyOrder(53L, 74L, 108L);
+        assertThat(catalogConfigurationService.quote(24L, new MenuItemQuoteRequest(1,
+                List.of(new MenuQuoteGroupRequest(toppings.id(),
+                        List.of(new MenuQuoteSelectionRequest(53L, 1, List.of())))))).unitTotal())
+                .isEqualByComparingTo(new BigDecimal("118.00"));
+        assertThatThrownBy(() -> catalogConfigurationService.quote(24L, new MenuItemQuoteRequest(1,
+                List.of(new MenuQuoteGroupRequest(toppings.id(), List.of(
+                        new MenuQuoteSelectionRequest(53L, 1, List.of()),
+                        new MenuQuoteSelectionRequest(74L, 1, List.of())))))))
+                .isInstanceOf(CatalogConfigurationException.class);
+    }
+
+    @Test
+    void optionalSelectionBootstrapReusesOneEquivalentGroupBeforeItsMarkerIsApplied() {
+        Long originalGroupId = jdbcTemplate.queryForObject("""
+                select id from public.menu_selection_groups
+                where parent_menu_item_id = 24 and name = 'Toppings'
+                """, Long.class);
+        jdbcTemplate.update("delete from public.menu_selection_rules where selection_group_id = ?", originalGroupId);
+        jdbcTemplate.update("""
+                update public.menu_selection_groups
+                set min_selections = 1, max_selections = 2, allow_duplicates = true, display_order = 7, active = false
+                where id = ?
+                """, originalGroupId);
+        jdbcTemplate.update("update public.catalog_bootstrap_rule_sets set applied_at = null where rule_set_id = ?",
+                SushiMeiOptionalSelectionGroupsService.RULE_SET_ID);
+
+        optionalSelectionGroupsService.synchronize();
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.menu_selection_groups
+                where parent_menu_item_id = 24 and name = 'Toppings'
+                """, Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select id from public.menu_selection_groups
+                where parent_menu_item_id = 24 and name = 'Toppings'
+                """, Long.class)).isEqualTo(originalGroupId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.menu_selection_groups
+                where id = ? and min_selections = 0 and max_selections = 1
+                    and allow_duplicates = false and display_order = 100 and active = true
+                """, Integer.class, originalGroupId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.menu_selection_rules r
+                join public.catalog_tags t on t.id = r.target_tag_id
+                where r.selection_group_id = ? and t.code = 'TOPPING'
+                    and r.pricing_policy = 'FULL_ITEM_PRICE' and r.active = true
+                """, Integer.class, originalGroupId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.catalog_bootstrap_rule_sets
+                where rule_set_id = ? and applied_at is not null
+                """, Integer.class, SushiMeiOptionalSelectionGroupsService.RULE_SET_ID)).isEqualTo(1);
     }
 
     private List<MenuItemDefaultComponent> components(Long menuItemId) {

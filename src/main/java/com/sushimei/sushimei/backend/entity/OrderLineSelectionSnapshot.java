@@ -9,10 +9,15 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Immutable server-resolved configuration evidence for one persisted order line. */
 @Entity
@@ -58,6 +63,14 @@ public class OrderLineSelectionSnapshot {
     @Column(name = "display_on_ticket", nullable = false, updatable = false)
     private boolean displayOnTicket;
 
+    /** Immutable occurrence-level instruction for this selected physical item. */
+    @Column(name = "selection_note", length = 500, updatable = false)
+    private String selectionNote;
+
+    @OneToMany(mappedBy = "selectionSnapshot", cascade = CascadeType.PERSIST)
+    @OrderBy("componentDisplayOrder ASC")
+    private List<OrderLineSelectionComponentOmissionSnapshot> componentOmissionSnapshots = new ArrayList<>();
+
     protected OrderLineSelectionSnapshot() {
     }
 
@@ -102,6 +115,16 @@ public class OrderLineSelectionSnapshot {
         this.orderLine = Objects.requireNonNull(orderLine, "orderLine must not be null");
     }
 
+    public void setSelectionNote(String selectionNote) {
+        this.selectionNote = normalizeOptionalNote(selectionNote);
+    }
+
+    public void addComponentOmissionSnapshot(OrderLineSelectionComponentOmissionSnapshot snapshot) {
+        OrderLineSelectionComponentOmissionSnapshot attached = Objects.requireNonNull(snapshot, "snapshot must not be null");
+        attached.attachTo(this);
+        componentOmissionSnapshots.add(attached);
+    }
+
     public Long getId() { return id; }
     public Long getOrderLineId() { return orderLine == null ? null : orderLine.getId(); }
     public OrderLineSelectionSnapshot getParentSelection() { return parentSelection; }
@@ -114,6 +137,10 @@ public class OrderLineSelectionSnapshot {
     public BigDecimal getCatalogUnitPrice() { return catalogUnitPrice; }
     public BigDecimal getPriceAdjustmentAmount() { return priceAdjustmentAmount; }
     public boolean isDisplayOnTicket() { return displayOnTicket; }
+    public String getSelectionNote() { return selectionNote; }
+    public List<OrderLineSelectionComponentOmissionSnapshot> getComponentOmissionSnapshots() {
+        return List.copyOf(componentOmissionSnapshots);
+    }
 
     private static Long positiveId(Long value, String name) {
         if (value == null || value <= 0) throw new IllegalArgumentException(name + " must be positive");
@@ -144,6 +171,14 @@ public class OrderLineSelectionSnapshot {
         }
         BigDecimal normalized = value.setScale(CheckoutMoney.SCALE, RoundingMode.UNNECESSARY);
         if (normalized.precision() > CheckoutMoney.PRECISION) throw new IllegalArgumentException(name + " exceeds precision");
+        return normalized;
+    }
+
+    private static String normalizeOptionalNote(String value) {
+        if (value == null) return null;
+        String normalized = value.trim().replaceAll("\\s+", " ");
+        if (normalized.isEmpty()) return null;
+        if (normalized.length() > 500) throw new IllegalArgumentException("selectionNote is outside the supported length");
         return normalized;
     }
 }

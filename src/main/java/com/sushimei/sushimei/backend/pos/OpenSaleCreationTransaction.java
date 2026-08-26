@@ -53,10 +53,11 @@ class OpenSaleCreationTransaction {
         order.setCashDenomination(request.cashDenomination());
         order.setTotalAmountAmount(money.numericAmount());
         order.setTotalAmount(money.legacyAmount());
-        order.setStatus("COMPLETED");
+        order.setStatus("PREPARING");
         order.setCreatedAt(LocalDateTime.ofInstant(now, ZoneOffset.UTC));
         order.setOrderDetails(request.description());
-        order.addOrderLine(OrderLineRecord.createOpenSale(1, request.description(), request.amount()));
+        order.addOrderLine(OrderLineRecord.createOpenSale(1, request.description(), request.amount(),
+                "open-" + request.requestId()));
         return response(orderRepository.saveAndFlush(order), OpenSaleResult.CREATED);
     }
 
@@ -65,7 +66,8 @@ class OpenSaleCreationTransaction {
                 || !java.util.Objects.equals(order.getCreatedByUserId(), userId)
                 || !java.util.Objects.equals(order.getRequestFingerprint(), fingerprint)
                 || order.getOrderLines().stream().noneMatch(line -> line.getLineKind()
-                == com.sushimei.sushimei.backend.entity.OrderLineKind.OPEN_SALE)) {
+                == com.sushimei.sushimei.backend.entity.OrderLineKind.MANUAL_PRICED_LINE
+                || line.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.OPEN_SALE)) {
             throw new OpenSaleException(OpenSaleError.OPEN_SALE_IDEMPOTENCY_CONFLICT);
         }
         return response(order, OpenSaleResult.ALREADY_CREATED);
@@ -73,7 +75,8 @@ class OpenSaleCreationTransaction {
 
     static OpenSaleResponse response(OrderRecord order, OpenSaleResult result) {
         OrderLineRecord line = order.getOrderLines().stream()
-                .filter(candidate -> candidate.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.OPEN_SALE)
+                .filter(candidate -> candidate.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.MANUAL_PRICED_LINE
+                        || candidate.getLineKind() == com.sushimei.sushimei.backend.entity.OrderLineKind.OPEN_SALE)
                 .findFirst().orElseThrow(() -> new OpenSaleException(OpenSaleError.OPEN_SALE_INVALID));
         return new OpenSaleResponse(order.getId(), order.getClientRequestId(), result, order.getOrderSource(),
                 order.getCreatedByUserId(), line.getDishName(), line.getQuantity(), line.getUnitPriceAmount(),

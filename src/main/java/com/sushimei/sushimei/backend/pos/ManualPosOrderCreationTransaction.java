@@ -26,7 +26,10 @@ import com.sushimei.sushimei.backend.repository.OrderRepository;
 import com.sushimei.sushimei.backend.security.AppUserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
@@ -42,6 +45,7 @@ class ManualPosOrderCreationTransaction {
     private final CheckoutMoney checkoutMoney;
     private final BusinessDayService businessDayService;
     private final MenuItemComponentService menuItemComponentService;
+    private final Clock clock;
 
     ManualPosOrderCreationTransaction(OrderRepository orderRepository,
                                       AppUserRepository appUserRepository,
@@ -49,7 +53,8 @@ class ManualPosOrderCreationTransaction {
                                       ParallelMoneyResolver parallelMoneyResolver,
                                       CheckoutMoney checkoutMoney,
                                       BusinessDayService businessDayService,
-                                      MenuItemComponentService menuItemComponentService) {
+                                      MenuItemComponentService menuItemComponentService,
+                                      Clock clock) {
         this.orderRepository = orderRepository;
         this.appUserRepository = appUserRepository;
         this.promotionQuoteService = promotionQuoteService;
@@ -57,6 +62,7 @@ class ManualPosOrderCreationTransaction {
         this.checkoutMoney = checkoutMoney;
         this.businessDayService = businessDayService;
         this.menuItemComponentService = menuItemComponentService;
+        this.clock = clock;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.REPEATABLE_READ)
@@ -67,10 +73,15 @@ class ManualPosOrderCreationTransaction {
             return ManualPosOrderReadService.response(existing, ManualOrderResult.ALREADY_CREATED);
         }
         appUserRepository.findById(userId).orElseThrow(() -> new ManualPosOrderException(ManualPosOrderError.ORDER_FORBIDDEN_OPERATION));
-        PromotionQuoteResponse quote = promotionQuoteService.quote(new PromotionQuoteRequest(request.lines()));
-        validateDeliveryCashDenomination(request, quote.total());
+        PromotionQuoteResponse quote = request.lines().isEmpty()
+                ? emptyQuote(clock.instant())
+                : promotionQuoteService.quote(new PromotionQuoteRequest(request.lines()));
+        BigDecimal manualTotal = request.manualLines().stream().map(NormalizedManualPricedLine::lineTotal)
+                .reduce(zero(), (left, right) -> positive(left.add(right)));
+        BigDecimal total = positive(quote.total().add(manualTotal));
+        validateDeliveryCashDenomination(request, total);
         businessDayService.assertPhysicalOrderCreationAllowed(OrderSource.ANDROID_MANUAL, quote.quotedAt());
-        OrderRecord order = createOrder(userId, request, quote);
+        OrderRecord order = createOrder(userId, request, quote, total);
         java.util.Map<String, PromotionQuoteLineRequest> requestsByLineKey = request.lines().stream()
                 .collect(java.util.stream.Collectors.toMap(PromotionQuoteLineRequest::lineKey, value -> value));
         int linePosition = 1;
@@ -92,10 +103,15 @@ class ManualPosOrderCreationTransaction {
                 OrderLineRecord rewardLine = OrderLineRecord.createPromotionReward(paid, reward.menuItemId(), linePosition++, reward.name(),
                         reward.catalogBaseUnitPrice(), reward.configurationAdjustmentTotal(), nonNegative(reward.total()),
                         nonNegative(reward.total()), rewardPromotion.id(), rewardPromotion.name(),
-                        rewardPromotion.benefitType().name(), reward.rewardOrdinal());
+                        rewardPromotion.benefitType().name(), reward.rewardOrdinal(), reward.note());
                 snapshots(rewardLine, reward.configuration());
+                componentOmissions(rewardLine, reward.omittedComponents());
                 order.addOrderLine(rewardLine);
             }
+        }
+        for (NormalizedManualPricedLine manualLine : request.manualLines()) {
+            order.addOrderLine(OrderLineRecord.createManualPricedLine(manualLine.lineKey(), linePosition++,
+                    manualLine.description(), manualLine.quantity(), manualLine.unitAmount(), manualLine.lineTotal()));
         }
         OrderRecord saved = orderRepository.saveAndFlush(order);
         return ManualPosOrderReadService.response(saved, ManualOrderResult.CREATED);
@@ -110,10 +126,18 @@ class ManualPosOrderCreationTransaction {
         }
     }
 
-    private OrderRecord createOrder(Long userId, NormalizedManualPosOrder request, PromotionQuoteResponse quote) {
+    private void componentOmissions(OrderLineRecord line,
+                                    List<com.sushimei.sushimei.backend.catalog.DefaultComponentResponse> components) {
+        for (com.sushimei.sushimei.backend.catalog.DefaultComponentResponse component : components) {
+            line.addComponentOmissionSnapshot(OrderLineComponentOmissionSnapshot.create(component.id(), component.code(),
+                    component.displayName(), component.detail(), component.displayOrder()));
+        }
+    }
+
+    private OrderRecord createOrder(Long userId, NormalizedManualPosOrder request, PromotionQuoteResponse quote, BigDecimal total) {
         ParallelMoney money;
         try {
-            money = parallelMoneyResolver.forWriteFromExact(quote.total());
+            money = parallelMoneyResolver.forWriteFromExact(total);
         } catch (RuntimeException exception) {
             throw new ManualPosOrderException(ManualPosOrderError.ORDER_INVALID, exception);
         }
@@ -134,7 +158,7 @@ class ManualPosOrderCreationTransaction {
         order.setTotalAmount(money.legacyAmount());
         order.setStatus("PREPARING");
         order.setCreatedAt(LocalDateTime.ofInstant(quote.quotedAt(), ZoneOffset.UTC));
-        order.setOrderDetails(ManualPosOrderLegacyDetailsFormatter.format(quote));
+        order.setOrderDetails(legacyDetails(quote, request.manualLines()));
         return order;
     }
 
@@ -153,6 +177,7 @@ class ManualPosOrderCreationTransaction {
                 OrderLineSelectionSnapshot snapshot = OrderLineSelectionSnapshot.create(null, group.groupId(), group.name(),
                         position++, selection.menuItemId(), selection.name(), selection.quantity(), selection.catalogUnitPrice(),
                         selection.priceAdjustment(), selection.displayOnTicket());
+                selectionCustomization(snapshot, selection);
                 line.addSelectionSnapshot(snapshot);
                 nestedSnapshots(line, snapshot, selection.groups());
             }
@@ -166,11 +191,34 @@ class ManualPosOrderCreationTransaction {
                 OrderLineSelectionSnapshot snapshot = OrderLineSelectionSnapshot.create(parent, group.groupId(), group.name(),
                         position++, selection.menuItemId(), selection.name(), selection.quantity(), selection.catalogUnitPrice(),
                         selection.priceAdjustment(), selection.displayOnTicket());
+                selectionCustomization(snapshot, selection);
                 line.addSelectionSnapshot(snapshot);
                 nestedSnapshots(line, snapshot, selection.groups());
             }
         }
     }
+
+    private void selectionCustomization(OrderLineSelectionSnapshot snapshot, MenuQuoteSelectionResponse selection) {
+        snapshot.setSelectionNote(selection.note());
+        for (com.sushimei.sushimei.backend.catalog.DefaultComponentResponse component : selection.omittedComponents()) {
+            snapshot.addComponentOmissionSnapshot(com.sushimei.sushimei.backend.entity.OrderLineSelectionComponentOmissionSnapshot
+                    .create(component.id(), component.code(), component.displayName(), component.detail(), component.displayOrder()));
+        }
+    }
+
+    private PromotionQuoteResponse emptyQuote(Instant now) {
+        return new PromotionQuoteResponse(now, promotionQuoteService.businessTimeZone(), List.of(), zero(), zero(), zero(), zero());
+    }
+
+    private String legacyDetails(PromotionQuoteResponse quote, List<NormalizedManualPricedLine> manualLines) {
+        String catalog = quote.lines().isEmpty() ? null : ManualPosOrderLegacyDetailsFormatter.format(quote);
+        String manual = manualLines.stream().map(NormalizedManualPricedLine::description)
+                .collect(java.util.stream.Collectors.joining("; "));
+        if (catalog == null || catalog.isBlank()) return manual;
+        return manual.isBlank() ? catalog : catalog + "; " + manual;
+    }
+
+    private BigDecimal zero() { return BigDecimal.ZERO.setScale(CheckoutMoney.SCALE); }
 
     private BigDecimal positive(BigDecimal value) {
         try { return checkoutMoney.normalizeNumericAmount(value); }

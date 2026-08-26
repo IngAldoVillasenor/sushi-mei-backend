@@ -4,11 +4,13 @@ import com.sushimei.sushimei.backend.checkout.ParallelMoneyResolver;
 import com.sushimei.sushimei.backend.entity.OrderLineRecord;
 import com.sushimei.sushimei.backend.entity.OrderLineSelectionSnapshot;
 import com.sushimei.sushimei.backend.entity.OrderLineComponentOmissionSnapshot;
+import com.sushimei.sushimei.backend.entity.OrderLineSelectionComponentOmissionSnapshot;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import com.sushimei.sushimei.backend.repository.OrderLineSelectionSnapshotRepository;
 import com.sushimei.sushimei.backend.repository.OrderLineComponentOmissionSnapshotRepository;
+import com.sushimei.sushimei.backend.repository.OrderLineSelectionComponentOmissionSnapshotRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -49,17 +51,21 @@ public class OperationalOrderReadService {
     private final OrderRepository orderRepository;
     private final OrderLineSelectionSnapshotRepository selectionSnapshotRepository;
     private final OrderLineComponentOmissionSnapshotRepository omissionSnapshotRepository;
+    private final OrderLineSelectionComponentOmissionSnapshotRepository selectionOmissionSnapshotRepository;
     private final ParallelMoneyResolver parallelMoneyResolver;
 
     public OperationalOrderReadService(OrderRepository orderRepository,
                                        OrderLineSelectionSnapshotRepository selectionSnapshotRepository,
                                        OrderLineComponentOmissionSnapshotRepository omissionSnapshotRepository,
+                                       OrderLineSelectionComponentOmissionSnapshotRepository selectionOmissionSnapshotRepository,
                                        ParallelMoneyResolver parallelMoneyResolver) {
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
         this.selectionSnapshotRepository = Objects.requireNonNull(selectionSnapshotRepository,
                 "selectionSnapshotRepository must not be null");
         this.omissionSnapshotRepository = Objects.requireNonNull(omissionSnapshotRepository,
                 "omissionSnapshotRepository must not be null");
+        this.selectionOmissionSnapshotRepository = Objects.requireNonNull(selectionOmissionSnapshotRepository,
+                "selectionOmissionSnapshotRepository must not be null");
         this.parallelMoneyResolver = Objects.requireNonNull(parallelMoneyResolver,
                 "parallelMoneyResolver must not be null");
     }
@@ -171,10 +177,12 @@ public class OperationalOrderReadService {
                 .orElseThrow(OperationalOrderReadException::new);
         Map<Long, List<OrderLineSelectionSnapshot>> snapshotsByLine = snapshotsByLine(order.getId());
         Map<Long, List<OrderLineComponentOmissionSnapshot>> omissionsByLine = omissionsByLine(order.getId());
+        Map<Long, List<OrderLineSelectionComponentOmissionSnapshot>> selectionOmissionsBySnapshot =
+                selectionOmissionsBySnapshot(order.getId());
         List<OperationalOrderLineResponse> lines = order.getOrderLines().stream()
                 .sorted(ORDER_LINE_ORDER)
                 .map(line -> line(line, snapshotsByLine.getOrDefault(line.getId(), List.of()),
-                        omissionsByLine.getOrDefault(line.getId(), List.of())))
+                        omissionsByLine.getOrDefault(line.getId(), List.of()), selectionOmissionsBySnapshot))
                 .toList();
         return new OperationalOrderDetailResponse(
                 order.getId(),
@@ -214,6 +222,15 @@ public class OperationalOrderReadService {
         return omissionsByLine;
     }
 
+    private Map<Long, List<OrderLineSelectionComponentOmissionSnapshot>> selectionOmissionsBySnapshot(Long orderId) {
+        Map<Long, List<OrderLineSelectionComponentOmissionSnapshot>> result = new HashMap<>();
+        for (OrderLineSelectionComponentOmissionSnapshot omission : selectionOmissionSnapshotRepository
+                .findByOrderIdForOperationalRead(orderId)) {
+            result.computeIfAbsent(omission.getSelectionSnapshotId(), ignored -> new ArrayList<>()).add(omission);
+        }
+        return result;
+    }
+
     private OperationalOrderSummaryResponse summary(OrderRecord order, boolean structuredLinesAvailable) {
         return new OperationalOrderSummaryResponse(
                 order.getId(),
@@ -233,7 +250,8 @@ public class OperationalOrderReadService {
 
     private OperationalOrderLineResponse line(OrderLineRecord line,
                                                List<OrderLineSelectionSnapshot> snapshots,
-                                               List<OrderLineComponentOmissionSnapshot> omissions) {
+                                               List<OrderLineComponentOmissionSnapshot> omissions,
+                                               Map<Long, List<OrderLineSelectionComponentOmissionSnapshot>> selectionOmissionsBySnapshot) {
         OperationalPromotionSnapshotResponse promotion = line.getAppliedPromotionId() == null
                 ? null
                 : new OperationalPromotionSnapshotResponse(
@@ -241,7 +259,7 @@ public class OperationalOrderReadService {
                         line.getAppliedPromotionName(),
                         line.getAppliedPromotionBenefitType());
         List<OperationalOrderSelectionSnapshotResponse> configuration = snapshots.stream()
-                .map(this::snapshot)
+                .map(snapshot -> snapshot(snapshot, selectionOmissionsBySnapshot.getOrDefault(snapshot.getId(), List.of())))
                 .toList();
         return new OperationalOrderLineResponse(
                 line.getId(),
@@ -278,7 +296,8 @@ public class OperationalOrderReadService {
                 omission.getComponentDisplayOrder());
     }
 
-    private OperationalOrderSelectionSnapshotResponse snapshot(OrderLineSelectionSnapshot snapshot) {
+    private OperationalOrderSelectionSnapshotResponse snapshot(OrderLineSelectionSnapshot snapshot,
+                                                                List<OrderLineSelectionComponentOmissionSnapshot> omissions) {
         return new OperationalOrderSelectionSnapshotResponse(
                 snapshot.getId(),
                 snapshot.getParentSelection() == null ? null : snapshot.getParentSelection().getId(),
@@ -290,7 +309,11 @@ public class OperationalOrderReadService {
                 snapshot.getQuantity(),
                 snapshot.getCatalogUnitPrice(),
                 snapshot.getPriceAdjustmentAmount(),
-                snapshot.isDisplayOnTicket());
+                snapshot.isDisplayOnTicket(),
+                snapshot.getSelectionNote(),
+                omissions.stream().map(omission -> new OperationalOrderComponentOmissionResponse(omission.getId(),
+                        omission.getSourceComponentId(), omission.getComponentCode(), omission.getComponentName(),
+                        omission.getComponentDetail(), omission.getComponentDisplayOrder())).toList());
     }
 
     private BigDecimal total(OrderRecord order) {

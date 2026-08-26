@@ -8,6 +8,8 @@ package com.sushimei.sushimei.backend.entity;
 public enum OrderLineKind {
     PAID,
     PROMOTION_REWARD,
-    /** Explicit non-catalog physical POS revenue entered through the Open Sale command. */
-    OPEN_SALE
+    /** Legacy explicit non-catalog physical POS revenue entered through the Open Sale command. */
+    OPEN_SALE,
+    /** Explicit non-catalog line accepted only by the manual-priced checkout contract. */
+    MANUAL_PRICED_LINE
 }

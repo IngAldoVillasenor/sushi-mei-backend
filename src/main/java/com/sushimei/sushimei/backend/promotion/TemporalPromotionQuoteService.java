@@ -7,6 +7,7 @@ import com.sushimei.sushimei.backend.catalog.MenuItem;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteRequest;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteResponse;
 import com.sushimei.sushimei.backend.catalog.MenuItemComponentService;
+import com.sushimei.sushimei.backend.catalog.DefaultComponentResponse;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
 import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
@@ -151,10 +152,15 @@ public class TemporalPromotionQuoteService {
             MenuItem rewardItem = rewardItem(sourceItem, promotion, configuration);
             MenuItemQuoteResponse rewardQuote = catalogConfigurationService.quote(rewardItem.getId(),
                     new MenuItemQuoteRequest(1, configuration == null ? List.of() : configuration.groups()));
+            List<DefaultComponentResponse> omittedComponents = configuration == null
+                    ? List.of()
+                    : menuItemComponentService.resolveActiveOmittedComponents(rewardItem.getId(),
+                            configuration.omittedComponentIds()).stream().map(DefaultComponentResponse::from).toList();
             BigDecimal configurationTotal = rewardQuote.unitAdjustmentTotal();
             rewards.add(new PromotionRewardQuoteResponse(lineKey, ordinal, AppliedPromotionResponse.from(promotion),
                     rewardItem.getId(), rewardItem.getName(), rewardQuote.baseUnitPrice(), zero(), rewardQuote,
-                    configurationTotal, configurationTotal));
+                    configurationTotal, configurationTotal, omittedComponents,
+                    normalizeOptionalNote(configuration == null ? null : configuration.note())));
         }
         return List.copyOf(rewards);
     }
@@ -290,6 +296,25 @@ public class TemporalPromotionQuoteService {
 
     private PromotionException invalidQuote() {
         return new PromotionException(PromotionError.PROMOTION_QUOTE_INVALID);
+    }
+
+    /** Configured business-zone identity shared by all quote responses. */
+    public String businessTimeZone() {
+        return businessZone.getId();
+    }
+
+    private String normalizeOptionalNote(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().replaceAll("\\s+", " ");
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > 500) {
+            throw invalidQuote();
+        }
+        return normalized;
     }
 
     private record QuotedLine(PromotionQuoteLineResponse response,

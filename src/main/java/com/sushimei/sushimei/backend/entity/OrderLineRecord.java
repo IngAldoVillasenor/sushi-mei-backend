@@ -296,6 +296,26 @@ public class OrderLineRecord {
                 null, null, null, null, null, false);
     }
 
+    /** Positive non-catalog line accepted only by the explicit manual-priced checkout contract. */
+    public static OrderLineRecord createManualPricedLine(String clientLineKey,
+                                                          int linePosition,
+                                                          String description,
+                                                          int quantity,
+                                                          BigDecimal unitAmount,
+                                                          BigDecimal lineTotal) {
+        return new OrderLineRecord(null, null, requireClientLineKey(clientLineKey), OrderLineKind.MANUAL_PRICED_LINE,
+                linePosition, description, quantity, unitAmount, lineTotal, null, null, null,
+                null, null, null, null, null, false);
+    }
+
+    /** Backward-compatible immediate Open Sale command uses the same generic manual-priced evidence. */
+    public static OrderLineRecord createOpenSale(int linePosition,
+                                                  String description,
+                                                  BigDecimal amount,
+                                                  String clientLineKey) {
+        return createManualPricedLine(clientLineKey, linePosition, description, 1, amount, amount);
+    }
+
     public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
                                                         Long sourceMenuItemId,
                                                         int linePosition,
@@ -395,11 +415,13 @@ public class OrderLineRecord {
         this.unitPriceAmount = externalHistorical
                 ? requireNonNegativeAmount(unitPriceAmount, "unitPriceAmount")
                 : lineKind == OrderLineKind.PAID || lineKind == OrderLineKind.OPEN_SALE
+                || lineKind == OrderLineKind.MANUAL_PRICED_LINE
                 ? requirePositiveAmount(unitPriceAmount, "unitPriceAmount")
                 : requireNonNegativeAmount(unitPriceAmount, "unitPriceAmount");
         this.lineTotalAmount = externalHistorical
                 ? requireNonNegativeAmount(lineTotalAmount, "lineTotalAmount")
                 : lineKind == OrderLineKind.PAID || lineKind == OrderLineKind.OPEN_SALE
+                || lineKind == OrderLineKind.MANUAL_PRICED_LINE
                 ? requirePositiveAmount(lineTotalAmount, "lineTotalAmount")
                 : requireNonNegativeAmount(lineTotalAmount, "lineTotalAmount");
         if (!externalHistorical) {

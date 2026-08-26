@@ -24,6 +24,13 @@ public interface MenuCatalogRepository extends JpaRepository<MenuItem, Long> {
     @EntityGraph(attributePaths = "tags")
     Optional<MenuItem> findById(Long id);
 
-    @Query("select distinct g.parentMenuItem.id from MenuSelectionGroup g where g.active = true and g.parentMenuItem.id in :itemIds")
+    /** A required configuration is one whose default/empty selection is invalid. */
+    @Query("select distinct g.parentMenuItem.id from MenuSelectionGroup g "
+            + "where g.active = true and g.minSelections > 0 and g.parentMenuItem.id in :itemIds")
+    List<Long> findIdsWithRequiredSelectionGroups(java.util.Collection<Long> itemIds);
+
+    /** Supports configuration without implying a cashier must make a selection. */
+    @Query("select distinct g.parentMenuItem.id from MenuSelectionGroup g "
+            + "where g.active = true and g.parentMenuItem.id in :itemIds")
     List<Long> findIdsWithActiveSelectionGroups(java.util.Collection<Long> itemIds);
 }

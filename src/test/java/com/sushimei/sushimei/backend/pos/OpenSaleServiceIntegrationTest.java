@@ -8,9 +8,12 @@ import com.sushimei.sushimei.backend.businessday.BusinessDayService;
 import com.sushimei.sushimei.backend.businessday.CloseBusinessDayRequest;
 import com.sushimei.sushimei.backend.businessday.OpenBusinessDayRequest;
 import com.sushimei.sushimei.backend.entity.OrderLineKind;
+import com.sushimei.sushimei.backend.entity.OrderLineRecord;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.orderread.OperationalOrderReadService;
+import com.sushimei.sushimei.backend.repository.OrderRepository;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -18,6 +21,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +47,8 @@ class OpenSaleServiceIntegrationTest {
     @Autowired private BusinessDayService businessDayService;
     @Autowired private OperationalOrderReadService operationalOrderReadService;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private OrderRepository orderRepository;
+    @Autowired private OpenSaleFingerprint openSaleFingerprint;
 
     private Long ownerId;
 
@@ -70,22 +76,23 @@ class OpenSaleServiceIntegrationTest {
 
         assertThat(created.result()).isEqualTo(OpenSaleResult.CREATED);
         assertThat(created.orderSource()).isEqualTo(OrderSource.COUNTER);
-        assertThat(created.status()).isEqualTo("COMPLETED");
+        assertThat(created.status()).isEqualTo("PREPARING");
         assertThat(created.description()).isEqualTo("Venta libre");
         assertThat(created.total()).isEqualByComparingTo("50.00");
         assertThat(created.cashDenomination()).isEqualByComparingTo("100.00");
         assertThat(retry.result()).isEqualTo(OpenSaleResult.ALREADY_CREATED);
         assertThat(retry.id()).isEqualTo(created.id());
-        assertThat(jdbcTemplate.queryForObject("select line_kind from public.order_lines", String.class)).isEqualTo("OPEN_SALE");
+        assertThat(jdbcTemplate.queryForObject("select line_kind from public.order_lines", String.class)).isEqualTo("MANUAL_PRICED_LINE");
         assertThat(jdbcTemplate.queryForObject("select source_menu_item_id from public.order_lines", Long.class)).isNull();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items", Integer.class)).isEqualTo(menusBefore);
         assertThat(operationalOrderReadService.order(created.id()).lines()).singleElement().satisfies(line -> {
-            assertThat(line.lineKind()).isEqualTo(OrderLineKind.OPEN_SALE);
+            assertThat(line.lineKind()).isEqualTo(OrderLineKind.MANUAL_PRICED_LINE);
             assertThat(line.sourceMenuItemId()).isNull();
             assertThat(line.name()).isEqualTo("Venta libre");
             assertThat(line.finalLineTotal()).isEqualByComparingTo("50.00");
         });
 
+        jdbcTemplate.update("update public.orders set status = 'COMPLETED'");
         var closed = businessDayService.close(ownerId, new CloseBusinessDayRequest(new BigDecimal("60.00")));
         assertThat(closed.completedSalesAmount()).isEqualByComparingTo("50.00");
         assertThat(closed.cashSalesAmount()).isEqualByComparingTo("50.00");
@@ -115,6 +122,38 @@ class OpenSaleServiceIntegrationTest {
                 new OpenSaleRequest(requestId, "Misma", new BigDecimal("9.00"), OrderPaymentMethod.CASH,
                         new BigDecimal("9.00"))),
                 OpenSaleError.OPEN_SALE_IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void legacyOpenSaleLineRemainsReadableForAnIdempotentRetry() {
+        UUID requestId = UUID.randomUUID();
+        BigDecimal amount = new BigDecimal("33.00");
+        BigDecimal denomination = new BigDecimal("50.00");
+        String description = "Legacy open sale";
+        OrderRecord legacy = new OrderRecord();
+        legacy.setClientRequestId(requestId);
+        legacy.setCreatedByUserId(ownerId);
+        legacy.setRequestFingerprint(openSaleFingerprint.fingerprint(description, amount, OrderPaymentMethod.CASH, denomination));
+        legacy.setOrderSource(OrderSource.COUNTER);
+        legacy.setPaymentMethod(OrderPaymentMethod.CASH);
+        legacy.setCashDenomination(denomination);
+        legacy.setTotalAmountAmount(amount);
+        legacy.setTotalAmount(amount.doubleValue());
+        legacy.setStatus("COMPLETED");
+        legacy.setCreatedAt(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        legacy.setOrderDetails(description);
+        legacy.addOrderLine(OrderLineRecord.createOpenSale(1, description, amount));
+        OrderRecord saved = orderRepository.saveAndFlush(legacy);
+
+        OpenSaleResponse retry = openSaleService.create(ownerId,
+                new OpenSaleRequest(requestId, description, amount, OrderPaymentMethod.CASH, denomination));
+
+        assertThat(retry.result()).isEqualTo(OpenSaleResult.ALREADY_CREATED);
+        assertThat(retry.id()).isEqualTo(saved.getId());
+        assertThat(retry.description()).isEqualTo(description);
+        assertThat(retry.total()).isEqualByComparingTo("33.00");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_lines", Integer.class)).isEqualTo(1);
     }
 
     private Long insertUser(String username) {

@@ -9,5 +9,7 @@ import java.util.UUID;
 
 record NormalizedManualPosOrder(UUID requestId, OrderFulfillmentType fulfillmentType, OrderPaymentMethod paymentMethod,
                                 String deliveryAddress, String pickupName, BigDecimal cashDenomination,
-                                List<PromotionQuoteLineRequest> lines, String fingerprint) {
+                                List<PromotionQuoteLineRequest> lines,
+                                List<NormalizedManualPricedLine> manualLines,
+                                String fingerprint) {
 }

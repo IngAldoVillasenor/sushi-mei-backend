@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.pos;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /** Flat, parent-linked immutable configuration evidence for an order line. */
 public record ManualOrderSelectionSnapshotResponse(
@@ -14,6 +15,11 @@ public record ManualOrderSelectionSnapshotResponse(
         int quantity,
         BigDecimal catalogUnitPrice,
         BigDecimal priceAdjustment,
-        boolean displayOnTicket
+        boolean displayOnTicket,
+        String note,
+        List<ManualOrderComponentOmissionResponse> omittedComponents
 ) {
+    public ManualOrderSelectionSnapshotResponse {
+        omittedComponents = List.copyOf(omittedComponents == null ? List.of() : omittedComponents);
+    }
 }
