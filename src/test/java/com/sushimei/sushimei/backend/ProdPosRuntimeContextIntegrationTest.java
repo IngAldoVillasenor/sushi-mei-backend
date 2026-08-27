@@ -9,8 +9,10 @@ import com.sushimei.sushimei.backend.pos.ManualPosOrderService;
 import com.sushimei.sushimei.backend.security.SecurityTestKeyConfiguration;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
 import com.sushimei.sushimei.backend.whatsapp.InboundMessageIdempotencyService;
+import com.zaxxer.hikari.HikariDataSource;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +35,9 @@ class ProdPosRuntimeContextIntegrationTest {
     @Autowired
     private Environment environment;
 
+    @Autowired
+    private DataSource dataSource;
+
     @Test
     void prodPosStartsWithoutAiOrWhatsAppDependenciesWhileKeepingOperationalBeansAvailable() {
         assertThat(environment.getProperty("server.port")).isEqualTo("18080");
@@ -49,5 +54,15 @@ class ProdPosRuntimeContextIntegrationTest {
         assertThat(applicationContext.getBean(ManualPosOrderService.class)).isNotNull();
         assertThat(applicationContext.getBean(OrderLifecycleService.class)).isNotNull();
         assertThat(applicationContext.getBeansOfType(SecurityFilterChain.class)).isNotEmpty();
+    }
+
+    @Test
+    void prodPosUsesTheSharedTestDatasourceWithAConservativeHikariPool() {
+        assertThat(dataSource).isInstanceOf(HikariDataSource.class);
+
+        HikariDataSource hikari = (HikariDataSource) dataSource;
+        assertThat(hikari.getJdbcUrl()).startsWith("jdbc:h2:mem:sushimei-");
+        assertThat(hikari.getMaximumPoolSize()).isEqualTo(5);
+        assertThat(hikari.getMinimumIdle()).isEqualTo(1);
     }
 }

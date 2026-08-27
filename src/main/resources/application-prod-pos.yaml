@@ -5,6 +5,10 @@ spring:
     exclude:
       - dev.langchain4j.ollama.spring.OllamaAutoConfiguration
       - dev.langchain4j.spring.LangChain4jAutoConfiguration
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
 
 sushimei:
   features:
