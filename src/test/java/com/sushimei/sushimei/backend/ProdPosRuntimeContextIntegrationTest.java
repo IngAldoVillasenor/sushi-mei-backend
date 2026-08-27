@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend;
 
 import com.sushimei.sushimei.backend.agent.AiConversationService;
 import com.sushimei.sushimei.backend.checkout.OrderService;
+import com.sushimei.sushimei.backend.configuration.WebConfig;
 import com.sushimei.sushimei.backend.controller.ChatController;
 import com.sushimei.sushimei.backend.controller.WhatsAppWebhookController;
 import com.sushimei.sushimei.backend.order.OrderLifecycleService;
@@ -50,6 +51,9 @@ class ProdPosRuntimeContextIntegrationTest {
         assertThat(applicationContext.getBeansOfType(ChatController.class)).isEmpty();
         assertThat(applicationContext.getBeansOfType(InboundMessageIdempotencyService.class)).isEmpty();
         assertThat(applicationContext.getBeansOfType(OrderService.class)).isEmpty();
+        assertThat(applicationContext.getBeansOfType(WebConfig.class)).isEmpty();
+        assertThat(environment.getProperty("storage.receipts-directory")).isEmpty();
+        assertThat(environment.getProperty("storage.public-upload-directory")).isEmpty();
 
         assertThat(applicationContext.getBean(ManualPosOrderService.class)).isNotNull();
         assertThat(applicationContext.getBean(OrderLifecycleService.class)).isNotNull();
