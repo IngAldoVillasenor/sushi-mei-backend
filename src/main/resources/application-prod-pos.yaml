@@ -1,0 +1,25 @@
+# Cloud Run POS-only runtime. Enable with SPRING_PROFILES_ACTIVE=prod-pos.
+# Database and JWT configuration remain supplied by their existing environment properties.
+spring:
+  autoconfigure:
+    exclude:
+      - dev.langchain4j.ollama.spring.OllamaAutoConfiguration
+      - dev.langchain4j.spring.LangChain4jAutoConfiguration
+
+sushimei:
+  features:
+    ai:
+      enabled: false
+    whatsapp:
+      enabled: false
+
+# These configuration properties are still scanned globally, but their dependent beans are
+# disabled above. Empty values avoid requiring WhatsApp or filesystem settings in Cloud Run.
+whatsapp:
+  api-token: ""
+  phone-number-id: ""
+  verify-token: ""
+
+storage:
+  receipts-directory: ""
+  public-upload-directory: ""

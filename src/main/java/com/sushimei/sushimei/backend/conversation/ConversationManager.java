@@ -6,6 +6,7 @@ import com.sushimei.sushimei.backend.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.Objects;
 
@@ -13,6 +14,7 @@ import java.util.Objects;
  * Coordinates AI menu conversation with the deterministic WhatsApp checkout adapter.
  */
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features", name = {"ai.enabled", "whatsapp.enabled"}, havingValue = "true", matchIfMissing = true)
 public class ConversationManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationManager.class);

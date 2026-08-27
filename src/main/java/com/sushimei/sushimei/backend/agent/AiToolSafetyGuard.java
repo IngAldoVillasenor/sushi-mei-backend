@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.agent;
 
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.function.Supplier;
  * Per-turn guard for AI-initiated cart tools. It is intentionally not a checkout state machine.
  */
 @Component
+@ConditionalOnProperty(prefix = "sushimei.features.ai", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class AiToolSafetyGuard {
 
     private static final Set<String> ADD_ACTIONS = Set.of(

@@ -4,6 +4,7 @@ import com.sushimei.sushimei.backend.entity.Cart;
 import com.sushimei.sushimei.backend.entity.CartItem;
 import com.sushimei.sushimei.backend.repository.CartRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.whatsapp", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class CartSnapshotService {
 
     private static final String OPEN_CART_STATUS = "OPEN";

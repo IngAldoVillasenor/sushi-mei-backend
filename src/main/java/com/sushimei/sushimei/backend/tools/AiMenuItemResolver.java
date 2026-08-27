@@ -6,6 +6,7 @@ import com.sushimei.sushimei.backend.catalog.MenuItemPricingMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.Objects;
 
 /** Resolves AI tool input against the operational catalog without accepting AI-provided prices. */
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.ai", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class AiMenuItemResolver {
 
     private static final Logger log = LoggerFactory.getLogger(AiMenuItemResolver.class);

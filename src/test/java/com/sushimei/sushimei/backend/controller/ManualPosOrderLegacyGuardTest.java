@@ -7,6 +7,7 @@ import com.sushimei.sushimei.backend.order.OrderLifecycleService;
 import com.sushimei.sushimei.backend.service.CartService;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -25,11 +26,23 @@ class ManualPosOrderLegacyGuardTest {
         OrderLifecycleService lifecycle = mock(OrderLifecycleService.class);
         when(lifecycle.rejectForLegacyClarification(10L))
                 .thenThrow(new OrderLifecycleException(OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED));
-        OrderController controller = new OrderController(ai, whatsApp, carts, lifecycle);
+        OrderController controller = new OrderController(Optional.of(ai), Optional.of(whatsApp), carts, lifecycle);
 
         var response = controller.rejectOrder(10L, Map.of("reason", "test"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         verifyNoInteractions(ai, whatsApp, carts);
+    }
+
+    @Test
+    void disabledLegacyOrchestrationDoesNotTransitionOrReopenAnything() {
+        CartService carts = mock(CartService.class);
+        OrderLifecycleService lifecycle = mock(OrderLifecycleService.class);
+        OrderController controller = new OrderController(Optional.empty(), Optional.empty(), carts, lifecycle);
+
+        var response = controller.rejectOrder(10L, Map.of("reason", "test"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        verifyNoInteractions(carts, lifecycle);
     }
 }

@@ -3,11 +3,13 @@ package com.sushimei.sushimei.backend.agent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.Optional;
 import java.util.Set;
 
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.ai", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class AiConversationService {
 
     private static final Logger log = LoggerFactory.getLogger(AiConversationService.class);

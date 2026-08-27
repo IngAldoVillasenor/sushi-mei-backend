@@ -19,12 +19,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * Deterministic WhatsApp checkout adapter. AI remains responsible for menu conversation and
  * cart mutations; this service alone advances persisted checkout state and creates orders.
  */
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.whatsapp", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class WhatsAppCheckoutFlowService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WhatsAppCheckoutFlowService.class);
