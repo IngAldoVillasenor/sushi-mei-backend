@@ -77,6 +77,7 @@ class BusinessDayServiceIntegrationTest {
     void clean() {
         jdbcTemplate.update("delete from public.business_day_closures");
         jdbcTemplate.update("delete from public.business_days");
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.vendis_payment_snapshots");

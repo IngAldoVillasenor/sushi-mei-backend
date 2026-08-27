@@ -9,6 +9,8 @@ import com.sushimei.sushimei.backend.catalog.MenuItemConfigurationResponse;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteRequest;
 import com.sushimei.sushimei.backend.catalog.MenuItemQuoteResponse;
 import com.sushimei.sushimei.backend.catalog.MenuItemResponse;
+import com.sushimei.sushimei.backend.catalog.DefaultComponentResponse;
+import com.sushimei.sushimei.backend.catalog.MenuItemComponentService;
 import com.sushimei.sushimei.backend.catalog.MenuSelectionGroupResponse;
 import com.sushimei.sushimei.backend.catalog.ReplaceMenuItemTagsRequest;
 import com.sushimei.sushimei.backend.catalog.UpdateMenuItemRequest;
@@ -39,13 +41,17 @@ public class MenuCatalogController {
 
     private final MenuCatalogService menuCatalogService;
     private final CatalogConfigurationService catalogConfigurationService;
+    private final MenuItemComponentService menuItemComponentService;
 
     public MenuCatalogController(MenuCatalogService menuCatalogService,
-                                 CatalogConfigurationService catalogConfigurationService) {
+                                 CatalogConfigurationService catalogConfigurationService,
+                                 MenuItemComponentService menuItemComponentService) {
         this.menuCatalogService = Objects.requireNonNull(menuCatalogService,
                 "menuCatalogService must not be null");
         this.catalogConfigurationService = Objects.requireNonNull(catalogConfigurationService,
                 "catalogConfigurationService must not be null");
+        this.menuItemComponentService = Objects.requireNonNull(menuItemComponentService,
+                "menuItemComponentService must not be null");
     }
 
     @GetMapping
@@ -63,6 +69,11 @@ public class MenuCatalogController {
     @GetMapping("/{id}/configuration")
     public MenuItemConfigurationResponse configuration(@PathVariable Long id) {
         return catalogConfigurationService.operationalConfiguration(id);
+    }
+
+    @GetMapping("/{id}/components")
+    public List<DefaultComponentResponse> components(@PathVariable Long id) {
+        return menuItemComponentService.activeComponents(id);
     }
 
     @GetMapping("/{id}/configuration-definition")

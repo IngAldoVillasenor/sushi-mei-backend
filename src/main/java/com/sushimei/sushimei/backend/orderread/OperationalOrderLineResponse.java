@@ -29,9 +29,12 @@ public record OperationalOrderLineResponse(
         OperationalPromotionSnapshotResponse promotion,
         Integer rewardOrdinal,
         Long sourcePaidLineId,
+        String note,
+        List<OperationalOrderComponentOmissionResponse> omittedComponents,
         List<OperationalOrderSelectionSnapshotResponse> configuration
 ) {
     public OperationalOrderLineResponse {
+        omittedComponents = List.copyOf(omittedComponents == null ? List.of() : omittedComponents);
         configuration = List.copyOf(configuration == null ? List.of() : configuration);
     }
 }

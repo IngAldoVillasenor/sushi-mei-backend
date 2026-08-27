@@ -89,6 +89,10 @@ public class OrderLineRecord {
     @Column(name = "dish_name", nullable = false, length = MAX_DISH_NAME_LENGTH, updatable = false)
     private String dishName;
 
+    /** Immutable normalized kitchen/operator note; it never participates in pricing or promotions. */
+    @Column(name = "line_note", length = 500, updatable = false)
+    private String lineNote;
+
     @Column(nullable = false, updatable = false)
     private int quantity;
 
@@ -127,6 +131,10 @@ public class OrderLineRecord {
     @OneToMany(mappedBy = "orderLine", cascade = CascadeType.PERSIST)
     @OrderBy("id ASC")
     private List<OrderLineSelectionSnapshot> selectionSnapshots = new ArrayList<>();
+
+    @OneToMany(mappedBy = "orderLine", cascade = CascadeType.PERSIST)
+    @OrderBy("componentDisplayOrder ASC")
+    private List<OrderLineComponentOmissionSnapshot> componentOmissionSnapshots = new ArrayList<>();
 
     protected OrderLineRecord() {
         // JPA
@@ -236,7 +244,27 @@ public class OrderLineRecord {
                                                    Long appliedPromotionId,
                                                    String appliedPromotionName,
                                                    String appliedPromotionBenefitType) {
-        return new OrderLineRecord(
+        return createManualPaid(clientLineKey, sourceMenuItemId, linePosition, dishName, quantity,
+                catalogBaseUnitPrice, chargedBaseUnitPrice, configurationAdjustmentAmount,
+                finalUnitAmount, finalLineTotal, appliedPromotionId, appliedPromotionName,
+                appliedPromotionBenefitType, null);
+    }
+
+    public static OrderLineRecord createManualPaid(String clientLineKey,
+                                                   Long sourceMenuItemId,
+                                                   int linePosition,
+                                                   String dishName,
+                                                   int quantity,
+                                                   BigDecimal catalogBaseUnitPrice,
+                                                   BigDecimal chargedBaseUnitPrice,
+                                                   BigDecimal configurationAdjustmentAmount,
+                                                   BigDecimal finalUnitAmount,
+                                                   BigDecimal finalLineTotal,
+                                                   Long appliedPromotionId,
+                                                   String appliedPromotionName,
+                                                   String appliedPromotionBenefitType,
+                                                   String lineNote) {
+        OrderLineRecord record = new OrderLineRecord(
                 null,
                 requirePositiveId(sourceMenuItemId, "sourceMenuItemId"),
                 requireClientLineKey(clientLineKey),
@@ -255,6 +283,37 @@ public class OrderLineRecord {
                 null,
                 null,
                 false);
+        record.lineNote = normalizeOptionalNote(lineNote);
+        return record;
+    }
+
+    /** Positive, explicit, non-catalog operational revenue. */
+    public static OrderLineRecord createOpenSale(int linePosition,
+                                                  String description,
+                                                  BigDecimal amount) {
+        return new OrderLineRecord(null, null, null, OrderLineKind.OPEN_SALE, linePosition,
+                description, 1, amount, amount, null, null, null,
+                null, null, null, null, null, false);
+    }
+
+    /** Positive non-catalog line accepted only by the explicit manual-priced checkout contract. */
+    public static OrderLineRecord createManualPricedLine(String clientLineKey,
+                                                          int linePosition,
+                                                          String description,
+                                                          int quantity,
+                                                          BigDecimal unitAmount,
+                                                          BigDecimal lineTotal) {
+        return new OrderLineRecord(null, null, requireClientLineKey(clientLineKey), OrderLineKind.MANUAL_PRICED_LINE,
+                linePosition, description, quantity, unitAmount, lineTotal, null, null, null,
+                null, null, null, null, null, false);
+    }
+
+    /** Backward-compatible immediate Open Sale command uses the same generic manual-priced evidence. */
+    public static OrderLineRecord createOpenSale(int linePosition,
+                                                  String description,
+                                                  BigDecimal amount,
+                                                  String clientLineKey) {
+        return createManualPricedLine(clientLineKey, linePosition, description, 1, amount, amount);
     }
 
     public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
@@ -269,8 +328,26 @@ public class OrderLineRecord {
                                                         String appliedPromotionName,
                                                         String appliedPromotionBenefitType,
                                                         int rewardOrdinal) {
+        return createPromotionReward(sourcePaidLine, sourceMenuItemId, linePosition, dishName,
+                catalogBaseUnitPrice, configurationAdjustmentAmount, finalUnitAmount, finalLineTotal,
+                appliedPromotionId, appliedPromotionName, appliedPromotionBenefitType, rewardOrdinal, null);
+    }
+
+    public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
+                                                        Long sourceMenuItemId,
+                                                        int linePosition,
+                                                        String dishName,
+                                                        BigDecimal catalogBaseUnitPrice,
+                                                        BigDecimal configurationAdjustmentAmount,
+                                                        BigDecimal finalUnitAmount,
+                                                        BigDecimal finalLineTotal,
+                                                        Long appliedPromotionId,
+                                                        String appliedPromotionName,
+                                                        String appliedPromotionBenefitType,
+                                                        int rewardOrdinal,
+                                                        String lineNote) {
         OrderLineRecord source = Objects.requireNonNull(sourcePaidLine, "sourcePaidLine must not be null");
-        return new OrderLineRecord(
+        OrderLineRecord record = new OrderLineRecord(
                 null,
                 requirePositiveId(sourceMenuItemId, "sourceMenuItemId"),
                 null,
@@ -289,6 +366,8 @@ public class OrderLineRecord {
                 requirePositive(rewardOrdinal, "rewardOrdinal"),
                 source,
                 false);
+        record.lineNote = normalizeOptionalNote(lineNote);
+        return record;
     }
 
     public static OrderLineRecord createPromotionReward(OrderLineRecord sourcePaidLine,
@@ -335,12 +414,14 @@ public class OrderLineRecord {
         this.externalHistorical = externalHistorical;
         this.unitPriceAmount = externalHistorical
                 ? requireNonNegativeAmount(unitPriceAmount, "unitPriceAmount")
-                : lineKind == OrderLineKind.PAID
+                : lineKind == OrderLineKind.PAID || lineKind == OrderLineKind.OPEN_SALE
+                || lineKind == OrderLineKind.MANUAL_PRICED_LINE
                 ? requirePositiveAmount(unitPriceAmount, "unitPriceAmount")
                 : requireNonNegativeAmount(unitPriceAmount, "unitPriceAmount");
         this.lineTotalAmount = externalHistorical
                 ? requireNonNegativeAmount(lineTotalAmount, "lineTotalAmount")
-                : lineKind == OrderLineKind.PAID
+                : lineKind == OrderLineKind.PAID || lineKind == OrderLineKind.OPEN_SALE
+                || lineKind == OrderLineKind.MANUAL_PRICED_LINE
                 ? requirePositiveAmount(lineTotalAmount, "lineTotalAmount")
                 : requireNonNegativeAmount(lineTotalAmount, "lineTotalAmount");
         if (!externalHistorical) {
@@ -370,6 +451,13 @@ public class OrderLineRecord {
         selectionSnapshots.add(selection);
     }
 
+    public void addComponentOmissionSnapshot(OrderLineComponentOmissionSnapshot snapshot) {
+        OrderLineComponentOmissionSnapshot omission = Objects.requireNonNull(snapshot,
+                "snapshot must not be null");
+        omission.attachTo(this);
+        componentOmissionSnapshots.add(omission);
+    }
+
     public Long getId() { return id; }
     public String getExternalProductReference() { return externalProductReference; }
     public void setExternalProductReference(String externalProductReference) { this.externalProductReference = externalProductReference; }
@@ -388,6 +476,7 @@ public class OrderLineRecord {
     public OrderLineKind getLineKind() { return lineKind; }
     public int getLinePosition() { return linePosition; }
     public String getDishName() { return dishName; }
+    public String getLineNote() { return lineNote; }
     public int getQuantity() { return quantity; }
     public BigDecimal getUnitPriceAmount() { return unitPriceAmount; }
     public BigDecimal getLineTotalAmount() { return lineTotalAmount; }
@@ -400,6 +489,9 @@ public class OrderLineRecord {
     public Integer getRewardOrdinal() { return rewardOrdinal; }
     public OrderLineRecord getSourcePaidLine() { return sourcePaidLine; }
     public List<OrderLineSelectionSnapshot> getSelectionSnapshots() { return List.copyOf(selectionSnapshots); }
+    public List<OrderLineComponentOmissionSnapshot> getComponentOmissionSnapshots() {
+        return List.copyOf(componentOmissionSnapshots);
+    }
 
     private static void requireLineTotal(int quantity, BigDecimal unitAmount, BigDecimal totalAmount) {
         BigDecimal expected = unitAmount.multiply(BigDecimal.valueOf(quantity)).setScale(CheckoutMoney.SCALE, RoundingMode.UNNECESSARY);
@@ -444,6 +536,20 @@ public class OrderLineRecord {
         String normalized = requireNonBlank(value, "clientLineKey");
         if (normalized.length() > 120) {
             throw new IllegalArgumentException("clientLineKey is outside the supported length");
+        }
+        return normalized;
+    }
+
+    private static String normalizeOptionalNote(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().replaceAll("\\s+", " ");
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > 500) {
+            throw new IllegalArgumentException("lineNote is outside the supported length");
         }
         return normalized;
     }

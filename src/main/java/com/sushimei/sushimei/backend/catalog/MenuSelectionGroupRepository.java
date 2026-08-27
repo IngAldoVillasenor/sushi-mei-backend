@@ -11,5 +11,7 @@ public interface MenuSelectionGroupRepository extends JpaRepository<MenuSelectio
 
     List<MenuSelectionGroup> findByParentMenuItemIdOrderByDisplayOrderAscIdAsc(Long parentMenuItemId);
 
+    List<MenuSelectionGroup> findByParentMenuItemIdAndNameOrderByIdAsc(Long parentMenuItemId, String name);
+
     Optional<MenuSelectionGroup> findByIdAndParentMenuItemId(Long id, Long parentMenuItemId);
 }

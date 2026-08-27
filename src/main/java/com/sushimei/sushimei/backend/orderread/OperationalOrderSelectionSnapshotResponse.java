@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.orderread;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /** Flat parent-linked selection evidence; parentSelectionSnapshotId preserves recursive configuration. */
 public record OperationalOrderSelectionSnapshotResponse(
@@ -14,6 +15,11 @@ public record OperationalOrderSelectionSnapshotResponse(
         int quantity,
         BigDecimal catalogUnitPrice,
         BigDecimal priceAdjustment,
-        boolean displayOnTicket
+        boolean displayOnTicket,
+        String note,
+        List<OperationalOrderComponentOmissionResponse> omittedComponents
 ) {
+    public OperationalOrderSelectionSnapshotResponse {
+        omittedComponents = List.copyOf(omittedComponents == null ? List.of() : omittedComponents);
+    }
 }

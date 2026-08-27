@@ -40,6 +40,7 @@ public class CatalogConfigurationService {
     private final CatalogTagRepository catalogTagRepository;
     private final MenuSelectionGroupRepository menuSelectionGroupRepository;
     private final MenuSelectionRuleRepository menuSelectionRuleRepository;
+    private final MenuItemComponentService menuItemComponentService;
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
 
@@ -47,6 +48,7 @@ public class CatalogConfigurationService {
                                        CatalogTagRepository catalogTagRepository,
                                        MenuSelectionGroupRepository menuSelectionGroupRepository,
                                        MenuSelectionRuleRepository menuSelectionRuleRepository,
+                                       MenuItemComponentService menuItemComponentService,
                                        CheckoutMoney checkoutMoney,
                                        Clock clock) {
         this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository, "menuCatalogRepository must not be null");
@@ -55,6 +57,8 @@ public class CatalogConfigurationService {
                 "menuSelectionGroupRepository must not be null");
         this.menuSelectionRuleRepository = Objects.requireNonNull(menuSelectionRuleRepository,
                 "menuSelectionRuleRepository must not be null");
+        this.menuItemComponentService = Objects.requireNonNull(menuItemComponentService,
+                "menuItemComponentService must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
@@ -123,7 +127,7 @@ public class CatalogConfigurationService {
         item.replaceTags(new LinkedHashSet<>(tags), clock.instant());
         menuCatalogRepository.flush();
         boolean requiresConfiguration = !menuCatalogRepository
-                .findIdsWithActiveSelectionGroups(List.of(item.getId())).isEmpty();
+                .findIdsWithRequiredSelectionGroups(List.of(item.getId())).isEmpty();
         return MenuItemResponse.from(item, requiresConfiguration);
     }
 
@@ -204,7 +208,7 @@ public class CatalogConfigurationService {
                 .map(group -> operationalGroup(group, candidates))
                 .toList();
         return new MenuItemConfigurationResponse(item.getId(), item.getName(), item.isStandaloneOrderable(),
-                requireNonNegativeMoney(item.getPriceAmount()), !groups.isEmpty(), groups);
+                requireNonNegativeMoney(item.getPriceAmount()), groups.stream().anyMatch(group -> group.minSelections() > 0), groups);
     }
 
     @Transactional(readOnly = true)
@@ -256,7 +260,7 @@ public class CatalogConfigurationService {
             if (rule != null) {
                 options.add(new MenuSelectionOptionResponse(candidate.getId(), candidate.getName(), candidate.getCategory(),
                         requirePositiveMoney(candidate.getPriceAmount()), candidate.isAvailable(),
-                        !activeGroupsFor(candidate).isEmpty(), ruleAdjustment(rule, candidate)));
+                        activeGroupsFor(candidate).stream().anyMatch(activeGroup -> activeGroup.getMinSelections() > 0), ruleAdjustment(rule, candidate)));
             }
         }
         return new MenuSelectionGroupConfigurationResponse(group.getId(), group.getName(), group.getMinSelections(),
@@ -307,12 +311,17 @@ public class CatalogConfigurationService {
                 Set<Long> descendants = new LinkedHashSet<>(ancestorItemIds);
                 descendants.add(selectedItem.getId());
                 ConfiguredNode nested = configureItem(selectedItem, selection.groups(), descendants, depth + 1);
+                List<DefaultComponentResponse> omittedComponents = menuItemComponentService
+                        .resolveActiveOmittedComponents(selectedItem.getId(), selection.omittedComponentIds()).stream()
+                        .map(DefaultComponentResponse::from)
+                        .toList();
                 BigDecimal adjustment = ruleAdjustment(rule, selectedItem);
                 BigDecimal contributionPerUnit = normalizeNonNegative(adjustment.add(nested.unitAdjustmentTotal()));
                 adjustments = normalizeNonNegative(adjustments.add(multiply(contributionPerUnit, selection.quantity())));
                 quotedSelections.add(new MenuQuoteSelectionResponse(selectedItem.getId(), selectedItem.getName(),
                         selection.quantity(), requirePositiveMoney(selectedItem.getPriceAmount()), adjustment,
-                        selectedItem.isStandaloneOrderable() || nested.groups().isEmpty(), nested.groups()));
+                        selectedItem.isStandaloneOrderable() || nested.groups().isEmpty(), nested.groups(),
+                        omittedComponents, normalizeOptionalNote(selection.note())));
             }
             quotedGroups.add(new MenuQuoteGroupResponse(group.getId(), group.getName(), quotedSelections));
         }
@@ -339,7 +348,8 @@ public class CatalogConfigurationService {
                 throw invalidConfiguration();
             }
             int quantity = requirePositiveQuantity(selection.quantity());
-            if (!selectedItemIds.add(selection.menuItemId()) || (!group.isAllowDuplicates() && quantity > 1)) {
+            if ((!group.isAllowDuplicates() && !selectedItemIds.add(selection.menuItemId()))
+                    || (!group.isAllowDuplicates() && quantity > 1)) {
                 throw new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_DUPLICATE_NOT_ALLOWED);
             }
             try {
@@ -528,6 +538,20 @@ public class CatalogConfigurationService {
         }
         String normalized = value.trim();
         if (normalized.isEmpty() || normalized.length() > maximumLength) {
+            throw invalidConfiguration();
+        }
+        return normalized;
+    }
+
+    private String normalizeOptionalNote(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().replaceAll("\\s+", " ");
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > 500) {
             throw invalidConfiguration();
         }
         return normalized;

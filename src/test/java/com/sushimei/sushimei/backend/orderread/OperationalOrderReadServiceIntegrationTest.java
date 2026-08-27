@@ -73,6 +73,7 @@ class OperationalOrderReadServiceIntegrationTest {
 
     @BeforeEach
     void clean() {
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
@@ -82,6 +83,7 @@ class OperationalOrderReadServiceIntegrationTest {
         jdbcTemplate.update("delete from public.menu_item_tags");
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
+        jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
         jdbcTemplate.update("delete from public.app_users");

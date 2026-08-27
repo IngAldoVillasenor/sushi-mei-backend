@@ -65,6 +65,7 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
         jdbcTemplate.update("delete from public.menu_item_tags");
+        jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
         entityManager.clear();
@@ -294,7 +295,7 @@ class TemporalPromotionQuoteServiceIntegrationTest {
         assertThat(quote(line("inactive-tag", california.id(), 1, List.of(), List.of())).lines().get(0).rewards()).isEmpty();
         assertThat(PromotionRewardConfigurationRequest.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
-                .containsExactly("rewardOrdinal", "menuItemId", "groups");
+                .containsExactly("rewardOrdinal", "menuItemId", "groups", "omittedComponentIds", "note");
     }
 
     @Test

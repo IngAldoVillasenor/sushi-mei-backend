@@ -78,6 +78,7 @@ class StructuredOrderFoundationsIntegrationTest {
 
     @BeforeEach
     void removeStructuredOrderFixtures() {
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
     }

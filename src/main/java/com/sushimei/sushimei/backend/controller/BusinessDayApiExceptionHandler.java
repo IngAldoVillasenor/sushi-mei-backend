@@ -37,6 +37,7 @@ public class BusinessDayApiExceptionHandler {
             case BUSINESS_DAY_CLOSED -> "El día de negocio ya fue cerrado.";
             case BUSINESS_DAY_HAS_ACTIVE_ORDERS -> "No se puede cerrar la caja mientras existan órdenes activas.";
             case BUSINESS_DAY_NOT_OPEN -> "No existe una caja abierta para cerrar.";
+            case BUSINESS_DAY_OPEN_REQUIRED -> "Se requiere una caja abierta para registrar esta venta.";
             case BUSINESS_DAY_NOT_CLOSED -> "El día de negocio no está cerrado.";
             case BUSINESS_DAY_REOPEN_NOT_ALLOWED -> "El día de negocio no se puede reabrir.";
         };

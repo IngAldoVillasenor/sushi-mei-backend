@@ -38,6 +38,7 @@ public record PromotionResponse(
 
     static PromotionResponse from(Promotion promotion) {
         List<PromotionTargetResponse> targets = promotion.getTargets().stream().map(PromotionTargetResponse::from)
+                .distinct()
                 .sorted(Comparator.comparing(PromotionTargetResponse::targetType).thenComparing(PromotionTargetResponse::targetId))
                 .toList();
         return new PromotionResponse(promotion.getId(), promotion.getName(), promotion.isActive(), promotion.getPriority(),

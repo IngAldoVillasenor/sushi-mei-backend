@@ -43,7 +43,7 @@ public class MenuCatalogService {
         }
         Set<Long> configuredItemIds = items.isEmpty()
                 ? Set.of()
-                : Set.copyOf(menuCatalogRepository.findIdsWithActiveSelectionGroups(
+                : Set.copyOf(menuCatalogRepository.findIdsWithRequiredSelectionGroups(
                         items.stream().map(MenuItem::getId).toList()));
         return items.stream().map(item -> MenuItemResponse.from(item, configuredItemIds.contains(item.getId()))).toList();
     }
@@ -52,7 +52,7 @@ public class MenuCatalogService {
     public MenuItemResponse get(Long id) {
         MenuItem item = findRequired(id);
         return MenuItemResponse.from(item,
-                !menuCatalogRepository.findIdsWithActiveSelectionGroups(List.of(item.getId())).isEmpty());
+                !menuCatalogRepository.findIdsWithRequiredSelectionGroups(List.of(item.getId())).isEmpty());
     }
 
     @Transactional
@@ -131,7 +131,7 @@ public class MenuCatalogService {
     }
 
     private MenuItemResponse responseFor(MenuItem item) {
-        boolean requiresConfiguration = !menuCatalogRepository.findIdsWithActiveSelectionGroups(List.of(item.getId())).isEmpty();
+        boolean requiresConfiguration = !menuCatalogRepository.findIdsWithRequiredSelectionGroups(List.of(item.getId())).isEmpty();
         return MenuItemResponse.from(item, requiresConfiguration);
     }
 

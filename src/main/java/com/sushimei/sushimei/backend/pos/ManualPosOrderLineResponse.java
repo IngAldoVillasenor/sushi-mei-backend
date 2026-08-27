@@ -18,10 +18,13 @@ public record ManualPosOrderLineResponse(
         BigDecimal finalLineTotal,
         ManualPromotionSnapshotResponse promotion,
         Integer rewardOrdinal,
+        String note,
+        List<ManualOrderComponentOmissionResponse> omittedComponents,
         List<ManualOrderSelectionSnapshotResponse> configuration,
         List<ManualPosOrderLineResponse> rewards
 ) {
     public ManualPosOrderLineResponse {
+        omittedComponents = List.copyOf(omittedComponents == null ? List.of() : omittedComponents);
         configuration = List.copyOf(configuration == null ? List.of() : configuration);
         rewards = List.copyOf(rewards == null ? List.of() : rewards);
     }

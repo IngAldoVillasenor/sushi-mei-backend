@@ -1,0 +1,313 @@
+[
+  {
+    "menuItemId": 13,
+    "expectedName": "Avocado ebi",
+    "description": "Pepino-Camarón-Queso Philadelphia-Aguacate por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"QUESO_PHILADELPHIA","displayName":"Queso Philadelphia","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"AGUACATE","displayName":"Aguacate","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 14,
+    "expectedName": "Avocado roll",
+    "description": "Pepino-Surimi-Queso crema-Aguacate por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"SURIMI","displayName":"Surimi","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"AGUACATE","displayName":"Aguacate","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 17,
+    "expectedName": "Banana ebi",
+    "description": "Pepino-Camarón-Aguacate-Queso crema-Plátano frito y Ajonjolí por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"PLATANO_FRITO","displayName":"Plátano frito","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6},
+      {"code":"AJONJOLI","displayName":"Ajonjolí","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":7}
+    ]
+  },
+  {
+    "menuItemId": 18,
+    "expectedName": "Banana roll",
+    "description": "Pepino-Queso crema-Surimi-Banana por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"SURIMI","displayName":"Surimi","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"BANANA","displayName":"Banana","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 23,
+    "expectedName": "California ebi",
+    "description": "Pepino-Aguacate-Camarón-Queso crema-Ajonjolí",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"AJONJOLI","displayName":"Ajonjolí","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 24,
+    "expectedName": "California roll",
+    "description": "Pepino-Queso crema-Surimi-Ajonjolí",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"SURIMI","displayName":"Surimi","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"AJONJOLI","displayName":"Ajonjolí","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 35,
+    "expectedName": "Chipotle roll",
+    "description": "Pollo-Aguacate-Pepino-Queso crema-Chipotle-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"POLLO","displayName":"Pollo","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"CHIPOTLE","displayName":"Chipotle","includedByDefault":true,"removable":true,"displayOrder":6},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":7}
+    ]
+  },
+  {
+    "menuItemId": 36,
+    "expectedName": "Chorizo roll",
+    "description": "Aguacate-Queso manchego-Chorizo-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_MANCHEGO","displayName":"Queso manchego","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"CHORIZO","displayName":"Chorizo","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 47,
+    "expectedName": "Empanizado ebi",
+    "description": "Pepino-Aguacate-Camarón-Queso crema-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 48,
+    "expectedName": "Empanizado especial",
+    "description": "Pepino-Aguacate-Queso Manchego-Carne de Res-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"QUESO_MANCHEGO","displayName":"Queso Manchego","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"CARNE_DE_RES","displayName":"Carne de Res","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 49,
+    "expectedName": "Empanizado roll",
+    "description": "Pepino-Queso crema-Surimi-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"SURIMI","displayName":"Surimi","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 52,
+    "expectedName": "Francés roll",
+    "description": "Pollo Asado-Salchicha-Queso manchego-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"POLLO_ASADO","displayName":"Pollo Asado","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"SALCHICHA","displayName":"Salchicha","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"QUESO_MANCHEGO","displayName":"Queso manchego","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 66,
+    "expectedName": "Mango roll",
+    "description": "Pepino-Queso crema-Aguacate-Camarón-Mango por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"MANGO","displayName":"Mango","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 68,
+    "expectedName": "Mar y tierra",
+    "description": "Queso crema-Camarón-Arrachera-Aguacate-Empanizado por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"ARRACHERA","displayName":"Arrachera","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"EMPANIZADO","displayName":"Empanizado","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 79,
+    "expectedName": "Philadelphia ebi",
+    "description": "Pepino-Aguacate-Camarón-Queso Philadelphia-Ajonjolí",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"CAMARON","displayName":"Camarón","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"QUESO_PHILADELPHIA","displayName":"Queso Philadelphia","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"AJONJOLI","displayName":"Ajonjolí","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 80,
+    "expectedName": "Philadelphia roll",
+    "description": "Pepino-Surimi-Queso crema por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"SURIMI","displayName":"Surimi","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":4}
+    ]
+  },
+  {
+    "menuItemId": 82,
+    "expectedName": "Queso roll Frío",
+    "description": "Pepino-Queso crema-Aguacate-Alga por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":4}
+    ]
+  },
+  {
+    "menuItemId": 83,
+    "expectedName": "Queso roll Frito",
+    "description": "Pepino-Queso crema-Aguacate-Alga por fuera-Frito",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":4}
+    ]
+  },
+  {
+    "menuItemId": 85,
+    "expectedName": "Salmón roll",
+    "description": "Queso crema-Pepino-Aguacate-Salmon por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"SALMON","displayName":"Salmón","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":5}
+    ]
+  },
+  {
+    "menuItemId": 105,
+    "expectedName": "Takis roll",
+    "description": "Pollo-Aguacate-Queso crema-Pepino-Takis Fuego por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"POLLO","displayName":"Pollo","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"TAKIS_FUEGO","displayName":"Takis Fuego","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 106,
+    "expectedName": "Tampico especial",
+    "description": "Pepino-Aguacate-Surimi-Queso crema-Tampico por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"AGUACATE","displayName":"Aguacate","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"SURIMI","displayName":"Surimi","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"TAMPICO","displayName":"Tampico","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":6}
+    ]
+  },
+  {
+    "menuItemId": 107,
+    "expectedName": "Tampico roll",
+    "description": "Pepino-Queso crema-Aderezo Tampico por fuera",
+    "components": [
+      {"code":"ARROZ","displayName":"Arroz","includedByDefault":true,"removable":false,"displayOrder":0},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"PEPINO","displayName":"Pepino","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"QUESO_CREMA","displayName":"Queso crema","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"ADEREZO_TAMPICO","displayName":"Aderezo Tampico","detail":"Por fuera","includedByDefault":true,"removable":true,"displayOrder":4}
+    ]
+  },
+  {
+    "menuItemId": 84,
+    "expectedName": "Ramen Tonkotsu",
+    "description": "Fideo - Elote - Huevo - Cebollín - Champiñón - Caldo de Puerco - Carne Chashu - Alga - Naruto - Germen.\nEXTRAS: Calsa Macha $24,99\nCarne Chashu (50G) $39,99",
+    "components": [
+      {"code":"FIDEO","displayName":"Fideo","includedByDefault":true,"removable":true,"displayOrder":0},
+      {"code":"ELOTE","displayName":"Elote","includedByDefault":true,"removable":true,"displayOrder":1},
+      {"code":"HUEVO","displayName":"Huevo","includedByDefault":true,"removable":true,"displayOrder":2},
+      {"code":"CEBOLLIN","displayName":"Cebollín","includedByDefault":true,"removable":true,"displayOrder":3},
+      {"code":"CHAMPINON","displayName":"Champiñón","includedByDefault":true,"removable":true,"displayOrder":4},
+      {"code":"CALDO_DE_PUERCO","displayName":"Caldo de Puerco","includedByDefault":true,"removable":true,"displayOrder":5},
+      {"code":"CARNE_CHASHU","displayName":"Carne Chashu","includedByDefault":true,"removable":true,"displayOrder":6},
+      {"code":"ALGA","displayName":"Alga","includedByDefault":true,"removable":true,"displayOrder":7},
+      {"code":"NARUTO","displayName":"Naruto","includedByDefault":true,"removable":true,"displayOrder":8},
+      {"code":"GERMEN","displayName":"Germen","includedByDefault":true,"removable":true,"displayOrder":9}
+    ]
+  }
+]

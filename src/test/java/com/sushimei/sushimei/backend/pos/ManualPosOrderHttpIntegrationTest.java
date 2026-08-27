@@ -61,6 +61,7 @@ class ManualPosOrderHttpIntegrationTest {
     void clean() {
         jdbcTemplate.update("delete from public.business_day_closures");
         jdbcTemplate.update("delete from public.business_days");
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
@@ -74,6 +75,7 @@ class ManualPosOrderHttpIntegrationTest {
         jdbcTemplate.update("delete from public.menu_item_tags");
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
+        jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
     }

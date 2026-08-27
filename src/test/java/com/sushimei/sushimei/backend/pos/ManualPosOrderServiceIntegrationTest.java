@@ -7,6 +7,9 @@ import com.sushimei.sushimei.backend.catalog.CatalogConfigurationService;
 import com.sushimei.sushimei.backend.catalog.MenuCatalogService;
 import com.sushimei.sushimei.backend.catalog.MenuItemPricingMode;
 import com.sushimei.sushimei.backend.catalog.MenuItemResponse;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponent;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponentRepository;
+import com.sushimei.sushimei.backend.catalog.MenuCatalogRepository;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest;
 import com.sushimei.sushimei.backend.catalog.MenuSelectionGroupResponse;
@@ -22,6 +25,8 @@ import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderLineKind;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderSource;
+import com.sushimei.sushimei.backend.orderread.OperationalOrderDetailResponse;
+import com.sushimei.sushimei.backend.orderread.OperationalOrderReadService;
 import com.sushimei.sushimei.backend.promotion.CreatePromotionRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionBenefitType;
 import com.sushimei.sushimei.backend.promotion.PromotionService;
@@ -74,11 +79,15 @@ class ManualPosOrderServiceIntegrationTest {
     @Autowired private PromotionService promotionService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private BusinessDayService businessDayService;
+    @Autowired private MenuCatalogRepository menuCatalogRepository;
+    @Autowired private MenuItemDefaultComponentRepository componentRepository;
+    @Autowired private OperationalOrderReadService operationalOrderReadService;
 
     @BeforeEach
     void clean() {
         jdbcTemplate.update("delete from public.business_day_closures");
         jdbcTemplate.update("delete from public.business_days");
+        jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
@@ -88,9 +97,50 @@ class ManualPosOrderServiceIntegrationTest {
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
         jdbcTemplate.update("delete from public.menu_item_tags");
+        jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
         TestClock.set(Instant.parse("2026-08-10T18:00:00Z"));
+    }
+
+    @Test
+    void persistsServerAuthorizedComponentOmissionsAndNormalizedNotesWithoutChangingTheQuotePrice() {
+        MenuItemResponse california = item("California", "79.00");
+        MenuItemDefaultComponent alga = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(california.id()).orElseThrow(), "ALGA", "Alga", null, true, true, 1));
+        MenuItemDefaultComponent surimi = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(california.id()).orElseThrow(), "SURIMI", "Surimi", null, true, true, 2));
+        Long userId = insertUser("cashier-omissions");
+        ManualPosOrderRequest request = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("california-custom", california.id(), 1, List.of(), List.of(),
+                        List.of(surimi.getId(), alga.getId()), "  Sin   ajonjolí   ")));
+
+        ManualPosOrderResponse response = manualPosOrderService.create(userId, request);
+
+        assertThat(response.total()).isEqualByComparingTo("79.00");
+        assertThat(response.lines()).singleElement().satisfies(line -> {
+            assertThat(line.note()).isEqualTo("Sin ajonjolí");
+            assertThat(line.omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                    .containsExactly("ALGA", "SURIMI");
+            assertThat(line.finalLineTotal()).isEqualByComparingTo("79.00");
+        });
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_line_component_omissions", Integer.class))
+                .isEqualTo(2);
+
+        ManualPosOrderRequest changedCustomizationWithSameRequestId = new ManualPosOrderRequest(
+                request.requestId(), OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("california-custom", california.id(), 1, List.of(), List.of(),
+                        List.of(alga.getId()), "Sin ajonjolí")));
+        assertError(() -> manualPosOrderService.create(userId, changedCustomizationWithSameRequestId),
+                ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+
+        ManualPosOrderRequest invalid = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("invalid-custom", california.id(), 1, List.of(), List.of(),
+                        List.of(999_999L), null)));
+        assertThatThrownBy(() -> manualPosOrderService.create(userId, invalid))
+                .isInstanceOf(com.sushimei.sushimei.backend.catalog.CatalogConfigurationException.class);
     }
 
     @Test
@@ -135,6 +185,28 @@ class ManualPosOrderServiceIntegrationTest {
                 .isInstanceOf(ManualPosOrderException.class)
                 .extracting(exception -> ((ManualPosOrderException) exception).getError())
                 .isEqualTo(ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void paymentMethodDoesNotBecomePaymentNotesInTheOperationalOrderDetail() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-payment-notes");
+
+        for (OrderPaymentMethod paymentMethod : List.of(OrderPaymentMethod.CASH, OrderPaymentMethod.TRANSFER,
+                OrderPaymentMethod.CARD)) {
+            ManualPosOrderResponse created = manualPosOrderService.create(userId, new ManualPosOrderRequest(
+                    UUID.randomUUID(), OrderFulfillmentType.PICKUP, paymentMethod, null, "Ana", null,
+                    List.of(new PromotionQuoteLineRequest("payment-" + paymentMethod.name(), california.id(), 1,
+                            List.of(), List.of()))));
+
+            OperationalOrderDetailResponse detail = operationalOrderReadService.order(created.id());
+
+            assertThat(detail.paymentMethod()).isEqualTo(paymentMethod);
+            assertThat(detail.paymentNotes()).isNull();
+        }
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders where payment_notes is not null",
+                Integer.class)).isZero();
     }
 
     @Test
@@ -382,10 +454,93 @@ class ManualPosOrderServiceIntegrationTest {
     }
 
     @Test
+    void manualPricedLinesShareOnePreparingOrderWithCatalogLinesAndAreIdempotent() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-manual-priced");
+        UUID requestId = UUID.randomUUID();
+        ManualPosOrderRequest request = new ManualPosOrderRequest(requestId, OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("catalog", california.id(), 1, List.of(), List.of())),
+                List.of(new ManualPricedLineRequest("manual", "  Artículo   especial  ", 2,
+                        new BigDecimal("60.00"))));
+
+        ManualPosOrderResponse created = manualPosOrderService.create(userId, request);
+        ManualPosOrderResponse retry = manualPosOrderService.create(userId, request);
+
+        assertThat(created.status()).isEqualTo("PREPARING");
+        assertThat(created.total()).isEqualByComparingTo("199.00");
+        assertThat(created.lines()).extracting(ManualPosOrderLineResponse::lineKind)
+                .containsExactly(OrderLineKind.PAID, OrderLineKind.MANUAL_PRICED_LINE);
+        assertThat(created.lines()).filteredOn(line -> line.lineKind() == OrderLineKind.MANUAL_PRICED_LINE)
+                .singleElement().satisfies(line -> {
+                    assertThat(line.name()).isEqualTo("Artículo especial");
+                    assertThat(line.sourceMenuItemId()).isNull();
+                    assertThat(line.finalUnitAmount()).isEqualByComparingTo("60.00");
+                    assertThat(line.finalLineTotal()).isEqualByComparingTo("120.00");
+                    assertThat(line.promotion()).isNull();
+                });
+        assertThat(retry.result()).isEqualTo(ManualOrderResult.ALREADY_CREATED);
+
+        ManualPosOrderRequest changed = new ManualPosOrderRequest(requestId, OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CASH, null, "Ana", null, request.lines(),
+                List.of(new ManualPricedLineRequest("manual", "Artículo especial", 2, new BigDecimal("61.00"))));
+        assertError(() -> manualPosOrderService.create(userId, changed), ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT);
+    }
+
+    @Test
+    void manualOnlyCheckoutCreatesOnePreparingOperationalOrderAndValidatesManualLineInput() {
+        Long userId = insertUser("cashier-manual-only");
+        UUID requestId = UUID.randomUUID();
+        ManualPosOrderRequest request = new ManualPosOrderRequest(requestId, OrderFulfillmentType.PICKUP,
+                OrderPaymentMethod.CARD, null, "Ana", null, List.of(),
+                List.of(new ManualPricedLineRequest("manual-only", "Servicio especial", 2, new BigDecimal("45.50"))));
+
+        ManualPosOrderResponse created = manualPosOrderService.create(userId, request);
+        ManualPosOrderResponse retry = manualPosOrderService.create(userId, request);
+
+        assertThat(created.orderSource()).isEqualTo(OrderSource.ANDROID_MANUAL);
+        assertThat(created.status()).isEqualTo("PREPARING");
+        assertThat(created.fulfillmentType()).isEqualTo(OrderFulfillmentType.PICKUP);
+        assertThat(created.paymentMethod()).isEqualTo(OrderPaymentMethod.CARD);
+        assertThat(created.total()).isEqualByComparingTo("91.00");
+        assertThat(created.lines()).singleElement().satisfies(line -> {
+            assertThat(line.lineKind()).isEqualTo(OrderLineKind.MANUAL_PRICED_LINE);
+            assertThat(line.sourceMenuItemId()).isNull();
+            assertThat(line.promotion()).isNull();
+            assertThat(line.finalUnitAmount()).isEqualByComparingTo("45.50");
+            assertThat(line.finalLineTotal()).isEqualByComparingTo("91.00");
+        });
+        assertThat(retry.result()).isEqualTo(ManualOrderResult.ALREADY_CREATED);
+        assertThat(retry.id()).isEqualTo(created.id());
+        assertThat(operationalOrderReadService.order(created.id()).lines()).singleElement().satisfies(line -> {
+            assertThat(line.lineKind()).isEqualTo(OrderLineKind.MANUAL_PRICED_LINE);
+            assertThat(line.name()).isEqualTo("Servicio especial");
+            assertThat(line.promotion()).isNull();
+        });
+
+        ManualPosOrderRequest zeroAmount = new ManualPosOrderRequest(UUID.randomUUID(),
+                OrderFulfillmentType.PICKUP, OrderPaymentMethod.CARD, null, "Ana", null, List.of(),
+                List.of(new ManualPricedLineRequest("zero", "Invalid", 1, BigDecimal.ZERO)));
+        assertError(() -> manualPosOrderService.create(userId, zeroAmount), ManualPosOrderError.ORDER_INVALID);
+        ManualPosOrderRequest negativeAmount = new ManualPosOrderRequest(UUID.randomUUID(),
+                OrderFulfillmentType.PICKUP, OrderPaymentMethod.CARD, null, "Ana", null, List.of(),
+                List.of(new ManualPricedLineRequest("negative", "Invalid", 1, new BigDecimal("-1.00"))));
+        assertError(() -> manualPosOrderService.create(userId, negativeAmount), ManualPosOrderError.ORDER_INVALID);
+        MenuItemResponse catalog = item("Catalog", "10.00");
+        ManualPosOrderRequest duplicateLineKey = new ManualPosOrderRequest(UUID.randomUUID(),
+                OrderFulfillmentType.PICKUP, OrderPaymentMethod.CARD, null, "Ana", null,
+                List.of(new PromotionQuoteLineRequest("duplicate", catalog.id(), 1, List.of(), List.of())),
+                List.of(new ManualPricedLineRequest("duplicate", "Invalid", 1, new BigDecimal("1.00"))));
+        assertError(() -> manualPosOrderService.create(userId, duplicateLineKey), ManualPosOrderError.ORDER_INVALID);
+    }
+
+    @Test
     void bogoRewardKeepsItsOwnConfigurationAndChargedAdjustment() {
         TestClock.set(Instant.parse("2026-08-13T18:00:00Z"));
         MenuItemResponse california = item("California", "79.00");
         MenuItemResponse topping = item("Olas", "15.00");
+        MenuItemDefaultComponent alga = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(california.id()).orElseThrow(), "ALGA", "Alga", null, true, true, 0));
         MenuSelectionGroupResponse group = catalogConfigurationService.createGroup(california.id(),
                 new CreateMenuSelectionGroupRequest("Topping", 0, 1, false, 0));
         catalogConfigurationService.createRule(group.id(), new CreateMenuSelectionRuleRequest(
@@ -397,8 +552,9 @@ class ManualPosOrderServiceIntegrationTest {
         ManualPosOrderRequest request = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
                 OrderPaymentMethod.CASH, null, "Ana", new BigDecimal("100.00"),
                 List.of(new PromotionQuoteLineRequest("line", california.id(), 1, List.of(), List.of(
-                        new PromotionRewardConfigurationRequest(1, List.of(new MenuQuoteGroupRequest(group.id(),
-                                List.of(new MenuQuoteSelectionRequest(topping.id(), 1, List.of())))))))));
+                        new PromotionRewardConfigurationRequest(1, null, List.of(new MenuQuoteGroupRequest(group.id(),
+                                List.of(new MenuQuoteSelectionRequest(topping.id(), 1, List.of())))), List.of(alga.getId()),
+                                "  Sin   alga  ")))));
 
         ManualPosOrderResponse created = manualPosOrderService.create(insertUser("cashier-reward-config"), request);
 
@@ -411,8 +567,75 @@ class ManualPosOrderServiceIntegrationTest {
                 assertThat(reward.finalLineTotal()).isEqualByComparingTo("15.00");
                 assertThat(reward.configuration()).singleElement().satisfies(snapshot ->
                         assertThat(snapshot.itemName()).isEqualTo("Olas"));
+                assertThat(reward.note()).isEqualTo("Sin alga");
+                assertThat(reward.omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                        .containsExactly("ALGA");
             });
         });
+    }
+
+    @Test
+    void eligibleItemBogoKeepsPaidAndRewardCustomizationsAsIndependentImmutableEvidence() {
+        TestClock.set(Instant.parse("2026-08-13T18:00:00Z"));
+        MenuItemResponse paidItem = item("Paid item", "79.00");
+        MenuItemResponse rewardItem = item("Reward item", "99.00");
+        MenuItemResponse paidModifier = item("Paid modifier", "15.00");
+        MenuItemResponse rewardModifier = item("Reward modifier", "18.00");
+        MenuItemDefaultComponent paidComponent = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(paidItem.id()).orElseThrow(), "PAID_COMPONENT", "Paid component",
+                "Paid detail", true, true, 0));
+        MenuItemDefaultComponent rewardComponent = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(rewardItem.id()).orElseThrow(), "REWARD_COMPONENT", "Reward component",
+                "Reward detail", true, true, 0));
+        MenuSelectionGroupResponse paidGroup = catalogConfigurationService.createGroup(paidItem.id(),
+                new CreateMenuSelectionGroupRequest("Paid modifier", 0, 1, false, 0));
+        catalogConfigurationService.createRule(paidGroup.id(), new CreateMenuSelectionRuleRequest(
+                SelectionRuleTargetType.ITEM, paidModifier.id(), SelectionPricingPolicy.FULL_ITEM_PRICE, null, null, 0));
+        MenuSelectionGroupResponse rewardGroup = catalogConfigurationService.createGroup(rewardItem.id(),
+                new CreateMenuSelectionGroupRequest("Reward modifier", 0, 1, false, 0));
+        catalogConfigurationService.createRule(rewardGroup.id(), new CreateMenuSelectionRuleRequest(
+                SelectionRuleTargetType.ITEM, rewardModifier.id(), SelectionPricingPolicy.FULL_ITEM_PRICE, null, null, 0));
+        promotionService.create(new CreatePromotionRequest("Eligible pair", true, 10,
+                PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM, null, 1, 1, true, null, null, Set.of(4),
+                List.of(new PromotionTargetRequest(PromotionTargetType.ITEM, paidItem.id()),
+                        new PromotionTargetRequest(PromotionTargetType.ITEM, rewardItem.id()))));
+
+        ManualPosOrderResponse created = manualPosOrderService.create(insertUser("cashier-eligible-bogo"),
+                new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH,
+                        null, "Ana", null, List.of(new PromotionQuoteLineRequest("paid", paidItem.id(), 1,
+                        List.of(new MenuQuoteGroupRequest(paidGroup.id(),
+                                List.of(new MenuQuoteSelectionRequest(paidModifier.id(), 1, List.of())))),
+                        List.of(new PromotionRewardConfigurationRequest(1, rewardItem.id(),
+                                List.of(new MenuQuoteGroupRequest(rewardGroup.id(),
+                                        List.of(new MenuQuoteSelectionRequest(rewardModifier.id(), 1, List.of())))),
+                                List.of(rewardComponent.getId()), "Reward note")),
+                        List.of(paidComponent.getId()), "Paid note"))));
+
+        assertThat(created.total()).isEqualByComparingTo("112.00");
+        assertThat(created.lines()).singleElement().satisfies(paid -> {
+            assertThat(paid.sourceMenuItemId()).isEqualTo(paidItem.id());
+            assertThat(paid.note()).isEqualTo("Paid note");
+            assertThat(paid.omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                    .containsExactly("PAID_COMPONENT");
+            assertThat(paid.configuration()).singleElement().satisfies(selection ->
+                    assertThat(selection.menuItemId()).isEqualTo(paidModifier.id()));
+            assertThat(paid.rewards()).singleElement().satisfies(reward -> {
+                assertThat(reward.sourceMenuItemId()).isEqualTo(rewardItem.id());
+                assertThat(reward.chargedBaseUnitPrice()).isEqualByComparingTo("0.00");
+                assertThat(reward.configurationAdjustmentAmount()).isEqualByComparingTo("18.00");
+                assertThat(reward.note()).isEqualTo("Reward note");
+                assertThat(reward.omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                        .containsExactly("REWARD_COMPONENT");
+                assertThat(reward.configuration()).singleElement().satisfies(selection ->
+                        assertThat(selection.menuItemId()).isEqualTo(rewardModifier.id()));
+            });
+        });
+        OperationalOrderDetailResponse operational = operationalOrderReadService.order(created.id());
+        assertThat(operational.lines()).extracting(line -> line.lineKind()).containsExactly(
+                OrderLineKind.PAID, OrderLineKind.PROMOTION_REWARD);
+        assertThat(operational.lines().get(0).note()).isEqualTo("Paid note");
+        assertThat(operational.lines().get(1).note()).isEqualTo("Reward note");
+        assertThat(operational.lines().get(1).sourceMenuItemId()).isEqualTo(rewardItem.id());
     }
 
     @Test
@@ -520,6 +743,8 @@ class ManualPosOrderServiceIntegrationTest {
         MenuItemResponse root = item("Caja", "250.00");
         MenuItemResponse roll = item("California", "79.00");
         MenuItemResponse topping = item("Olas", "15.00");
+        MenuItemDefaultComponent alga = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(roll.id()).orElseThrow(), "ALGA", "Alga", "Por fuera", true, true, 0));
         MenuSelectionGroupResponse rootGroup = catalogConfigurationService.createGroup(root.id(),
                 new CreateMenuSelectionGroupRequest("Rollo", 1, 1, false, 0));
         catalogConfigurationService.createRule(rootGroup.id(), new CreateMenuSelectionRuleRequest(
@@ -531,7 +756,8 @@ class ManualPosOrderServiceIntegrationTest {
                 null, new BigDecimal("15.00"), 0));
         MenuQuoteGroupRequest toppingGroup = new MenuQuoteGroupRequest(rollGroup.id(),
                 List.of(new MenuQuoteSelectionRequest(topping.id(), 1, List.of())));
-        MenuQuoteSelectionRequest configuredRoll = new MenuQuoteSelectionRequest(roll.id(), 1, List.of(toppingGroup));
+        MenuQuoteSelectionRequest configuredRoll = new MenuQuoteSelectionRequest(roll.id(), 1, List.of(toppingGroup),
+                List.of(alga.getId()), "  Sin   alga  ");
         ManualPosOrderRequest request = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
                 OrderPaymentMethod.CASH, null, "Ana", new BigDecimal("300.00"),
                 List.of(new PromotionQuoteLineRequest("recursive", root.id(), 1,
@@ -548,6 +774,74 @@ class ManualPosOrderServiceIntegrationTest {
                     .filter(snapshot -> snapshot.menuItemId().equals(topping.id())).findFirst().orElseThrow();
             assertThat(selectedRoll.parentSelectionSnapshotId()).isNull();
             assertThat(selectedTopping.parentSelectionSnapshotId()).isEqualTo(selectedRoll.id());
+            assertThat(selectedRoll.note()).isEqualTo("Sin alga");
+            assertThat(selectedRoll.omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                    .containsExactly("ALGA");
+        });
+        OperationalOrderDetailResponse operational = operationalOrderReadService.order(created.id());
+        assertThat(operational.lines()).singleElement().satisfies(line -> {
+            var selectedRoll = line.configuration().stream().filter(snapshot -> snapshot.menuItemId().equals(roll.id()))
+                    .findFirst().orElseThrow();
+            assertThat(selectedRoll.note()).isEqualTo("Sin alga");
+            assertThat(selectedRoll.omittedComponents())
+                    .extracting(com.sushimei.sushimei.backend.orderread.OperationalOrderComponentOmissionResponse::code)
+                    .containsExactly("ALGA");
+        });
+        jdbcTemplate.update("update public.menu_items set name = 'Changed roll' where id = ?", roll.id());
+        jdbcTemplate.update("update public.menu_selection_groups set name = 'Changed group', active = false where id = ?", rollGroup.id());
+        jdbcTemplate.update("update public.menu_item_default_components set display_name = 'Changed component', "
+                + "component_detail = 'Changed detail', active = false where id = ?", alga.getId());
+
+        OperationalOrderDetailResponse reread = operationalOrderReadService.order(created.id());
+        assertThat(reread.lines()).singleElement().satisfies(line -> {
+            var selectedRoll = line.configuration().stream().filter(snapshot -> snapshot.menuItemId().equals(roll.id()))
+                    .findFirst().orElseThrow();
+            var selectedModifier = line.configuration().stream().filter(snapshot -> snapshot.menuItemId().equals(topping.id()))
+                    .findFirst().orElseThrow();
+            assertThat(selectedRoll.itemName()).isEqualTo("California");
+            assertThat(selectedRoll.groupName()).isEqualTo("Rollo");
+            assertThat(selectedRoll.note()).isEqualTo("Sin alga");
+            assertThat(selectedRoll.omittedComponents()).singleElement().satisfies(component -> {
+                assertThat(component.code()).isEqualTo("ALGA");
+                assertThat(component.displayName()).isEqualTo("Alga");
+                assertThat(component.detail()).isEqualTo("Por fuera");
+            });
+            assertThat(selectedModifier.itemName()).isEqualTo("Olas");
+            assertThat(selectedModifier.groupName()).isEqualTo("Topping");
+        });
+    }
+
+    @Test
+    void repeatedSelectedItemOccurrencesRetainIndependentComponentOmissionsAndNotes() {
+        MenuItemResponse parent = item("Paquete", "200.00");
+        MenuItemResponse selected = item("California", "79.00");
+        MenuItemDefaultComponent alga = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(selected.id()).orElseThrow(), "ALGA", "Alga", null, true, true, 0));
+        MenuItemDefaultComponent surimi = componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(selected.id()).orElseThrow(), "SURIMI", "Surimi", null, true, true, 1));
+        MenuSelectionGroupResponse group = catalogConfigurationService.createGroup(parent.id(),
+                new CreateMenuSelectionGroupRequest("Items", 2, 2, true, 0));
+        catalogConfigurationService.createRule(group.id(), new CreateMenuSelectionRuleRequest(
+                SelectionRuleTargetType.ITEM, selected.id(), SelectionPricingPolicy.INCLUDED, null, null, 0));
+
+        ManualPosOrderResponse created = manualPosOrderService.create(insertUser("cashier-occurrences"),
+                new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH,
+                        null, "Ana", null, List.of(new PromotionQuoteLineRequest("parent", parent.id(), 1,
+                        List.of(new MenuQuoteGroupRequest(group.id(), List.of(
+                                new MenuQuoteSelectionRequest(selected.id(), 1, List.of(), List.of(alga.getId()), "Sin alga"),
+                                new MenuQuoteSelectionRequest(selected.id(), 1, List.of(), List.of(surimi.getId()), "Sin surimi")))),
+                        List.of()))));
+
+        assertThat(created.lines()).singleElement().satisfies(line -> {
+            List<ManualOrderSelectionSnapshotResponse> occurrences = line.configuration().stream()
+                    .filter(snapshot -> snapshot.menuItemId().equals(selected.id())).toList();
+            assertThat(occurrences).hasSize(2);
+            assertThat(occurrences).extracting(ManualOrderSelectionSnapshotResponse::note)
+                    .containsExactly("Sin alga", "Sin surimi");
+            assertThat(occurrences.get(0).omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                    .containsExactly("ALGA");
+            assertThat(occurrences.get(1).omittedComponents()).extracting(ManualOrderComponentOmissionResponse::code)
+                    .containsExactly("SURIMI");
         });
     }
 

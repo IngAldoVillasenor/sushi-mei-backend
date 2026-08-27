@@ -3,6 +3,9 @@ package com.sushimei.sushimei.backend.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sushimei.sushimei.backend.catalog.CreateMenuItemRequest;
+import com.sushimei.sushimei.backend.catalog.MenuCatalogRepository;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponent;
+import com.sushimei.sushimei.backend.catalog.MenuItemDefaultComponentRepository;
 import com.sushimei.sushimei.backend.catalog.MenuItemPricingMode;
 import com.sushimei.sushimei.backend.catalog.UpdateMenuItemRequest;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
@@ -53,6 +56,12 @@ class MenuCatalogControllerIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private MenuCatalogRepository menuCatalogRepository;
+
+    @Autowired
+    private MenuItemDefaultComponentRepository componentRepository;
+
     @BeforeEach
     void removeCatalogFixtures() {
         jdbcTemplate.update("delete from public.promotion_targets");
@@ -61,6 +70,7 @@ class MenuCatalogControllerIntegrationTest {
         jdbcTemplate.update("delete from public.menu_selection_rules");
         jdbcTemplate.update("delete from public.menu_selection_groups");
         jdbcTemplate.update("delete from public.menu_item_tags");
+        jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
     }
@@ -138,6 +148,26 @@ class MenuCatalogControllerIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("MENU_ITEM_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("Elemento de menú no encontrado."));
+    }
+
+    @Test
+    void componentsEndpointReturnsTheCompleteGenericDefaultComponentDefinitionForAnyMenuItem() throws Exception {
+        CatalogItemView created = create(item("Elemento configurable", "Prueba", "Varios", "79.00", true, 0));
+        componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(created.id()).orElseThrow(),
+                "CABLE_USB", "Cable USB", "2 metros", true, true, 0));
+        componentRepository.saveAndFlush(MenuItemDefaultComponent.create(
+                menuCatalogRepository.findById(created.id()).orElseThrow(),
+                "BATERIA", "Batería", null, true, false, 1));
+
+        mockMvc.perform(get(BASE_PATH + "/{id}/components", created.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].code").value("CABLE_USB"))
+                .andExpect(jsonPath("$[0].detail").value("2 metros"))
+                .andExpect(jsonPath("$[0].includedByDefault").value(true))
+                .andExpect(jsonPath("$[0].removable").value(true))
+                .andExpect(jsonPath("$[1].code").value("BATERIA"))
+                .andExpect(jsonPath("$[1].removable").value(false));
     }
 
     @Test

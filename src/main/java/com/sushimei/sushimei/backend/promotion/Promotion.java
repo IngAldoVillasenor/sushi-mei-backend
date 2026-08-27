@@ -67,7 +67,7 @@ public class Promotion {
     private Set<Integer> isoWeekdays = new LinkedHashSet<>();
 
     @OneToMany(mappedBy = "promotion", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    private List<PromotionTarget> targets = new java.util.ArrayList<>();
+    private Set<PromotionTarget> targets = new LinkedHashSet<>();
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -150,11 +150,26 @@ public class Promotion {
         this.validUntil = validUntil;
         this.isoWeekdays.clear();
         this.isoWeekdays.addAll(Objects.requireNonNull(isoWeekdays, "isoWeekdays must not be null"));
-        this.targets.clear();
-        for (PromotionTargetDraft target : Objects.requireNonNull(targetDrafts, "targets must not be null")) {
-            this.targets.add(PromotionTarget.create(this, target.targetMenuItem(), target.targetTag()));
-        }
+        replaceTargets(Objects.requireNonNull(targetDrafts, "targets must not be null"));
         this.updatedAt = Objects.requireNonNull(now, "now must not be null");
+    }
+
+    private void replaceTargets(List<PromotionTargetDraft> targetDrafts) {
+        targets.removeIf(existing -> targetDrafts.stream().noneMatch(target -> matches(existing, target)));
+        for (PromotionTargetDraft target : targetDrafts) {
+            if (targets.stream().noneMatch(existing -> matches(existing, target))) {
+                targets.add(PromotionTarget.create(this, target.targetMenuItem(), target.targetTag()));
+            }
+        }
+    }
+
+    private boolean matches(PromotionTarget existing, PromotionTargetDraft target) {
+        return (target.targetMenuItem() != null
+                && existing.getTargetMenuItem() != null
+                && Objects.equals(existing.getTargetMenuItem().getId(), target.targetMenuItem().getId()))
+                || (target.targetTag() != null
+                && existing.getTargetTag() != null
+                && Objects.equals(existing.getTargetTag().getId(), target.targetTag().getId()));
     }
 
     public Long getId() { return id; }

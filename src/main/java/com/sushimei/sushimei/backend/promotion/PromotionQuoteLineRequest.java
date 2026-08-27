@@ -13,10 +13,22 @@ public record PromotionQuoteLineRequest(
         @NotNull @Min(1) Long menuItemId,
         @NotNull @Min(1) Integer quantity,
         List<@NotNull @Valid MenuQuoteGroupRequest> groups,
-        List<@NotNull @Valid PromotionRewardConfigurationRequest> rewardConfigurations
+        List<@NotNull @Valid PromotionRewardConfigurationRequest> rewardConfigurations,
+        List<@NotNull @Min(1) Long> omittedComponentIds,
+        String note
 ) {
     public PromotionQuoteLineRequest {
         groups = List.copyOf(groups == null ? List.of() : groups);
         rewardConfigurations = List.copyOf(rewardConfigurations == null ? List.of() : rewardConfigurations);
+        omittedComponentIds = List.copyOf(omittedComponentIds == null ? List.of() : omittedComponentIds);
+    }
+
+    /** Source-compatible constructor for clients without line customizations. */
+    public PromotionQuoteLineRequest(String lineKey,
+                                     Long menuItemId,
+                                     Integer quantity,
+                                     List<MenuQuoteGroupRequest> groups,
+                                     List<PromotionRewardConfigurationRequest> rewardConfigurations) {
+        this(lineKey, menuItemId, quantity, groups, rewardConfigurations, List.of(), null);
     }
 }

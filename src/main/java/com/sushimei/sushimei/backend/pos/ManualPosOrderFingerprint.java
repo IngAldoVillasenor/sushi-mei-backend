@@ -18,19 +18,30 @@ import org.springframework.stereotype.Component;
 @Component
 public class ManualPosOrderFingerprint {
 
-    public String fingerprint(ManualPosOrderRequest request,
+    private static final int V22_EXTENSION_MAGIC = 0x56323201;
+
+    public String fingerprint(com.sushimei.sushimei.backend.entity.OrderFulfillmentType fulfillmentType,
+                              com.sushimei.sushimei.backend.entity.OrderPaymentMethod paymentMethod,
                               String deliveryAddress,
                               String pickupName,
-                              BigDecimal cashDenomination) {
+                              BigDecimal cashDenomination,
+                              List<PromotionQuoteLineRequest> lines,
+                              List<NormalizedManualPricedLine> manualLines) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             DataOutputStream output = new DataOutputStream(bytes);
-            writeString(output, request.fulfillmentType() == null ? null : request.fulfillmentType().name());
-            writeString(output, request.paymentMethod() == null ? null : request.paymentMethod().name());
+            writeString(output, fulfillmentType == null ? null : fulfillmentType.name());
+            writeString(output, paymentMethod == null ? null : paymentMethod.name());
             writeString(output, deliveryAddress);
             writeString(output, pickupName);
             writeString(output, cashDenomination == null ? null : cashDenomination.toPlainString());
-            writeLines(output, request.lines());
+            writeLines(output, lines);
+            // Keep pre-V22 byte-for-byte compatibility when every new field is absent.
+            if (hasV22Extension(lines, manualLines)) {
+                output.writeInt(V22_EXTENSION_MAGIC);
+                writeNestedAndRewardCustomizations(output, lines);
+                writeManualLines(output, manualLines == null ? List.of() : manualLines);
+            }
             output.flush();
             return hex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
         } catch (IOException | NoSuchAlgorithmException exception) {
@@ -48,6 +59,8 @@ public class ManualPosOrderFingerprint {
             writeLong(output, line.menuItemId());
             writeInteger(output, line.quantity());
             writeGroups(output, line.groups());
+            writeComponentIds(output, line.omittedComponentIds());
+            writeString(output, line.note());
             List<PromotionRewardConfigurationRequest> rewards = line.rewardConfigurations();
             output.writeInt(rewards == null ? -1 : rewards.size());
             if (rewards != null) for (PromotionRewardConfigurationRequest reward : rewards) {
@@ -58,6 +71,11 @@ public class ManualPosOrderFingerprint {
                 writeGroups(output, reward.groups());
             }
         }
+    }
+
+    private void writeComponentIds(DataOutputStream output, List<Long> ids) throws IOException {
+        output.writeInt(ids == null ? -1 : ids.size());
+        if (ids != null) for (Long id : ids) writeLong(output, id);
     }
 
     private void writeGroups(DataOutputStream output, List<MenuQuoteGroupRequest> groups) throws IOException {
@@ -76,6 +94,107 @@ public class ManualPosOrderFingerprint {
                 writeInteger(output, selection.quantity());
                 writeGroups(output, selection.groups());
             }
+        }
+    }
+
+    private boolean hasV22Extension(List<PromotionQuoteLineRequest> lines,
+                                    List<NormalizedManualPricedLine> manualLines) {
+        if (manualLines != null && !manualLines.isEmpty()) return true;
+        if (lines == null) return false;
+        for (PromotionQuoteLineRequest line : lines) {
+            if (line == null) continue;
+            if (hasNestedCustomization(line.groups())) return true;
+            for (PromotionRewardConfigurationRequest reward : line.rewardConfigurations()) {
+                if (reward != null && (hasCustomization(reward.omittedComponentIds(), reward.note())
+                        || hasNestedCustomization(reward.groups()))) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasNestedCustomization(List<MenuQuoteGroupRequest> groups) {
+        if (groups == null) return false;
+        for (MenuQuoteGroupRequest group : groups) {
+            if (group == null || group.selections() == null) continue;
+            for (MenuQuoteSelectionRequest selection : group.selections()) {
+                if (selection != null && (hasCustomization(selection.omittedComponentIds(), selection.note())
+                        || hasNestedCustomization(selection.groups()))) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasCustomization(List<Long> componentIds, String note) {
+        return (componentIds != null && !componentIds.isEmpty()) || note != null;
+    }
+
+    private void writeNestedAndRewardCustomizations(DataOutputStream output,
+                                                     List<PromotionQuoteLineRequest> lines) throws IOException {
+        output.writeInt(lines == null ? -1 : lines.size());
+        if (lines == null) return;
+        for (PromotionQuoteLineRequest line : lines) {
+            if (line == null) {
+                output.writeBoolean(false);
+                continue;
+            }
+            output.writeBoolean(true);
+            writeNestedCustomizations(output, line.groups());
+            List<PromotionRewardConfigurationRequest> rewards = line.rewardConfigurations();
+            output.writeInt(rewards == null ? -1 : rewards.size());
+            if (rewards == null) continue;
+            for (PromotionRewardConfigurationRequest reward : rewards) {
+                if (reward == null) {
+                    output.writeBoolean(false);
+                    continue;
+                }
+                output.writeBoolean(true);
+                writeOptionalCustomization(output, reward.omittedComponentIds(), reward.note());
+                writeNestedCustomizations(output, reward.groups());
+            }
+        }
+    }
+
+    private void writeNestedCustomizations(DataOutputStream output,
+                                           List<MenuQuoteGroupRequest> groups) throws IOException {
+        output.writeInt(groups == null ? -1 : groups.size());
+        if (groups == null) return;
+        for (MenuQuoteGroupRequest group : groups) {
+            if (group == null) {
+                output.writeBoolean(false);
+                continue;
+            }
+            output.writeBoolean(true);
+            List<MenuQuoteSelectionRequest> selections = group.selections();
+            output.writeInt(selections == null ? -1 : selections.size());
+            if (selections == null) continue;
+            for (MenuQuoteSelectionRequest selection : selections) {
+                if (selection == null) {
+                    output.writeBoolean(false);
+                    continue;
+                }
+                output.writeBoolean(true);
+                writeOptionalCustomization(output, selection.omittedComponentIds(), selection.note());
+                writeNestedCustomizations(output, selection.groups());
+            }
+        }
+    }
+
+    private void writeManualLines(DataOutputStream output, List<NormalizedManualPricedLine> lines) throws IOException {
+        output.writeInt(lines.size());
+        for (NormalizedManualPricedLine line : lines) {
+            writeString(output, line.lineKey());
+            writeString(output, line.description());
+            writeInteger(output, line.quantity());
+            writeString(output, line.unitAmount().toPlainString());
+        }
+    }
+
+    private void writeOptionalCustomization(DataOutputStream output, List<Long> componentIds, String note) throws IOException {
+        boolean present = (componentIds != null && !componentIds.isEmpty()) || note != null;
+        output.writeBoolean(present);
+        if (present) {
+            writeComponentIds(output, componentIds);
+            writeString(output, note);
         }
     }
 
