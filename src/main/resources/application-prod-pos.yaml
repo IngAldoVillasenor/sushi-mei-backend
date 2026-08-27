@@ -10,6 +10,9 @@ spring:
       maximum-pool-size: 5
       minimum-idle: 1
 
+server:
+  shutdown: graceful
+
 sushimei:
   features:
     ai:

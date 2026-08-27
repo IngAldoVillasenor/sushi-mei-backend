@@ -42,6 +42,7 @@ class ProdPosRuntimeContextIntegrationTest {
     @Test
     void prodPosStartsWithoutAiOrWhatsAppDependenciesWhileKeepingOperationalBeansAvailable() {
         assertThat(environment.getProperty("server.port")).isEqualTo("18080");
+        assertThat(environment.getProperty("server.shutdown")).isEqualTo("graceful");
 
         assertThat(applicationContext.getBeansOfType(ChatModel.class)).isEmpty();
         assertThat(applicationContext.getBeansOfType(EmbeddingModel.class)).isEmpty();
