@@ -2,6 +2,14 @@ HELP.md
 target/
 application-local.yaml
 application-local.yml
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+/config/
+/keys/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

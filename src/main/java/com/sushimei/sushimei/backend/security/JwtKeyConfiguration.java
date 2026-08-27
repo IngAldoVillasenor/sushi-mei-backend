@@ -7,10 +7,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.KeyFactory;
 import java.security.KeyPair;
+import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -45,9 +47,13 @@ public class JwtKeyConfiguration {
             RSAPrivateKey privateKey = readPrivateKey(resourceLoader.getResource(privateKeyLocation));
             requireMinimumStrength(publicKey);
             requireMinimumStrength(privateKey);
+            requireMatchingPair(publicKey, privateKey);
             return new KeyPair(publicKey, privateKey);
         } catch (Exception exception) {
-            throw new IllegalStateException("JWT RSA key configuration is invalid", exception);
+            throw new IllegalStateException(
+                    "JWT RSA key configuration is invalid; configured files must contain a matching RSA PKCS#8 private key "
+                            + "and X.509 public key of at least 2048 bits",
+                    exception);
         }
     }
 
@@ -92,7 +98,7 @@ public class JwtKeyConfiguration {
 
     private static byte[] decodePem(Resource resource) throws IOException {
         try (InputStream stream = resource.getInputStream()) {
-            String pem = new String(stream.readAllBytes());
+            String pem = new String(stream.readAllBytes(), StandardCharsets.US_ASCII);
             return Base64.getMimeDecoder().decode(pem.replaceAll("-----[^-]+-----", ""));
         }
     }
@@ -100,6 +106,16 @@ public class JwtKeyConfiguration {
     private static void requireMinimumStrength(java.security.interfaces.RSAKey key) {
         if (key.getModulus().bitLength() < 2048) {
             throw new IllegalStateException("JWT RSA keys must be at least 2048 bits");
+        }
+    }
+
+    private static void requireMatchingPair(RSAPublicKey publicKey, RSAPrivateKey privateKey) {
+        if (!publicKey.getModulus().equals(privateKey.getModulus())) {
+            throw new IllegalStateException("Configured JWT RSA public and private keys do not match");
+        }
+        if (privateKey instanceof RSAPrivateCrtKey crtKey
+                && !publicKey.getPublicExponent().equals(crtKey.getPublicExponent())) {
+            throw new IllegalStateException("Configured JWT RSA public and private keys do not match");
         }
     }
 
