@@ -1,10 +1,12 @@
 package com.sushimei.sushimei.backend.conversation;
 
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.Objects;
 
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.whatsapp", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class CheckoutIntentRouter {
 
     private final ConversationTransitionService conversationTransitionService;

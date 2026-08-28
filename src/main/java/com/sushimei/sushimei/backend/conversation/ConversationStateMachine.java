@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.conversation;
 
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -11,6 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 
 @Component
+@ConditionalOnProperty(prefix = "sushimei.features.whatsapp", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ConversationStateMachine {
 
     static final int DELIVERY_ADDRESS_MIN_LENGTH = 5;

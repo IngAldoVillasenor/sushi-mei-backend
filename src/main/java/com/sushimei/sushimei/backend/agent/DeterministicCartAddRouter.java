@@ -8,6 +8,7 @@ import com.sushimei.sushimei.backend.tools.ResolvedMenuItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,6 +21,7 @@ import java.util.Set;
 
 /** Resolves explicit cart additions from the current message before the language model is consulted. */
 @Component
+@ConditionalOnProperty(prefix = "sushimei.features.ai", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class DeterministicCartAddRouter {
 
     private static final Logger log = LoggerFactory.getLogger(DeterministicCartAddRouter.class);

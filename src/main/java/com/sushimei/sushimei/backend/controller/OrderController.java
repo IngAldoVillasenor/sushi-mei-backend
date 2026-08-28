@@ -10,6 +10,7 @@ import com.sushimei.sushimei.backend.service.CartService;
 import com.sushimei.sushimei.backend.service.WhatsAppService;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,13 +24,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/orders")
 public class OrderController {
 
-    private final AiConversationService aiConversationService;
-    private final WhatsAppService whatsAppService;
+    private final Optional<AiConversationService> aiConversationService;
+    private final Optional<WhatsAppService> whatsAppService;
     private final CartService cartService;
     private final OrderLifecycleService orderLifecycleService;
 
-    public OrderController(AiConversationService aiConversationService,
-                           WhatsAppService whatsAppService,
+    public OrderController(Optional<AiConversationService> aiConversationService,
+                           Optional<WhatsAppService> whatsAppService,
                            CartService cartService,
                            OrderLifecycleService orderLifecycleService) {
         this.aiConversationService = aiConversationService;
@@ -55,6 +56,10 @@ public class OrderController {
      */
     @PostMapping("/{id}/reject")
     public ResponseEntity<String> rejectOrder(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        if (aiConversationService.isEmpty() || whatsAppService.isEmpty()) {
+            return ResponseEntity.status(409).body("El flujo heredado de rechazo no está habilitado en este runtime.");
+        }
+
         LegacyOrderRejectionResult rejected;
         try {
             rejected = orderLifecycleService.rejectForLegacyClarification(id);
@@ -71,8 +76,9 @@ public class OrderController {
         String promptParaIA = "INSTRUCCIÓN DEL SISTEMA: La cocina acaba de rechazar el pedido del cliente por esta razón: '"
                 + reason + "'. Discúlpate amablemente con el cliente, explícale la razón, infórmale que su carrito sigue "
                 + "guardado con los demás productos y pregúntale por qué desea sustituir el producto faltante.";
-        String aiResponse = aiConversationService.chat(rejected.phoneNumber(), rejected.phoneNumber(), promptParaIA);
-        whatsAppService.sendMessage(rejected.phoneNumber(), aiResponse);
+        String aiResponse = aiConversationService.orElseThrow()
+                .chat(rejected.phoneNumber(), rejected.phoneNumber(), promptParaIA);
+        whatsAppService.orElseThrow().sendMessage(rejected.phoneNumber(), aiResponse);
 
         return ResponseEntity.ok("Orden rechazada. Notificando al cliente vía WhatsApp.");
     }

@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.conversation;
 
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -8,6 +9,7 @@ import java.time.Clock;
 import java.time.Instant;
 
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.whatsapp", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ConversationTransitionService {
 
     private final ConversationSessionRepository conversationSessionRepository;

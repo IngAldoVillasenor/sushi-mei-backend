@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.agent;
 
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.Set;
 
@@ -8,6 +9,7 @@ import java.util.Set;
  * Limits menu retrieval to turns for which menu context can safely help the conversational AI.
  */
 @Component
+@ConditionalOnProperty(prefix = "sushimei.features.ai", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ConversationRetrievalPolicy {
 
     private static final Set<String> CATALOG_TOKENS = Set.of(

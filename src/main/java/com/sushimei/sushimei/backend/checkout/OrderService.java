@@ -15,6 +15,7 @@ import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import com.sushimei.sushimei.backend.repository.CartRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -30,6 +31,7 @@ import java.util.Objects;
  * but raw customer text and AI tools never write orders directly.
  */
 @Service
+@ConditionalOnProperty(prefix = "sushimei.features.whatsapp", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OrderService {
 
     private static final String OPEN_CART_STATUS = "OPEN";
