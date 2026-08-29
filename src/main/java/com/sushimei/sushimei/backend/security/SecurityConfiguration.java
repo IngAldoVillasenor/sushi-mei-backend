@@ -74,6 +74,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/v1/open-sales")
                         .hasAnyRole("OWNER", "MANAGER", "CASHIER")
                         .requestMatchers("/api/orders/*/validate-payment").hasAnyRole("OWNER", "MANAGER", "CASHIER")
+                        .requestMatchers("/api/orders/*/void").hasAnyRole("OWNER", "MANAGER", "CASHIER")
                         .requestMatchers("/api/orders/*/prepare", "/api/orders/*/ready", "/api/orders/*/complete", "/api/orders/*/reject")
                         .hasAnyRole("OWNER", "MANAGER", "KITCHEN")
                         .requestMatchers("/api/orders/active").hasAnyRole("OWNER", "MANAGER", "CASHIER", "KITCHEN")
