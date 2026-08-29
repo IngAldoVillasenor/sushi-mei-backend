@@ -62,6 +62,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V21_SCRIPT = "V21__enforce_unique_promotion_targets.sql";
     private static final String V22_SCRIPT = "V22__add_nested_customization_and_manual_priced_lines.sql";
     private static final String V23_SCRIPT = "V23__add_pos_order_void_audit.sql";
+    private static final String V24_SCRIPT = "V24__add_business_day_cash_expenses.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -108,7 +109,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
         assertSqlMigration(jdbcTemplate, 22, "SQL", V22_SCRIPT);
         assertSqlMigration(jdbcTemplate, 23, "SQL", V23_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("23");
+        assertSqlMigration(jdbcTemplate, 24, "SQL", V24_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("24");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -137,6 +139,7 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "BUSINESS_DAYS");
         assertTableExists(jdbcTemplate, "BUSINESS_DAY_OPERATION_LOCKS");
         assertTableExists(jdbcTemplate, "BUSINESS_DAY_CLOSURES");
+        assertTableExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES");
         assertTableExists(jdbcTemplate, "ORDER_LINE_SELECTION_COMPONENT_OMISSIONS");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
@@ -179,12 +182,13 @@ class FlywayBaselineIntegrationTest {
         assertBusinessDaySchema(jdbcTemplate);
         assertDefaultComponentSchema(jdbcTemplate);
         assertPosOrderVoidAuditSchema(jdbcTemplate);
+        assertCashExpenseSchema(jdbcTemplate);
         assertAuthoritativeCatalogBootstrapData(jdbcTemplate);
         assertAuthoritativePromotionBootstrapData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV23AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV24AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -213,7 +217,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 21, "SQL", V21_SCRIPT);
         assertSqlMigration(jdbcTemplate, 22, "SQL", V22_SCRIPT);
         assertSqlMigration(jdbcTemplate, 23, "SQL", V23_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("23");
+        assertSqlMigration(jdbcTemplate, 24, "SQL", V24_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("24");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -231,6 +236,7 @@ class FlywayBaselineIntegrationTest {
         assertVendisHistoryImportSchema(jdbcTemplate);
         assertBusinessDaySchema(jdbcTemplate);
         assertPosOrderVoidAuditSchema(jdbcTemplate);
+        assertCashExpenseSchema(jdbcTemplate);
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from public.catalog_bootstrap_rule_sets
                 where rule_set_id = 'PHASE_6F1_AUTHORITATIVE_CATALOG_RULES' and applied_at is null
@@ -303,6 +309,10 @@ class FlywayBaselineIntegrationTest {
                 .isEqualByComparingTo("125.00");
         assertThat(jdbcTemplate.queryForObject("select cash_difference_amount from public.business_day_closures", BigDecimal.class))
                 .isEqualByComparingTo("5.00");
+        assertThat(jdbcTemplate.queryForObject("select cash_expense_amount from public.business_days", BigDecimal.class))
+                .isEqualByComparingTo("0.00");
+        assertThat(jdbcTemplate.queryForObject("select cash_expense_amount from public.business_day_closures", BigDecimal.class))
+                .isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -507,8 +517,9 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 21)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 22)).isEqualTo(1);
         assertThat(historyCount(jdbcTemplate, 23)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("23");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 25);
+        assertThat(historyCount(jdbcTemplate, 24)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("24");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 26);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -1010,6 +1021,20 @@ class FlywayBaselineIntegrationTest {
                 "BUSINESS_DAY_CLOSURES_BUSINESS_DAY_NUMBER_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CLOSURES",
                 "BUSINESS_DAY_CLOSURES_SNAPSHOT_RECONCILIATION_CHECK")).isTrue();
+    }
+
+    private void assertCashExpenseSchema(JdbcTemplate jdbcTemplate) {
+        assertTableExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES");
+        assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "CASH_EXPENSE_AMOUNT");
+        assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "CASH_EXPENSE_COUNT");
+        assertColumnPresent(jdbcTemplate, "BUSINESS_DAY_CLOSURES", "CASH_EXPENSE_AMOUNT");
+        assertColumnPresent(jdbcTemplate, "BUSINESS_DAY_CLOSURES", "CASH_EXPENSE_COUNT");
+        assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES",
+                "BUSINESS_DAY_CASH_EXPENSES_CLIENT_REQUEST_ID_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES",
+                "BUSINESS_DAY_CASH_EXPENSES_AMOUNT_POSITIVE_CHECK")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CLOSURES",
+                "BUSINESS_DAY_CLOSURES_CASH_EXPENSE_NONNEGATIVE_CHECK")).isTrue();
     }
 
     private void assertPosOrderVoidAuditSchema(JdbcTemplate jdbcTemplate) {

@@ -9,6 +9,7 @@ import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import com.sushimei.sushimei.backend.repository.BusinessDayOperationLockRepository;
+import com.sushimei.sushimei.backend.repository.BusinessDayCashExpenseRepository;
 import com.sushimei.sushimei.backend.repository.BusinessDayClosureRepository;
 import com.sushimei.sushimei.backend.repository.BusinessDayRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -37,6 +38,7 @@ public class BusinessDayService {
     private final BusinessDayRepository businessDayRepository;
     private final BusinessDayClosureRepository businessDayClosureRepository;
     private final BusinessDayOperationLockRepository businessDayOperationLockRepository;
+    private final BusinessDayCashExpenseRepository cashExpenseRepository;
     private final OrderRepository orderRepository;
     private final CheckoutMoney checkoutMoney;
     private final ParallelMoneyResolver parallelMoneyResolver;
@@ -46,6 +48,7 @@ public class BusinessDayService {
     public BusinessDayService(BusinessDayRepository businessDayRepository,
                               BusinessDayClosureRepository businessDayClosureRepository,
                               BusinessDayOperationLockRepository businessDayOperationLockRepository,
+                              BusinessDayCashExpenseRepository cashExpenseRepository,
                               OrderRepository orderRepository,
                               CheckoutMoney checkoutMoney,
                               ParallelMoneyResolver parallelMoneyResolver,
@@ -56,6 +59,8 @@ public class BusinessDayService {
                 "businessDayClosureRepository must not be null");
         this.businessDayOperationLockRepository = Objects.requireNonNull(businessDayOperationLockRepository,
                 "businessDayOperationLockRepository must not be null");
+        this.cashExpenseRepository = Objects.requireNonNull(cashExpenseRepository,
+                "cashExpenseRepository must not be null");
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.parallelMoneyResolver = Objects.requireNonNull(parallelMoneyResolver,
@@ -174,12 +179,16 @@ public class BusinessDayService {
                 .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_NOT_OPEN));
         rejectIfNonTerminalOrdersExist(businessDay.getBusinessDate());
         SalesSnapshot sales = completedSalesFor(businessDay.getBusinessDate());
-        BigDecimal expectedClosingCashAmount = add(sales.cashSalesAmount(), businessDay.getOpeningCashAmount());
+        CashExpenseSnapshot expenses = cashExpensesFor(businessDay.getId());
+        BigDecimal expectedClosingCashAmount = subtractNonNegative(
+                add(sales.cashSalesAmount(), businessDay.getOpeningCashAmount()), expenses.cashExpenseAmount());
         BigDecimal cashDifferenceAmount = signed(actualClosingCashAmount.subtract(expectedClosingCashAmount));
 
         businessDay.close(
                 sales.completedSalesAmount(),
                 sales.cashSalesAmount(),
+                expenses.cashExpenseAmount(),
+                expenses.cashExpenseCount(),
                 sales.transferSalesAmount(),
                 sales.cardSalesAmount(),
                 sales.unclassifiedSalesAmount(),
@@ -252,6 +261,16 @@ public class BusinessDayService {
         return new SalesSnapshot(completedSales, cash, transfer, card, unclassified, completed.size(), voided);
     }
 
+    private CashExpenseSnapshot cashExpensesFor(Long businessDayId) {
+        try {
+            BigDecimal amount = cashExpenseRepository.sumAmountByBusinessDayId(businessDayId);
+            return new CashExpenseSnapshot(checkoutMoney.normalizeNonNegativeNumericAmount(amount),
+                    cashExpenseRepository.countByBusinessDayId(businessDayId));
+        } catch (IllegalArgumentException exception) {
+            throw failure(BusinessDayError.BUSINESS_DAY_INVALID, exception);
+        }
+    }
+
     private BusinessDayResponse currentResponse(BusinessDay businessDay) {
         if (businessDay.getStatus() != BusinessDayStatus.CLOSED) {
             return BusinessDayResponse.from(businessDay);
@@ -317,6 +336,17 @@ public class BusinessDayService {
         }
     }
 
+    private BigDecimal subtractNonNegative(BigDecimal availableCash, BigDecimal cashExpenses) {
+        if (availableCash.compareTo(cashExpenses) < 0) {
+            throw failure(BusinessDayError.BUSINESS_DAY_CASH_EXPENSES_EXCEED_AVAILABLE_CASH);
+        }
+        try {
+            return checkoutMoney.normalizeNonNegativeNumericAmount(availableCash.subtract(cashExpenses));
+        } catch (IllegalArgumentException exception) {
+            throw failure(BusinessDayError.BUSINESS_DAY_INVALID, exception);
+        }
+    }
+
     private static void requireActor(Long userId) {
         if (userId == null || userId <= 0) {
             throw failure(BusinessDayError.BUSINESS_DAY_INVALID);
@@ -342,6 +372,9 @@ public class BusinessDayService {
                                  BigDecimal unclassifiedSalesAmount,
                                  long completedOrderCount,
                                  long voidedOrderCount) {
+    }
+
+    private record CashExpenseSnapshot(BigDecimal cashExpenseAmount, long cashExpenseCount) {
     }
 
     private record BusinessDateInterval(LocalDateTime from, LocalDateTime to) {

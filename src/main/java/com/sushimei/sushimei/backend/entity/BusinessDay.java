@@ -45,6 +45,12 @@ public class BusinessDay {
     @Column(name = "cash_sales_amount", precision = 19, scale = 2)
     private BigDecimal cashSalesAmount;
 
+    @Column(name = "cash_expense_amount", precision = 19, scale = 2)
+    private BigDecimal cashExpenseAmount;
+
+    @Column(name = "cash_expense_count")
+    private Long cashExpenseCount;
+
     @Column(name = "transfer_sales_amount", precision = 19, scale = 2)
     private BigDecimal transferSalesAmount;
 
@@ -110,6 +116,8 @@ public class BusinessDay {
 
     public void close(BigDecimal completedSalesAmount,
                       BigDecimal cashSalesAmount,
+                      BigDecimal cashExpenseAmount,
+                      long cashExpenseCount,
                       BigDecimal transferSalesAmount,
                       BigDecimal cardSalesAmount,
                       BigDecimal unclassifiedSalesAmount,
@@ -125,6 +133,8 @@ public class BusinessDay {
         }
         this.completedSalesAmount = Objects.requireNonNull(completedSalesAmount, "completedSalesAmount must not be null");
         this.cashSalesAmount = Objects.requireNonNull(cashSalesAmount, "cashSalesAmount must not be null");
+        this.cashExpenseAmount = Objects.requireNonNull(cashExpenseAmount, "cashExpenseAmount must not be null");
+        this.cashExpenseCount = cashExpenseCount;
         this.transferSalesAmount = Objects.requireNonNull(transferSalesAmount, "transferSalesAmount must not be null");
         this.cardSalesAmount = Objects.requireNonNull(cardSalesAmount, "cardSalesAmount must not be null");
         this.unclassifiedSalesAmount = Objects.requireNonNull(unclassifiedSalesAmount, "unclassifiedSalesAmount must not be null");
@@ -148,6 +158,8 @@ public class BusinessDay {
         }
         this.completedSalesAmount = null;
         this.cashSalesAmount = null;
+        this.cashExpenseAmount = null;
+        this.cashExpenseCount = null;
         this.transferSalesAmount = null;
         this.cardSalesAmount = null;
         this.unclassifiedSalesAmount = null;
@@ -173,6 +185,8 @@ public class BusinessDay {
     public Long getOpenedByUserId() { return openedByUserId; }
     public BigDecimal getCompletedSalesAmount() { return completedSalesAmount; }
     public BigDecimal getCashSalesAmount() { return cashSalesAmount; }
+    public BigDecimal getCashExpenseAmount() { return cashExpenseAmount; }
+    public Long getCashExpenseCount() { return cashExpenseCount; }
     public BigDecimal getTransferSalesAmount() { return transferSalesAmount; }
     public BigDecimal getCardSalesAmount() { return cardSalesAmount; }
     public BigDecimal getUnclassifiedSalesAmount() { return unclassifiedSalesAmount; }
