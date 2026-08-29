@@ -278,6 +278,22 @@ class OperationalOrderReadServiceIntegrationTest {
                 .isEqualTo(OrderSource.COUNTER);
     }
 
+    @Test
+    void voidedPosOrderDetailExposesPersistedCancellationAuditEvidence() {
+        OrderRecord order = manualOrder("VOIDED", 9, null);
+        order.setVoidReason("Cliente canceló el pedido");
+        order.setVoidedAt(Instant.parse("2026-08-11T08:15:00Z"));
+        order.setVoidedByUserId(1L);
+        orderRepository.saveAndFlush(order);
+
+        OperationalOrderDetailResponse detail = operationalOrderReadService.order(order.getId());
+
+        assertThat(detail.status()).isEqualTo("VOIDED");
+        assertThat(detail.voidReason()).isEqualTo("Cliente canceló el pedido");
+        assertThat(detail.voidedAt()).isEqualTo(Instant.parse("2026-08-11T08:15:00Z"));
+        assertThat(detail.voidedByUserId()).isEqualTo(1L);
+    }
+
     private OrderRecord legacyOrder(String status, int minute) {
         OrderRecord order = new OrderRecord();
         order.setPhoneNumber("521477000000" + minute);

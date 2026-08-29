@@ -44,12 +44,15 @@ class OrderLifecycleServiceIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    private Long voidActorUserId;
+
     @BeforeEach
     void clearOrders() {
         jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
         jdbcTemplate.update("delete from public.orders");
+        voidActorUserId = insertVoidActor();
     }
 
     @Test
@@ -138,6 +141,95 @@ class OrderLifecycleServiceIntegrationTest {
     }
 
     @Test
+    void physicalPosOrdersInEveryActiveStateCanBeVoidedWithAuditableEvidence() {
+        List<OrderLifecycleStatus> activeStatuses = List.of(
+                OrderLifecycleStatus.PENDING_VALIDATION,
+                OrderLifecycleStatus.PENDING,
+                OrderLifecycleStatus.PREPARING,
+                OrderLifecycleStatus.READY);
+
+        for (int index = 0; index < activeStatuses.size(); index++) {
+            OrderLifecycleStatus status = activeStatuses.get(index);
+            OrderRecord order = order(status, OrderPaymentMethod.CASH, index + 1);
+            if (status == OrderLifecycleStatus.READY) {
+                order.setOrderSource(OrderSource.COUNTER);
+                orderRepository.saveAndFlush(order);
+            }
+
+            OrderVoidResponse response = orderLifecycleService.voidOrder(order.getId(), voidActorUserId,
+                    new OrderVoidRequest("  Cliente canceló el pedido  "));
+            OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+
+            assertThat(response.previousStatus()).isEqualTo(status);
+            assertThat(response.currentStatus()).isEqualTo(OrderLifecycleStatus.VOIDED);
+            assertThat(response.voidReason()).isEqualTo("Cliente canceló el pedido");
+            assertThat(response.voidedAt()).isNotNull();
+            assertThat(response.voidedByUserId()).isEqualTo(voidActorUserId);
+            assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.VOIDED.persistedValue());
+            assertThat(persisted.getVoidReason()).isEqualTo("Cliente canceló el pedido");
+            assertThat(persisted.getVoidedAt()).isNotNull();
+            assertThat(persisted.getVoidedByUserId()).isEqualTo(voidActorUserId);
+        }
+    }
+
+    @Test
+    void voidRejectsTerminalCancelledAndNonPosOrdersWithoutPartiallyWritingAuditEvidence() {
+        OrderRecord completed = order(OrderLifecycleStatus.COMPLETED, OrderPaymentMethod.CASH, 1);
+        OrderRecord alreadyVoided = order(OrderLifecycleStatus.VOIDED, OrderPaymentMethod.CASH, 2);
+        OrderRecord cancelled = order(OrderLifecycleStatus.CANCELLED_CLARIFICATION, OrderPaymentMethod.CASH, 3);
+        OrderRecord whatsapp = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 4);
+        whatsapp.setOrderSource(OrderSource.WHATSAPP_AI);
+        orderRepository.saveAndFlush(whatsapp);
+        OrderRecord unknown = order("LEGACY_UNKNOWN", OrderPaymentMethod.CASH, 5);
+
+        assertError(() -> orderLifecycleService.voidOrder(completed.getId(), voidActorUserId,
+                new OrderVoidRequest("Cliente canceló")), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.voidOrder(alreadyVoided.getId(), voidActorUserId,
+                new OrderVoidRequest("Cliente canceló")), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.voidOrder(cancelled.getId(), voidActorUserId,
+                new OrderVoidRequest("Cliente canceló")), OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        assertError(() -> orderLifecycleService.voidOrder(whatsapp.getId(), voidActorUserId,
+                new OrderVoidRequest("Cliente canceló")), OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED);
+        assertError(() -> orderLifecycleService.voidOrder(unknown.getId(), voidActorUserId,
+                new OrderVoidRequest("Cliente canceló")), OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED);
+
+        for (OrderRecord order : List.of(completed, alreadyVoided, cancelled, whatsapp, unknown)) {
+            OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+            assertThat(persisted.getVoidReason()).isNull();
+            assertThat(persisted.getVoidedAt()).isNull();
+            assertThat(persisted.getVoidedByUserId()).isNull();
+        }
+    }
+
+    @Test
+    void voidRejectsMissingBlankAndOverlongReasonsWithoutChangingTheOrder() {
+        OrderRecord order = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 1);
+
+        assertError(() -> orderLifecycleService.voidOrder(order.getId(), voidActorUserId, null),
+                OrderLifecycleError.ORDER_INVALID_VOID_REQUEST);
+        assertError(() -> orderLifecycleService.voidOrder(order.getId(), voidActorUserId, new OrderVoidRequest("   ")),
+                OrderLifecycleError.ORDER_INVALID_VOID_REQUEST);
+        assertError(() -> orderLifecycleService.voidOrder(order.getId(), voidActorUserId,
+                new OrderVoidRequest("x".repeat(501))), OrderLifecycleError.ORDER_INVALID_VOID_REQUEST);
+
+        OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.PENDING.persistedValue());
+        assertThat(persisted.getVoidReason()).isNull();
+        assertThat(persisted.getVoidedAt()).isNull();
+        assertThat(persisted.getVoidedByUserId()).isNull();
+    }
+
+    @Test
+    void voidedOrderIsExcludedFromTheActiveOperationalProjection() {
+        OrderRecord pending = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 1);
+        OrderRecord voided = order(OrderLifecycleStatus.PREPARING, OrderPaymentMethod.CASH, 2);
+        orderLifecycleService.voidOrder(voided.getId(), voidActorUserId, new OrderVoidRequest("Cliente canceló"));
+
+        assertThat(orderLifecycleService.activeOrders()).extracting(ActiveOrderResponse::id)
+                .containsExactly(pending.getId());
+    }
+
+    @Test
     void conflictingConcurrentPrepareCommandsHaveOneWinnerBecauseTheyLockTheSameOrderRow() throws Exception {
         OrderRecord order = order(OrderLifecycleStatus.PENDING, OrderPaymentMethod.CASH, 1);
         CountDownLatch start = new CountDownLatch(1);
@@ -155,10 +247,50 @@ class OrderLifecycleServiceIntegrationTest {
         }
     }
 
+    @Test
+    void concurrentCompletionAndVoidHaveExactlyOneWinnerBecauseTheyLockTheSameOrderRow() throws Exception {
+        OrderRecord order = order(OrderLifecycleStatus.READY, OrderPaymentMethod.CASH, 1);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> completing = executor.submit(() -> completeAfter(start, order.getId()));
+            Future<String> voiding = executor.submit(() -> voidAfter(start, order.getId()));
+            start.countDown();
+
+            List<String> outcomes = List.of(completing.get(), voiding.get());
+            assertThat(outcomes).contains(OrderLifecycleError.ORDER_INVALID_TRANSITION.name());
+            assertThat(outcomes).containsAnyOf(OrderLifecycleStatus.COMPLETED.name(), OrderLifecycleStatus.VOIDED.name());
+            String persistedStatus = orderRepository.findById(order.getId()).orElseThrow().getStatus();
+            assertThat(persistedStatus).isIn(OrderLifecycleStatus.COMPLETED.persistedValue(),
+                    OrderLifecycleStatus.VOIDED.persistedValue());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private String prepareAfter(CountDownLatch start, Long orderId) throws InterruptedException {
         start.await();
         try {
             return orderLifecycleService.prepare(orderId).currentStatus().name();
+        } catch (OrderLifecycleException exception) {
+            return exception.getError().name();
+        }
+    }
+
+    private String completeAfter(CountDownLatch start, Long orderId) throws InterruptedException {
+        start.await();
+        try {
+            return orderLifecycleService.complete(orderId).currentStatus().name();
+        } catch (OrderLifecycleException exception) {
+            return exception.getError().name();
+        }
+    }
+
+    private String voidAfter(CountDownLatch start, Long orderId) throws InterruptedException {
+        start.await();
+        try {
+            return orderLifecycleService.voidOrder(orderId, voidActorUserId, new OrderVoidRequest("Cliente canceló"))
+                    .currentStatus().name();
         } catch (OrderLifecycleException exception) {
             return exception.getError().name();
         }
@@ -174,10 +306,25 @@ class OrderLifecycleServiceIntegrationTest {
         order.setPaymentMethod(paymentMethod);
         order.setTotalAmount(10.00d);
         order.setTotalAmountAmount(new BigDecimal("10.00"));
+        order.setOrderSource(OrderSource.ANDROID_MANUAL);
         order.setStatus(status);
         order.setCreatedAt(LocalDateTime.of(2026, 8, 11, 10, minute));
         order.setOrderDetails("Orden de prueba");
         return orderRepository.saveAndFlush(order);
+    }
+
+    private Long insertVoidActor() {
+        String username = "lifecycle-void-actor";
+        Integer existing = jdbcTemplate.queryForObject(
+                "select count(*) from public.app_users where username = ?", Integer.class, username);
+        if (existing == null || existing == 0) {
+            jdbcTemplate.update("""
+                    insert into public.app_users (username, display_name, password_hash, role, active, failed_login_attempts,
+                        password_changed_at, created_at, updated_at, version)
+                    values (?, ?, ?, 'CASHIER', true, 0, current_timestamp, current_timestamp, current_timestamp, 0)
+                    """, username, username, "{bcrypt}not-used");
+        }
+        return jdbcTemplate.queryForObject("select id from public.app_users where username = ?", Long.class, username);
     }
 
     private void assertError(org.assertj.core.api.ThrowableAssert.ThrowingCallable operation,

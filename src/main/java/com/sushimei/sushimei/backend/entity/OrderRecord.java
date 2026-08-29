@@ -14,6 +14,7 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -99,6 +100,18 @@ public class OrderRecord {
     @JsonIgnore
     @Column(name = "cash_denomination", precision = 19, scale = 2)
     private BigDecimal cashDenomination;
+
+    @JsonIgnore
+    @Column(name = "void_reason", length = 500)
+    private String voidReason;
+
+    @JsonIgnore
+    @Column(name = "voided_at")
+    private Instant voidedAt;
+
+    @JsonIgnore
+    @Column(name = "voided_by_user_id")
+    private Long voidedByUserId;
 
     @JsonIgnore
     @Setter(AccessLevel.NONE)

@@ -5,7 +5,9 @@ import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.entity.BusinessDay;
 import com.sushimei.sushimei.backend.entity.BusinessDayClosure;
+import com.sushimei.sushimei.backend.order.OrderLifecycleService;
 import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
+import com.sushimei.sushimei.backend.order.OrderVoidRequest;
 import com.sushimei.sushimei.backend.repository.BusinessDayClosureRepository;
 import com.sushimei.sushimei.backend.repository.BusinessDayRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -61,6 +63,9 @@ class BusinessDayServiceIntegrationTest {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private OrderLifecycleService orderLifecycleService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -201,6 +206,24 @@ class BusinessDayServiceIntegrationTest {
         assertThat(closed.expectedClosingCashAmount()).isEqualByComparingTo("89.00");
         assertThat(businessDayService.current()).contains(closed);
         assertThat(businessDayService.hasOpenBusinessDay()).isFalse();
+    }
+
+    @Test
+    void voidedPosOrderDoesNotBlockCloseOrContributeCompletedRevenue() {
+        OrderRecord cancelled = order("PREPARING", OrderPaymentMethod.CASH, "79.00",
+                LocalDateTime.of(2026, 8, 12, 7, 0));
+        orderLifecycleService.voidOrder(cancelled.getId(), userId, new OrderVoidRequest("Cliente canceló"));
+
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("10.00")));
+        BusinessDayResponse closed = businessDayService.close(userId,
+                new CloseBusinessDayRequest(new BigDecimal("10.00")));
+
+        assertThat(closed.status()).isEqualTo(BusinessDayStatus.CLOSED);
+        assertThat(closed.completedOrderCount()).isZero();
+        assertThat(closed.voidedOrderCount()).isEqualTo(1);
+        assertThat(closed.completedSalesAmount()).isEqualByComparingTo("0.00");
+        assertThat(closed.cashSalesAmount()).isEqualByComparingTo("0.00");
+        assertThat(closed.expectedClosingCashAmount()).isEqualByComparingTo("10.00");
     }
 
     @Test
