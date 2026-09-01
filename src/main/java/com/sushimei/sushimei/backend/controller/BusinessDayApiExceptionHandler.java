@@ -40,6 +40,10 @@ public class BusinessDayApiExceptionHandler {
             case BUSINESS_DAY_OPEN_REQUIRED -> "Se requiere una caja abierta para registrar esta venta.";
             case BUSINESS_DAY_NOT_CLOSED -> "El día de negocio no está cerrado.";
             case BUSINESS_DAY_REOPEN_NOT_ALLOWED -> "El día de negocio no se puede reabrir.";
+            case BUSINESS_DAY_CASH_EXPENSE_IDEMPOTENCY_CONFLICT ->
+                    "La solicitud de gasto no coincide con el movimiento ya registrado.";
+            case BUSINESS_DAY_CASH_EXPENSES_EXCEED_AVAILABLE_CASH ->
+                    "Los gastos de efectivo exceden el efectivo disponible en caja.";
         };
     }
 }

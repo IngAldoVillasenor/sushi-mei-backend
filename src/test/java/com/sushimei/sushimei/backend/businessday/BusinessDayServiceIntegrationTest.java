@@ -9,6 +9,7 @@ import com.sushimei.sushimei.backend.order.OrderLifecycleService;
 import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import com.sushimei.sushimei.backend.order.OrderVoidRequest;
 import com.sushimei.sushimei.backend.repository.BusinessDayClosureRepository;
+import com.sushimei.sushimei.backend.repository.BusinessDayCashExpenseRepository;
 import com.sushimei.sushimei.backend.repository.BusinessDayRepository;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
@@ -22,6 +23,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,6 +64,12 @@ class BusinessDayServiceIntegrationTest {
     private BusinessDayClosureRepository businessDayClosureRepository;
 
     @Autowired
+    private BusinessDayCashExpenseRepository cashExpenseRepository;
+
+    @Autowired
+    private CashExpenseService cashExpenseService;
+
+    @Autowired
     private OrderRepository orderRepository;
 
     @Autowired
@@ -80,6 +88,7 @@ class BusinessDayServiceIntegrationTest {
 
     @BeforeEach
     void clean() {
+        jdbcTemplate.update("delete from public.business_day_cash_expenses");
         jdbcTemplate.update("delete from public.business_day_closures");
         jdbcTemplate.update("delete from public.business_days");
         jdbcTemplate.update("delete from public.order_line_component_omissions");
@@ -396,6 +405,171 @@ class BusinessDayServiceIntegrationTest {
         }
     }
 
+    @Test
+    void recordsAppendOnlyCashExpenseWithServerActorTimeNormalizationAndIdempotency() {
+        BusinessDayResponse opened = businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("500.00")));
+        UUID requestId = UUID.randomUUID();
+
+        CashExpenseCreateResponse created = cashExpenseService.create(userId, new CashExpenseRequest(requestId,
+                new BigDecimal("25.0"), "  Compra   de  verduras  ", "  Mercado   local "));
+
+        assertThat(created.result()).isEqualTo(CashExpenseResult.CREATED);
+        assertThat(created.expense().businessDayId()).isEqualTo(opened.businessDayId());
+        assertThat(created.expense().amount()).isEqualByComparingTo("25.00");
+        assertThat(created.expense().description()).isEqualTo("Compra de verduras");
+        assertThat(created.expense().note()).isEqualTo("Mercado local");
+        assertThat(created.expense().createdAt()).isEqualTo(BUSINESS_DAY_INSTANT);
+        assertThat(created.expense().createdByUserId()).isEqualTo(userId);
+        assertThat(cashExpenseRepository.count()).isEqualTo(1);
+
+        CashExpenseCreateResponse replay = cashExpenseService.create(userId, new CashExpenseRequest(requestId,
+                new BigDecimal("25.00"), "Compra de verduras", "Mercado local"));
+        assertThat(replay.result()).isEqualTo(CashExpenseResult.ALREADY_CREATED);
+        assertThat(replay.expense().id()).isEqualTo(created.expense().id());
+        assertThat(cashExpenseRepository.count()).isEqualTo(1);
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(requestId,
+                        new BigDecimal("26.00"), "Compra de verduras", "Mercado local")),
+                BusinessDayError.BUSINESS_DAY_CASH_EXPENSE_IDEMPOTENCY_CONFLICT);
+        assertThat(cashExpenseRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsInvalidCashExpenseInputsBeforeTheyCanMutateTheDrawer() {
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                BigDecimal.ZERO, "Compra", null)), BusinessDayError.BUSINESS_DAY_INVALID);
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("-0.01"), "Compra", null)), BusinessDayError.BUSINESS_DAY_INVALID);
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("0.001"), "Compra", null)), BusinessDayError.BUSINESS_DAY_INVALID);
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("1.00"), null, null)), BusinessDayError.BUSINESS_DAY_INVALID);
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("1.00"), "   ", null)), BusinessDayError.BUSINESS_DAY_INVALID);
+        assertError(() -> cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("1.00"), "Compra", "x".repeat(501))), BusinessDayError.BUSINESS_DAY_INVALID);
+        assertThat(cashExpenseRepository.count()).isZero();
+    }
+
+    @Test
+    void cashExpensesRequireAnOpenDayButAreAllowedAgainAfterReopen() {
+        CashExpenseRequest request = new CashExpenseRequest(UUID.randomUUID(), new BigDecimal("10.00"), "Gas", null);
+        assertError(() -> cashExpenseService.create(userId, request), BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED);
+
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("100.00")));
+        businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("100.00")));
+        assertError(() -> cashExpenseService.create(userId, request), BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED);
+
+        businessDayService.reopen(userId);
+        CashExpenseCreateResponse created = cashExpenseService.create(userId, request);
+        assertThat(created.result()).isEqualTo(CashExpenseResult.CREATED);
+        assertThat(cashExpenseRepository.count()).isOne();
+    }
+
+    @Test
+    void closesWithCumulativeCashExpenseSnapshotsAndPreservesPriorClosureEvidenceAfterReopen() {
+        order("COMPLETED", OrderPaymentMethod.CASH, "900.00", LocalDateTime.of(2026, 8, 12, 7, 0));
+        order("COMPLETED", OrderPaymentMethod.TRANSFER, "100.00", LocalDateTime.of(2026, 8, 12, 8, 0));
+        order("COMPLETED", OrderPaymentMethod.CARD, "50.00", LocalDateTime.of(2026, 8, 12, 9, 0));
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("500.00")));
+        cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(), new BigDecimal("200.00"),
+                "Proveedor", null));
+
+        BusinessDayResponse firstClose = businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("1200.00")));
+        assertThat(firstClose.completedSalesAmount()).isEqualByComparingTo("1050.00");
+        assertThat(firstClose.cashSalesAmount()).isEqualByComparingTo("900.00");
+        assertThat(firstClose.transferSalesAmount()).isEqualByComparingTo("100.00");
+        assertThat(firstClose.cardSalesAmount()).isEqualByComparingTo("50.00");
+        assertThat(firstClose.cashExpenseAmount()).isEqualByComparingTo("200.00");
+        assertThat(firstClose.cashExpenseCount()).isEqualTo(1);
+        assertThat(firstClose.expectedClosingCashAmount()).isEqualByComparingTo("1200.00");
+
+        businessDayService.reopen(userId);
+        order("COMPLETED", OrderPaymentMethod.CASH, "300.00", LocalDateTime.of(2026, 8, 12, 10, 0));
+        cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(), new BigDecimal("50.00"),
+                "Mensajería", null));
+        BusinessDayResponse secondClose = businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("1450.00")));
+
+        List<BusinessDayClosure> closures = businessDayClosureRepository
+                .findByBusinessDayIdOrderByCloseNumberAsc(secondClose.businessDayId());
+        assertThat(closures).hasSize(2);
+        assertThat(closures.get(0).getCashExpenseAmount()).isEqualByComparingTo("200.00");
+        assertThat(closures.get(0).getCashExpenseCount()).isEqualTo(1);
+        assertThat(closures.get(0).getExpectedClosingCashAmount()).isEqualByComparingTo("1200.00");
+        assertThat(closures.get(1).getCashExpenseAmount()).isEqualByComparingTo("250.00");
+        assertThat(closures.get(1).getCashExpenseCount()).isEqualTo(2);
+        assertThat(closures.get(1).getExpectedClosingCashAmount()).isEqualByComparingTo("1450.00");
+        assertThat(secondClose.closureId()).isEqualTo(closures.get(1).getId());
+        assertThat(businessDayService.current().orElseThrow().cashExpenseAmount()).isEqualByComparingTo("250.00");
+    }
+
+    @Test
+    void rejectsCloseExplicitlyWhenCashExpensesExceedAvailableDrawerCash() {
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("0.00")));
+        cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(), new BigDecimal("1.00"),
+                "Compra", null));
+
+        assertError(() -> businessDayService.close(userId, new CloseBusinessDayRequest(BigDecimal.ZERO)),
+                BusinessDayError.BUSINESS_DAY_CASH_EXPENSES_EXCEED_AVAILABLE_CASH);
+        BusinessDay businessDay = businessDayRepository.findByStatus(BusinessDayStatus.OPEN).orElseThrow();
+        assertThat(businessDay.getCashExpenseAmount()).isNull();
+        assertThat(businessDay.getExpectedClosingCashAmount()).isNull();
+    }
+
+    @Test
+    void listsCurrentBusinessDayExpensesInCreationThenIdOrder() {
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("100.00")));
+        CashExpenseCreateResponse first = cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("5.00"), "Primero", null));
+        CashExpenseCreateResponse second = cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(),
+                new BigDecimal("7.00"), "Segundo", null));
+
+        assertThat(cashExpenseService.listCurrent()).extracting(CashExpenseResponse::id)
+                .containsExactly(first.expense().id(), second.expense().id());
+        assertThat(cashExpenseService.listCurrent()).extracting(CashExpenseResponse::amount)
+                .containsExactly(new BigDecimal("5.00"), new BigDecimal("7.00"));
+        assertThat(cashExpenseRepository.sumAmountByBusinessDayId(first.expense().businessDayId()))
+                .isEqualByComparingTo("12.00");
+    }
+
+    @Test
+    void serializesCashExpenseCreationWithCloseSoNoSuccessfulExpenseEscapesTheClosure() throws Exception {
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("500.00")));
+        UUID requestId = UUID.randomUUID();
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<ExpenseAttempt> expense = executor.submit(() -> {
+                await(start);
+                try {
+                    return new ExpenseAttempt(cashExpenseService.create(userId, new CashExpenseRequest(requestId,
+                            new BigDecimal("50.00"), "Compra urgente", null)), null);
+                } catch (BusinessDayException exception) {
+                    return new ExpenseAttempt(null, exception.getError());
+                }
+            });
+            Future<BusinessDayResponse> close = executor.submit(() -> {
+                await(start);
+                return businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("450.00")));
+            });
+            start.countDown();
+
+            ExpenseAttempt attempt = expense.get(5, TimeUnit.SECONDS);
+            BusinessDayResponse closed = close.get(5, TimeUnit.SECONDS);
+            if (attempt.created() != null) {
+                assertThat(closed.cashExpenseAmount()).isEqualByComparingTo("50.00");
+                assertThat(closed.expectedClosingCashAmount()).isEqualByComparingTo("450.00");
+                assertThat(cashExpenseRepository.count()).isOne();
+            } else {
+                assertThat(attempt.error()).isEqualTo(BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED);
+                assertThat(closed.cashExpenseAmount()).isEqualByComparingTo("0.00");
+                assertThat(closed.expectedClosingCashAmount()).isEqualByComparingTo("500.00");
+                assertThat(cashExpenseRepository.count()).isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private String openAfter(CountDownLatch start, Long actor) throws InterruptedException {
         start.await();
         try {
@@ -436,6 +610,9 @@ class BusinessDayServiceIntegrationTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while coordinating concurrent test", exception);
         }
+    }
+
+    private record ExpenseAttempt(CashExpenseCreateResponse created, BusinessDayError error) {
     }
 
     private Long insertUser(String username) {

@@ -32,6 +32,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.Mockito.mock;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -56,6 +57,7 @@ class BusinessDayControllerIntegrationTest {
 
     @BeforeEach
     void clean() {
+        jdbcTemplate.update("delete from public.business_day_cash_expenses");
         jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
@@ -192,6 +194,55 @@ class BusinessDayControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("OPEN"))
                 .andExpect(jsonPath("$.completedSalesAmount").doesNotExist());
+    }
+
+    @Test
+    void cashExpenseEndpointsUseOwnerManagerAuthorizationAndReturnAuthoritativeEvidence() throws Exception {
+        AuthenticatedUser owner = insertUser("business-expense-owner", ApplicationRole.OWNER);
+        AuthenticatedUser manager = insertUser("business-expense-manager", ApplicationRole.MANAGER);
+        AuthenticatedUser cashier = insertUser("business-expense-cashier", ApplicationRole.CASHIER);
+        AuthenticatedUser kitchen = insertUser("business-expense-kitchen", ApplicationRole.KITCHEN);
+        UUID requestId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/v1/business-days/open").with(owner.jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"openingCashAmount\":100.00}"))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/business-days/current/cash-expenses").with(manager.jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestId\":\"" + requestId + "\",\"amount\":25.00,"
+                                + "\"description\":\"  Compra   de verduras  \",\"note\":\"Mercado\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.result").value("CREATED"))
+                .andExpect(jsonPath("$.expense.amount").value(25.00))
+                .andExpect(jsonPath("$.expense.description").value("Compra de verduras"))
+                .andExpect(jsonPath("$.expense.createdByUserId").value(manager.id()));
+
+        mockMvc.perform(get("/api/v1/business-days/current/cash-expenses").with(owner.jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].requestId").value(requestId.toString()))
+                .andExpect(jsonPath("$[0].amount").value(25.00));
+
+        mockMvc.perform(post("/api/v1/business-days/current/cash-expenses").with(manager.jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestId\":\"" + requestId + "\",\"amount\":25.00,"
+                                + "\"description\":\"Compra de verduras\",\"note\":\"Mercado\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("ALREADY_CREATED"));
+
+        mockMvc.perform(post("/api/v1/business-days/current/cash-expenses").with(cashier.jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/business-days/current/cash-expenses").with(kitchen.jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/business-days/current/cash-expenses").with(owner.jwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requestId\":\"" + UUID.randomUUID() + "\",\"amount\":0.00,\"description\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BUSINESS_DAY_INVALID"));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.business_day_cash_expenses", Integer.class))
+                .isEqualTo(1);
     }
 
     private void activeOrder() {

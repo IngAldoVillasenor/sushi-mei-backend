@@ -42,6 +42,12 @@ public class BusinessDayClosure {
     @Column(name = "cash_sales_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal cashSalesAmount;
 
+    @Column(name = "cash_expense_amount", nullable = false, precision = 19, scale = 2)
+    private BigDecimal cashExpenseAmount;
+
+    @Column(name = "cash_expense_count", nullable = false)
+    private long cashExpenseCount;
+
     @Column(name = "transfer_sales_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal transferSalesAmount;
 
@@ -82,6 +88,8 @@ public class BusinessDayClosure {
         closure.openingCashAmount = businessDay.getOpeningCashAmount();
         closure.completedSalesAmount = businessDay.getCompletedSalesAmount();
         closure.cashSalesAmount = businessDay.getCashSalesAmount();
+        closure.cashExpenseAmount = businessDay.getCashExpenseAmount();
+        closure.cashExpenseCount = businessDay.getCashExpenseCount();
         closure.transferSalesAmount = businessDay.getTransferSalesAmount();
         closure.cardSalesAmount = businessDay.getCardSalesAmount();
         closure.unclassifiedSalesAmount = businessDay.getUnclassifiedSalesAmount();
@@ -101,6 +109,8 @@ public class BusinessDayClosure {
     public BigDecimal getOpeningCashAmount() { return openingCashAmount; }
     public BigDecimal getCompletedSalesAmount() { return completedSalesAmount; }
     public BigDecimal getCashSalesAmount() { return cashSalesAmount; }
+    public BigDecimal getCashExpenseAmount() { return cashExpenseAmount; }
+    public long getCashExpenseCount() { return cashExpenseCount; }
     public BigDecimal getTransferSalesAmount() { return transferSalesAmount; }
     public BigDecimal getCardSalesAmount() { return cardSalesAmount; }
     public BigDecimal getUnclassifiedSalesAmount() { return unclassifiedSalesAmount; }
