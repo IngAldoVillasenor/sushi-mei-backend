@@ -38,6 +38,10 @@ public enum OrderLifecycleStatus {
         return TERMINAL_PERSISTED_VALUES;
     }
 
+    public boolean isTerminal() {
+        return TERMINAL_PERSISTED_VALUES.contains(name());
+    }
+
     public String persistedValue() {
         return name();
     }

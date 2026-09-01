@@ -6,6 +6,7 @@ import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest;
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteLineRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionRewardConfigurationRequest;
 import java.io.ByteArrayOutputStream;
@@ -21,6 +22,24 @@ import org.junit.jupiter.api.Test;
 class ManualPosOrderFingerprintTest {
 
     private final ManualPosOrderFingerprint fingerprint = new ManualPosOrderFingerprint();
+
+    @Test
+    void omittedOrExplicitImmediatePaymentTimingRetainsLegacyFingerprintWhileOnDeliveryIsDistinct() {
+        List<PromotionQuoteLineRequest> lines = List.of(new PromotionQuoteLineRequest("line", 1L, 1,
+                List.of(), List.of()));
+
+        String legacy = fingerprint.fingerprint(OrderFulfillmentType.DELIVERY, OrderPaymentMethod.CASH,
+                "Calle 1", null, new BigDecimal("100.00"), lines, List.of());
+        String explicitImmediate = fingerprint.fingerprint(OrderFulfillmentType.DELIVERY, OrderPaymentMethod.CASH,
+                OrderPaymentTiming.IMMEDIATE, "Calle 1", null, new BigDecimal("100.00"), lines, List.of());
+        String onDelivery = fingerprint.fingerprint(OrderFulfillmentType.DELIVERY, null,
+                OrderPaymentTiming.ON_DELIVERY, "Calle 1", null, null, lines, List.of());
+
+        assertThat(explicitImmediate).isEqualTo(legacy);
+        assertThat(onDelivery).isNotEqualTo(legacy);
+        assertThat(fingerprint.fingerprint(OrderFulfillmentType.DELIVERY, null, OrderPaymentTiming.ON_DELIVERY,
+                "Calle 1", null, null, lines, List.of())).isEqualTo(onDelivery);
+    }
 
     @Test
     void preV22RequestsKeepTheirLegacyFingerprintWhileActualV22CustomizationChangesIt() {

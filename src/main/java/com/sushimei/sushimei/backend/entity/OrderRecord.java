@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -94,12 +95,25 @@ public class OrderRecord {
     private OrderPaymentMethod paymentMethod;
 
     @JsonIgnore
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_timing")
+    private OrderPaymentTiming paymentTiming = OrderPaymentTiming.IMMEDIATE;
+
+    @JsonIgnore
     @Column(name = "pickup_name", length = 120)
     private String pickupName;
 
     @JsonIgnore
     @Column(name = "cash_denomination", precision = 19, scale = 2)
     private BigDecimal cashDenomination;
+
+    @JsonIgnore
+    @Column(name = "payment_collected_at")
+    private Instant paymentCollectedAt;
+
+    @JsonIgnore
+    @Column(name = "payment_collected_by_user_id")
+    private Long paymentCollectedByUserId;
 
     @JsonIgnore
     @Column(name = "void_reason", length = 500)
@@ -134,5 +148,17 @@ public class OrderRecord {
 
     public List<OrderLineRecord> getOrderLines() {
         return List.copyOf(orderLines);
+    }
+
+    public boolean requiresPaymentCollection() {
+        if (paymentTiming != OrderPaymentTiming.ON_DELIVERY || paymentMethod != null) {
+            return false;
+        }
+        try {
+            return !OrderLifecycleStatus.fromPersisted(status).isTerminal();
+        } catch (IllegalArgumentException ignored) {
+            // An unknown persisted lifecycle state must never invite a payment collection action.
+            return false;
+        }
     }
 }

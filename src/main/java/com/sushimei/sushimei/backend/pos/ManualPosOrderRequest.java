@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.pos;
 
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteLineRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -13,7 +14,8 @@ import java.util.UUID;
 public record ManualPosOrderRequest(
         @NotNull UUID requestId,
         @NotNull OrderFulfillmentType fulfillmentType,
-        @NotNull OrderPaymentMethod paymentMethod,
+        OrderPaymentMethod paymentMethod,
+        OrderPaymentTiming paymentTiming,
         String deliveryAddress,
         String pickupName,
         BigDecimal cashDenomination,
@@ -25,6 +27,18 @@ public record ManualPosOrderRequest(
         manualLines = List.copyOf(manualLines == null ? List.of() : manualLines);
     }
 
+    /** Source-compatible request with manual-priced lines. */
+    public ManualPosOrderRequest(UUID requestId,
+                                 OrderFulfillmentType fulfillmentType,
+                                 OrderPaymentMethod paymentMethod,
+                                 String deliveryAddress,
+                                 String pickupName,
+                                 BigDecimal cashDenomination,
+                                 List<PromotionQuoteLineRequest> lines,
+                                 List<ManualPricedLineRequest> manualLines) {
+        this(requestId, fulfillmentType, paymentMethod, null, deliveryAddress, pickupName, cashDenomination, lines, manualLines);
+    }
+
     /** Source-compatible catalog-only request. */
     public ManualPosOrderRequest(UUID requestId,
                                  OrderFulfillmentType fulfillmentType,
@@ -33,6 +47,6 @@ public record ManualPosOrderRequest(
                                  String pickupName,
                                  BigDecimal cashDenomination,
                                  List<PromotionQuoteLineRequest> lines) {
-        this(requestId, fulfillmentType, paymentMethod, deliveryAddress, pickupName, cashDenomination, lines, List.of());
+        this(requestId, fulfillmentType, paymentMethod, null, deliveryAddress, pickupName, cashDenomination, lines, List.of());
     }
 }

@@ -24,6 +24,7 @@ import com.sushimei.sushimei.backend.businessday.OpenBusinessDayRequest;
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderLineKind;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.orderread.OperationalOrderDetailResponse;
 import com.sushimei.sushimei.backend.orderread.OperationalOrderReadService;
@@ -161,6 +162,8 @@ class ManualPosOrderServiceIntegrationTest {
         assertThat(created.orderSource()).isEqualTo(OrderSource.ANDROID_MANUAL);
         assertThat(created.createdByUserId()).isEqualTo(userId);
         assertThat(created.status()).isEqualTo("PREPARING");
+        assertThat(created.paymentTiming()).isEqualTo(OrderPaymentTiming.IMMEDIATE);
+        assertThat(created.requiresPaymentCollection()).isFalse();
         assertThat(created.createdAt()).isEqualTo(TestClock.NOW.get());
         assertThat(created.cashDenomination()).isNull();
         assertThat(created.total()).isEqualByComparingTo("158.00");
@@ -677,6 +680,42 @@ class ManualPosOrderServiceIntegrationTest {
                 .isEqualTo(ManualPosOrderError.ORDER_INVALID);
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from public.order_lines", Integer.class)).isZero();
+    }
+
+    @Test
+    void deliveryPayOnDeliveryCreatesAPreparingUnpaidOrderAndRejectsPrematurePaymentEvidence() {
+        MenuItemResponse california = item("California", "79.00");
+        Long userId = insertUser("cashier-pay-on-delivery");
+        UUID requestId = UUID.randomUUID();
+        ManualPosOrderRequest onDelivery = new ManualPosOrderRequest(requestId, OrderFulfillmentType.DELIVERY,
+                null, OrderPaymentTiming.ON_DELIVERY, "  Calle Principal 123  ", null, null,
+                List.of(new PromotionQuoteLineRequest("delivery", california.id(), 1, List.of(), List.of())), List.of());
+
+        ManualPosOrderResponse created = manualPosOrderService.create(userId, onDelivery);
+        ManualPosOrderResponse retry = manualPosOrderService.create(userId, onDelivery);
+
+        assertThat(created.result()).isEqualTo(ManualOrderResult.CREATED);
+        assertThat(created.status()).isEqualTo("PREPARING");
+        assertThat(created.paymentTiming()).isEqualTo(OrderPaymentTiming.ON_DELIVERY);
+        assertThat(created.requiresPaymentCollection()).isTrue();
+        assertThat(created.paymentMethod()).isNull();
+        assertThat(created.cashDenomination()).isNull();
+        assertThat(created.deliveryAddress()).isEqualTo("Calle Principal 123");
+        assertThat(retry.result()).isEqualTo(ManualOrderResult.ALREADY_CREATED);
+        assertThat(retry.id()).isEqualTo(created.id());
+
+        ManualPosOrderRequest pickup = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.PICKUP,
+                null, OrderPaymentTiming.ON_DELIVERY, null, "Ana", null, onDelivery.lines(), List.of());
+        ManualPosOrderRequest prematureMethod = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.DELIVERY,
+                OrderPaymentMethod.CASH, OrderPaymentTiming.ON_DELIVERY, "Calle Principal 123", null, null,
+                onDelivery.lines(), List.of());
+        ManualPosOrderRequest prematureCash = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.DELIVERY,
+                null, OrderPaymentTiming.ON_DELIVERY, "Calle Principal 123", null, new BigDecimal("100.00"),
+                onDelivery.lines(), List.of());
+        assertError(() -> manualPosOrderService.create(userId, pickup), ManualPosOrderError.ORDER_INVALID);
+        assertError(() -> manualPosOrderService.create(userId, prematureMethod), ManualPosOrderError.ORDER_INVALID);
+        assertError(() -> manualPosOrderService.create(userId, prematureCash), ManualPosOrderError.ORDER_INVALID);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isOne();
     }
 
     @Test

@@ -1,12 +1,15 @@
 package com.sushimei.sushimei.backend.businessday;
 
+import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.entity.BusinessDay;
 import com.sushimei.sushimei.backend.entity.BusinessDayClosure;
 import com.sushimei.sushimei.backend.order.OrderLifecycleService;
 import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
+import com.sushimei.sushimei.backend.order.OrderPaymentCollectionRequest;
 import com.sushimei.sushimei.backend.order.OrderVoidRequest;
 import com.sushimei.sushimei.backend.repository.BusinessDayClosureRepository;
 import com.sushimei.sushimei.backend.repository.BusinessDayCashExpenseRepository;
@@ -118,6 +121,84 @@ class BusinessDayServiceIntegrationTest {
         assertThat(opened.closureNumber()).isNull();
         assertThat(businessDayService.current()).contains(opened);
         assertThat(businessDayService.hasOpenBusinessDay()).isTrue();
+    }
+
+    @Test
+    void collectionAndCloseShareTheBusinessDayLockSoNoSuccessfulCollectionEscapesTheSnapshot() throws Exception {
+        OrderRecord order = order("READY", null, "10.00", LocalDateTime.of(2026, 8, 12, 12, 0));
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setDeliveryAddress("Calle Principal 123");
+        order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
+        orderRepository.saveAndFlush(order);
+        businessDayService.open(userId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> collection = executor.submit(() -> {
+                start.await();
+                try {
+                    return orderLifecycleService.collectPayment(order.getId(), userId,
+                            new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00")))
+                            .currentStatus().name();
+                } catch (com.sushimei.sushimei.backend.order.OrderLifecycleException exception) {
+                    return exception.getError().name();
+                }
+            });
+            Future<String> close = executor.submit(() -> {
+                start.await();
+                try {
+                    return businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("10.00")))
+                            .status().name();
+                } catch (BusinessDayException exception) {
+                    return exception.getError().name();
+                }
+            });
+            start.countDown();
+
+            assertThat(collection.get(5, TimeUnit.SECONDS)).isEqualTo(OrderLifecycleStatus.COMPLETED.name());
+            String closeResult = close.get(5, TimeUnit.SECONDS);
+            assertThat(closeResult).isIn(BusinessDayStatus.CLOSED.name(), BusinessDayError.BUSINESS_DAY_HAS_ACTIVE_ORDERS.name());
+            if (BusinessDayStatus.CLOSED.name().equals(closeResult)) {
+                assertThat(businessDayService.current().orElseThrow().cashSalesAmount()).isEqualByComparingTo("10.00");
+            } else {
+                assertThat(businessDayService.current().orElseThrow().status()).isEqualTo(BusinessDayStatus.OPEN);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void collectedPayOnDeliveryOrdersUseFinalPaymentBucketsAndRetainCashExpenseSubtraction() {
+        OrderRecord cash = readyPayOnDeliveryOrder("10.00", 7);
+        OrderRecord transfer = readyPayOnDeliveryOrder("10.00", 8);
+        OrderRecord card = readyPayOnDeliveryOrder("10.00", 9);
+        businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("5.00")));
+        cashExpenseService.create(userId, new CashExpenseRequest(UUID.randomUUID(), new BigDecimal("2.00"),
+                "Compra operativa", null));
+
+        assertThat(orderLifecycleService.collectPayment(cash.getId(), userId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00"))).currentStatus())
+                .isEqualTo(OrderLifecycleStatus.COMPLETED);
+        assertThat(orderLifecycleService.collectPayment(transfer.getId(), userId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.TRANSFER, null)).currentStatus())
+                .isEqualTo(OrderLifecycleStatus.COMPLETED);
+        assertThat(orderLifecycleService.collectPayment(card.getId(), userId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null)).currentStatus())
+                .isEqualTo(OrderLifecycleStatus.COMPLETED);
+
+        BusinessDayResponse closed = businessDayService.close(userId,
+                new CloseBusinessDayRequest(new BigDecimal("13.00")));
+
+        assertThat(closed.completedSalesAmount()).isEqualByComparingTo("30.00");
+        assertThat(closed.completedOrderCount()).isEqualTo(3);
+        assertThat(closed.cashSalesAmount()).isEqualByComparingTo("10.00");
+        assertThat(closed.transferSalesAmount()).isEqualByComparingTo("10.00");
+        assertThat(closed.cardSalesAmount()).isEqualByComparingTo("10.00");
+        assertThat(closed.unclassifiedSalesAmount()).isEqualByComparingTo("0.00");
+        assertThat(closed.cashExpenseAmount()).isEqualByComparingTo("2.00");
+        assertThat(closed.expectedClosingCashAmount()).isEqualByComparingTo("13.00");
     }
 
     @Test
@@ -598,6 +679,15 @@ class BusinessDayServiceIntegrationTest {
         order.setStatus(status);
         order.setCreatedAt(createdAt);
         order.setOrderDetails("Order evidence");
+        return orderRepository.saveAndFlush(order);
+    }
+
+    private OrderRecord readyPayOnDeliveryOrder(String total, int hour) {
+        OrderRecord order = order(OrderLifecycleStatus.READY.persistedValue(), null, total,
+                LocalDateTime.of(2026, 8, 12, hour, 0));
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setDeliveryAddress("Calle " + hour);
+        order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
         return orderRepository.saveAndFlush(order);
     }
 

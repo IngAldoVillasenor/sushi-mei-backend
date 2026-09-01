@@ -1,6 +1,13 @@
 package com.sushimei.sushimei.backend.order;
 
+import com.sushimei.sushimei.backend.businessday.BusinessDayError;
+import com.sushimei.sushimei.backend.businessday.BusinessDayException;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
+import com.sushimei.sushimei.backend.businessday.CloseBusinessDayRequest;
+import com.sushimei.sushimei.backend.businessday.OpenBusinessDayRequest;
+import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -10,11 +17,14 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,10 +54,16 @@ class OrderLifecycleServiceIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private BusinessDayService businessDayService;
+
     private Long voidActorUserId;
 
     @BeforeEach
     void clearOrders() {
+        jdbcTemplate.update("delete from public.business_day_cash_expenses");
+        jdbcTemplate.update("delete from public.business_day_closures");
+        jdbcTemplate.update("delete from public.business_days");
         jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
@@ -268,6 +284,201 @@ class OrderLifecycleServiceIntegrationTest {
         }
     }
 
+    @Test
+    void readyPayOnDeliveryCollectsTheActualMethodAtomicallyAndCannotUseNormalComplete() {
+        OrderRecord cash = readyPayOnDeliveryOrder(1);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+
+        assertError(() -> orderLifecycleService.complete(cash.getId()),
+                OrderLifecycleError.ORDER_PAYMENT_COLLECTION_REQUIRED);
+        assertError(() -> orderLifecycleService.collectPayment(cash.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("9.99"))),
+                OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+        assertThat(orderRepository.findById(cash.getId()).orElseThrow().getStatus()).isEqualTo("READY");
+        assertThat(orderRepository.findById(cash.getId()).orElseThrow().getPaymentMethod()).isNull();
+
+        OrderPaymentCollectionResponse cashCollected = orderLifecycleService.collectPayment(cash.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("20.00")));
+        assertThat(cashCollected.currentStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED);
+        assertThat(cashCollected.paymentMethod()).isEqualTo(OrderPaymentMethod.CASH);
+        assertThat(cashCollected.cashDenomination()).isEqualByComparingTo("20.00");
+        assertThat(cashCollected.paymentCollectedAt()).isNotNull();
+        assertThat(cashCollected.paymentCollectedByUserId()).isEqualTo(voidActorUserId);
+
+        OrderRecord transfer = readyPayOnDeliveryOrder(2);
+        OrderRecord card = readyPayOnDeliveryOrder(3);
+        assertError(() -> orderLifecycleService.collectPayment(transfer.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.TRANSFER, new BigDecimal("10.00"))),
+                OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+        assertError(() -> orderLifecycleService.collectPayment(card.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, new BigDecimal("10.00"))),
+                OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+        for (OrderRecord unpaid : List.of(transfer, card)) {
+            OrderRecord persistedUnpaid = orderRepository.findById(unpaid.getId()).orElseThrow();
+            assertThat(persistedUnpaid.getStatus()).isEqualTo(OrderLifecycleStatus.READY.persistedValue());
+            assertThat(persistedUnpaid.getPaymentMethod()).isNull();
+            assertThat(persistedUnpaid.getCashDenomination()).isNull();
+            assertThat(persistedUnpaid.getPaymentCollectedAt()).isNull();
+            assertThat(persistedUnpaid.getPaymentCollectedByUserId()).isNull();
+        }
+        assertThat(orderLifecycleService.collectPayment(transfer.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.TRANSFER, null)).paymentMethod())
+                .isEqualTo(OrderPaymentMethod.TRANSFER);
+        assertThat(orderLifecycleService.collectPayment(card.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null)).paymentMethod())
+                .isEqualTo(OrderPaymentMethod.CARD);
+        assertError(() -> orderLifecycleService.collectPayment(cash.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("20.00"))),
+                OrderLifecycleError.ORDER_INVALID_TRANSITION);
+
+        OrderRecord persisted = orderRepository.findById(cash.getId()).orElseThrow();
+        assertThat(persisted.requiresPaymentCollection()).isFalse();
+        assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED.persistedValue());
+    }
+
+    @Test
+    void concurrentPayOnDeliveryCollectionsHaveOneWinnerAndPreserveOnlyItsPaymentEvidence() throws Exception {
+        OrderRecord order = readyPayOnDeliveryOrder(1);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+        Long cardActorUserId = insertActor("lifecycle-card-collector");
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<CollectionAttempt> cash = executor.submit(() -> collectAfter(start, order.getId(), voidActorUserId,
+                    new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00"))));
+            Future<CollectionAttempt> card = executor.submit(() -> collectAfter(start, order.getId(), cardActorUserId,
+                    new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null)));
+            start.countDown();
+
+            List<CollectionAttempt> attempts = List.of(cash.get(5, TimeUnit.SECONDS), card.get(5, TimeUnit.SECONDS));
+            assertThat(attempts).filteredOn(CollectionAttempt::isSuccess).hasSize(1);
+            assertThat(attempts).filteredOn(attempt -> !attempt.isSuccess())
+                    .extracting(CollectionAttempt::error)
+                    .containsExactly(OrderLifecycleError.ORDER_INVALID_TRANSITION);
+
+            CollectionAttempt winner = attempts.stream().filter(CollectionAttempt::isSuccess).findFirst().orElseThrow();
+            OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+            assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED.persistedValue());
+            assertThat(persisted.getPaymentMethod()).isEqualTo(winner.response().paymentMethod());
+            assertThat(persisted.getPaymentCollectedAt()).isNotNull();
+            assertThat(persisted.getPaymentCollectedByUserId()).isEqualTo(winner.actorUserId());
+            assertThat(persisted.getVoidReason()).isNull();
+            assertThat(persisted.getVoidedAt()).isNull();
+            assertThat(persisted.getVoidedByUserId()).isNull();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentPayOnDeliveryCollectionAndVoidLeaveExactlyOneTerminalEvidenceSet() throws Exception {
+        OrderRecord order = readyPayOnDeliveryOrder(1);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<CollectionAttempt> collection = executor.submit(() -> collectAfter(start, order.getId(), voidActorUserId,
+                    new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00"))));
+            Future<String> voiding = executor.submit(() -> voidAfter(start, order.getId()));
+            start.countDown();
+
+            CollectionAttempt collectionAttempt = collection.get(5, TimeUnit.SECONDS);
+            String voidOutcome = voiding.get(5, TimeUnit.SECONDS);
+            assertThat(List.of(collectionAttempt.outcome(), voidOutcome))
+                    .contains(OrderLifecycleError.ORDER_INVALID_TRANSITION.name())
+                    .containsAnyOf(OrderLifecycleStatus.COMPLETED.name(), OrderLifecycleStatus.VOIDED.name());
+
+            OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+            if (OrderLifecycleStatus.COMPLETED.persistedValue().equals(persisted.getStatus())) {
+                assertThat(persisted.getPaymentMethod()).isEqualTo(OrderPaymentMethod.CASH);
+                assertThat(persisted.getPaymentCollectedAt()).isNotNull();
+                assertThat(persisted.getPaymentCollectedByUserId()).isEqualTo(voidActorUserId);
+                assertThat(persisted.getVoidReason()).isNull();
+                assertThat(persisted.getVoidedAt()).isNull();
+                assertThat(persisted.getVoidedByUserId()).isNull();
+            } else {
+                assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.VOIDED.persistedValue());
+                assertThat(persisted.getPaymentMethod()).isNull();
+                assertThat(persisted.getCashDenomination()).isNull();
+                assertThat(persisted.getPaymentCollectedAt()).isNull();
+                assertThat(persisted.getPaymentCollectedByUserId()).isNull();
+                assertThat(persisted.getVoidReason()).isNotBlank();
+                assertThat(persisted.getVoidedAt()).isNotNull();
+                assertThat(persisted.getVoidedByUserId()).isEqualTo(voidActorUserId);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void voidedPayOnDeliveryOrderCannotBeCollectedAndNoLongerRequiresCollection() {
+        OrderRecord order = readyPayOnDeliveryOrder(1);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+
+        orderLifecycleService.voidOrder(order.getId(), voidActorUserId, new OrderVoidRequest("Cliente canceló"));
+        assertError(() -> orderLifecycleService.collectPayment(order.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00"))),
+                OrderLifecycleError.ORDER_INVALID_TRANSITION);
+
+        OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+        assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.VOIDED.persistedValue());
+        assertThat(persisted.requiresPaymentCollection()).isFalse();
+        assertThat(persisted.getPaymentMethod()).isNull();
+        assertThat(persisted.getCashDenomination()).isNull();
+        assertThat(persisted.getPaymentCollectedAt()).isNull();
+        assertThat(persisted.getPaymentCollectedByUserId()).isNull();
+    }
+
+    @Test
+    void pendingPayOnDeliveryPreventsCloseUntilCollectionAndThenContributesByCollectedMethod() {
+        OrderRecord order = readyPayOnDeliveryOrder(1);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(new BigDecimal("10.00")));
+
+        assertThatThrownBy(() -> businessDayService.close(voidActorUserId,
+                new CloseBusinessDayRequest(new BigDecimal("10.00"))))
+                .isInstanceOf(BusinessDayException.class)
+                .extracting(exception -> ((BusinessDayException) exception).getError())
+                .isEqualTo(BusinessDayError.BUSINESS_DAY_HAS_ACTIVE_ORDERS);
+        assertThat(orderLifecycleService.collectPayment(order.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00"))).currentStatus())
+                .isEqualTo(OrderLifecycleStatus.COMPLETED);
+
+        var closed = businessDayService.close(voidActorUserId, new CloseBusinessDayRequest(new BigDecimal("20.00")));
+        assertThat(closed.completedSalesAmount()).isEqualByComparingTo("10.00");
+        assertThat(closed.cashSalesAmount()).isEqualByComparingTo("10.00");
+        assertThat(closed.expectedClosingCashAmount()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    void collectionRejectsMissingOpenDayImmediateAndNonReadyOrdersWithoutPartialPaymentMutation() {
+        OrderRecord noOpenDay = readyPayOnDeliveryOrder(1);
+        assertError(() -> orderLifecycleService.collectPayment(noOpenDay.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null)),
+                OrderLifecycleError.ORDER_PAYMENT_COLLECTION_BUSINESS_DAY_NOT_OPEN);
+
+        OrderRecord immediate = readyPayOnDeliveryOrder(2);
+        immediate.setPaymentTiming(OrderPaymentTiming.IMMEDIATE);
+        immediate.setPaymentMethod(OrderPaymentMethod.CASH);
+        orderRepository.saveAndFlush(immediate);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+        assertError(() -> orderLifecycleService.collectPayment(immediate.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CASH, new BigDecimal("10.00"))),
+                OrderLifecycleError.ORDER_PAYMENT_COLLECTION_NOT_SUPPORTED);
+        OrderRecord preparing = readyPayOnDeliveryOrder(3);
+        preparing.setStatus(OrderLifecycleStatus.PREPARING.persistedValue());
+        orderRepository.saveAndFlush(preparing);
+        assertError(() -> orderLifecycleService.collectPayment(preparing.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null)),
+                OrderLifecycleError.ORDER_INVALID_TRANSITION);
+
+        for (OrderRecord order : List.of(noOpenDay, immediate, preparing)) {
+            OrderRecord persisted = orderRepository.findById(order.getId()).orElseThrow();
+            assertThat(persisted.getPaymentCollectedAt()).isNull();
+            assertThat(persisted.getPaymentCollectedByUserId()).isNull();
+        }
+    }
+
     private String prepareAfter(CountDownLatch start, Long orderId) throws InterruptedException {
         start.await();
         try {
@@ -313,8 +524,39 @@ class OrderLifecycleServiceIntegrationTest {
         return orderRepository.saveAndFlush(order);
     }
 
+    private CollectionAttempt collectAfter(CountDownLatch start, Long orderId, Long actorUserId,
+                                           OrderPaymentCollectionRequest request) throws InterruptedException {
+        start.await();
+        try {
+            return new CollectionAttempt(actorUserId, orderLifecycleService.collectPayment(orderId, actorUserId, request), null);
+        } catch (OrderLifecycleException exception) {
+            return new CollectionAttempt(actorUserId, null, exception.getError());
+        }
+    }
+
+    private OrderRecord readyPayOnDeliveryOrder(int sequence) {
+        java.time.LocalDate businessDate = java.time.Instant.now().atZone(ZoneId.of("America/Mexico_City")).toLocalDate();
+        LocalDateTime createdAt = businessDate.atTime(12, sequence).atZone(ZoneId.of("America/Mexico_City"))
+                .toInstant().atOffset(ZoneOffset.UTC).toLocalDateTime();
+        OrderRecord order = new OrderRecord();
+        order.setPhoneNumber("521477200" + sequence);
+        order.setOrderSource(OrderSource.ANDROID_MANUAL);
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
+        order.setDeliveryAddress("Calle " + sequence);
+        order.setTotalAmount(10.00d);
+        order.setTotalAmountAmount(new BigDecimal("10.00"));
+        order.setStatus(OrderLifecycleStatus.READY.persistedValue());
+        order.setCreatedAt(createdAt);
+        order.setOrderDetails("Pago al entregar");
+        return orderRepository.saveAndFlush(order);
+    }
+
     private Long insertVoidActor() {
-        String username = "lifecycle-void-actor";
+        return insertActor("lifecycle-void-actor");
+    }
+
+    private Long insertActor(String username) {
         Integer existing = jdbcTemplate.queryForObject(
                 "select count(*) from public.app_users where username = ?", Integer.class, username);
         if (existing == null || existing == 0) {
@@ -325,6 +567,17 @@ class OrderLifecycleServiceIntegrationTest {
                     """, username, username, "{bcrypt}not-used");
         }
         return jdbcTemplate.queryForObject("select id from public.app_users where username = ?", Long.class, username);
+    }
+
+    private record CollectionAttempt(Long actorUserId, OrderPaymentCollectionResponse response,
+                                     OrderLifecycleError error) {
+        boolean isSuccess() {
+            return response != null;
+        }
+
+        String outcome() {
+            return isSuccess() ? response.currentStatus().name() : error.name();
+        }
     }
 
     private void assertError(org.assertj.core.api.ThrowableAssert.ThrowingCallable operation,

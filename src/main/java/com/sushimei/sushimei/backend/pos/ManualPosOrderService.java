@@ -3,6 +3,7 @@ package com.sushimei.sushimei.backend.pos;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteLineRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionRewardConfigurationRequest;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -34,21 +35,25 @@ public class ManualPosOrderService {
 
     public ManualPosOrderResponse create(Long authenticatedUserId, ManualPosOrderRequest request) {
         if (authenticatedUserId == null || authenticatedUserId <= 0 || request == null || request.requestId() == null
-                || request.fulfillmentType() == null || request.paymentMethod() == null
+                || request.fulfillmentType() == null
                 || (request.lines().isEmpty() && request.manualLines().isEmpty())) {
             throw new ManualPosOrderException(ManualPosOrderError.ORDER_INVALID);
         }
+        OrderPaymentTiming paymentTiming = request.paymentTiming() == null
+                ? OrderPaymentTiming.IMMEDIATE
+                : request.paymentTiming();
         String deliveryAddress = normalizeOptional(request.deliveryAddress());
         String pickupName = normalizeOptional(request.pickupName());
-        BigDecimal cashDenomination = validateFulfillmentAndPayment(request.fulfillmentType(), request.paymentMethod(),
-                deliveryAddress, pickupName, request.cashDenomination());
+        BigDecimal cashDenomination = validateFulfillmentAndPayment(request.fulfillmentType(), paymentTiming,
+                request.paymentMethod(), deliveryAddress, pickupName, request.cashDenomination());
         List<PromotionQuoteLineRequest> lines = normalizeLines(request.lines());
         List<NormalizedManualPricedLine> manualLines = normalizeManualLines(request.manualLines());
         ensureDistinctLineKeys(lines, manualLines);
-        String canonicalFingerprint = fingerprint.fingerprint(request.fulfillmentType(), request.paymentMethod(),
+        String canonicalFingerprint = fingerprint.fingerprint(request.fulfillmentType(), request.paymentMethod(), paymentTiming,
                 deliveryAddress, pickupName, cashDenomination, lines, manualLines);
         NormalizedManualPosOrder normalized = new NormalizedManualPosOrder(request.requestId(), request.fulfillmentType(),
-                request.paymentMethod(), deliveryAddress, pickupName, cashDenomination, lines, manualLines, canonicalFingerprint);
+                request.paymentMethod(), paymentTiming, deliveryAddress, pickupName, cashDenomination, lines, manualLines,
+                canonicalFingerprint);
         if (orderRepository.findByClientRequestId(request.requestId()).isPresent()) {
             return readService.existing(request.requestId(), authenticatedUserId, canonicalFingerprint);
         }
@@ -63,13 +68,21 @@ public class ManualPosOrderService {
         }
     }
 
-    private BigDecimal validateFulfillmentAndPayment(OrderFulfillmentType fulfillment, OrderPaymentMethod payment,
+    private BigDecimal validateFulfillmentAndPayment(OrderFulfillmentType fulfillment, OrderPaymentTiming paymentTiming,
+                                                     OrderPaymentMethod payment,
                                                      String deliveryAddress, String pickupName, BigDecimal cash) {
         if (fulfillment == OrderFulfillmentType.DELIVERY) {
             if (!bounded(deliveryAddress, 5, 500) || pickupName != null) throw invalid();
         } else if (fulfillment == OrderFulfillmentType.PICKUP) {
             if (!bounded(pickupName, 2, 120) || deliveryAddress != null) throw invalid();
         } else throw invalid();
+        if (paymentTiming == OrderPaymentTiming.ON_DELIVERY) {
+            if (fulfillment != OrderFulfillmentType.DELIVERY || payment != null || cash != null) {
+                throw invalid();
+            }
+            return null;
+        }
+        if (paymentTiming != OrderPaymentTiming.IMMEDIATE || payment == null) throw invalid();
         if (fulfillment == OrderFulfillmentType.PICKUP) {
             if (payment != OrderPaymentMethod.CASH && payment != OrderPaymentMethod.TRANSFER
                     && payment != OrderPaymentMethod.CARD) {

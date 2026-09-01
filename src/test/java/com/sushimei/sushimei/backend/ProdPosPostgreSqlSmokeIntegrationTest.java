@@ -136,7 +136,7 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(24);
+                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(25);
         assertThat(jdbcTemplate.queryForList(
                         "select script from public.flyway_schema_history where success order by installed_rank",
                         String.class))
@@ -164,9 +164,10 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                         "V21__enforce_unique_promotion_targets.sql",
                         "V22__add_nested_customization_and_manual_priced_lines.sql",
                 "V23__add_pos_order_void_audit.sql",
-                "V24__add_business_day_cash_expenses.sql");
+                "V24__add_business_day_cash_expenses.sql",
+                "V25__add_pay_on_delivery_payment_timing.sql");
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.flyway_schema_history where success and version = '24'", Integer.class)).isOne();
+                "select count(*) from public.flyway_schema_history where success and version = '25'", Integer.class)).isOne();
 
         assertThat(userRepository.count()).isOne();
         assertThat(jdbcTemplate.queryForObject(

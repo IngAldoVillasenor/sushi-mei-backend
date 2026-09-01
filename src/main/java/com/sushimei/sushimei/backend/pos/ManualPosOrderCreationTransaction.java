@@ -148,6 +148,7 @@ class ManualPosOrderCreationTransaction {
         order.setOrderSource(OrderSource.ANDROID_MANUAL);
         order.setFulfillmentType(request.fulfillmentType());
         order.setPaymentMethod(request.paymentMethod());
+        order.setPaymentTiming(request.paymentTiming());
         order.setDeliveryAddress(request.deliveryAddress());
         order.setPickupName(request.pickupName());
         order.setCashDenomination(request.cashDenomination());

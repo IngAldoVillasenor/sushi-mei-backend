@@ -108,6 +108,32 @@ class ManualPosOrderHttpIntegrationTest {
     }
 
     @Test
+    void postManualDeliveryOrderAcceptsExplicitOnDeliveryTimingWithoutAPrematurePaymentMethod() throws Exception {
+        MenuItemResponse california = menuCatalogService.create(new CreateMenuItemRequest(
+                "California", null, "Rollos", new BigDecimal("79.00"), true, true, 0));
+        Long userId = insertCashier();
+        UUID sessionId = insertActiveSession(userId);
+        String request = """
+                {"requestId":"%s","fulfillmentType":"DELIVERY","paymentTiming":"ON_DELIVERY",
+                "deliveryAddress":"Calle Principal 123","lines":[{"lineKey":"line-1","menuItemId":%d,
+                "quantity":1,"groups":[],"rewardConfigurations":[]}]}
+                """.formatted(UUID.randomUUID(), california.id());
+
+        mockMvc.perform(post("/api/v1/orders")
+                        .with(jwt().jwt(token -> token.subject(userId.toString()).claim("sid", sessionId.toString())
+                                        .claim("role", "CASHIER").claim("username", USERNAME))
+                                .authorities(new SimpleGrantedAuthority("ROLE_CASHIER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PREPARING"))
+                .andExpect(jsonPath("$.paymentTiming").value("ON_DELIVERY"))
+                .andExpect(jsonPath("$.requiresPaymentCollection").value(true))
+                .andExpect(jsonPath("$.paymentMethod").doesNotExist())
+                .andExpect(jsonPath("$.cashDenomination").doesNotExist());
+    }
+
+    @Test
     void postManualOrderReturnsBusinessDayClosedWithoutChangingTheCloseSnapshot() throws Exception {
         MenuItemResponse california = menuCatalogService.create(new CreateMenuItemRequest(
                 "California", null, "Rollos", new BigDecimal("79.00"), true, true, 0));

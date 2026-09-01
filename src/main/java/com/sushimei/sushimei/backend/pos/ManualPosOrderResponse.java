@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.pos;
 
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,9 +17,13 @@ public record ManualPosOrderResponse(
         Long createdByUserId,
         OrderFulfillmentType fulfillmentType,
         OrderPaymentMethod paymentMethod,
+        OrderPaymentTiming paymentTiming,
+        boolean requiresPaymentCollection,
         String deliveryAddress,
         String pickupName,
         BigDecimal cashDenomination,
+        Instant paymentCollectedAt,
+        Long paymentCollectedByUserId,
         String status,
         Instant createdAt,
         List<ManualPosOrderLineResponse> lines,

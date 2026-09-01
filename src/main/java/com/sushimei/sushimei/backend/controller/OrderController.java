@@ -6,6 +6,8 @@ import com.sushimei.sushimei.backend.order.LegacyOrderRejectionResult;
 import com.sushimei.sushimei.backend.order.OrderLifecycleError;
 import com.sushimei.sushimei.backend.order.OrderLifecycleException;
 import com.sushimei.sushimei.backend.order.OrderLifecycleService;
+import com.sushimei.sushimei.backend.order.OrderPaymentCollectionRequest;
+import com.sushimei.sushimei.backend.order.OrderPaymentCollectionResponse;
 import com.sushimei.sushimei.backend.order.OrderVoidRequest;
 import com.sushimei.sushimei.backend.order.OrderVoidResponse;
 import com.sushimei.sushimei.backend.service.CartService;
@@ -53,6 +55,13 @@ public class OrderController {
     public ResponseEntity<String> completeOrder(@PathVariable Long id) {
         orderLifecycleService.complete(id);
         return ResponseEntity.ok("Orden #" + id + " despachada exitosamente.");
+    }
+
+    @PutMapping("/{id}/collect-payment")
+    public ResponseEntity<OrderPaymentCollectionResponse> collectPayment(@PathVariable Long id,
+                                                                          @AuthenticationPrincipal Jwt jwt,
+                                                                          @RequestBody OrderPaymentCollectionRequest request) {
+        return ResponseEntity.ok(orderLifecycleService.collectPayment(id, userId(jwt), request));
     }
 
     /**

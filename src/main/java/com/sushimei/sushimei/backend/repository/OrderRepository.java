@@ -1,6 +1,7 @@
 package com.sushimei.sushimei.backend.repository;
 
 import com.sushimei.sushimei.backend.entity.OrderRecord;
+import com.sushimei.sushimei.backend.order.OrderPaymentCollectionReference;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -87,6 +88,16 @@ public interface OrderRepository extends JpaRepository<OrderRecord, Long>, org.s
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select orderRecord from OrderRecord orderRecord where orderRecord.id = :id")
     Optional<OrderRecord> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * Deliberately projects scalar order evidence without loading an OrderRecord into the
+     * persistence context. Payment collection uses it only to identify the business date before
+     * it takes the Business Day operation lock and then locks the mutable order row.
+     */
+    @Query("select new com.sushimei.sushimei.backend.order.OrderPaymentCollectionReference("
+            + "orderRecord.id, orderRecord.createdAt) "
+            + "from OrderRecord orderRecord where orderRecord.id = :id")
+    Optional<OrderPaymentCollectionReference> findPaymentCollectionReferenceById(@Param("id") Long id);
 
     Optional<OrderRecord> findBySourceCartId(Long sourceCartId);
 
