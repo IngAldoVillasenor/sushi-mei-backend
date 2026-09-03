@@ -1,6 +1,10 @@
 package com.sushimei.sushimei.backend.controller;
 
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
+import com.sushimei.sushimei.backend.businessday.OpenBusinessDayRequest;
+import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.order.OrderLifecycleStatus;
@@ -15,6 +19,8 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,8 +67,14 @@ class OrderLifecycleControllerIntegrationTest {
     @Autowired
     private PasswordPolicyService passwordPolicyService;
 
+    @Autowired
+    private BusinessDayService businessDayService;
+
     @BeforeEach
     void clearOrders() {
+        jdbcTemplate.update("delete from public.business_day_cash_expenses");
+        jdbcTemplate.update("delete from public.business_day_closures");
+        jdbcTemplate.update("delete from public.business_days");
         jdbcTemplate.update("delete from public.order_line_component_omissions");
         jdbcTemplate.update("delete from public.order_line_selection_snapshots");
         jdbcTemplate.update("delete from public.order_lines");
@@ -253,6 +265,35 @@ class OrderLifecycleControllerIntegrationTest {
     }
 
     @Test
+    void collectPaymentEndpointUsesJwtActorAllowsCashierAndRejectsKitchenAndAnonymous() throws Exception {
+        OrderRecord pendingCollection = readyPayOnDeliveryOrder(1);
+        OrderRecord kitchenOrder = readyPayOnDeliveryOrder(2);
+        TestActor cashier = insertActor("CASHIER");
+        businessDayService.open(cashier.id(), new OpenBusinessDayRequest(BigDecimal.ZERO));
+
+        mockMvc.perform(put("/api/orders/{id}/collect-payment", pendingCollection.getId())
+                        .header("Authorization", "Bearer " + cashier.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentMethod\":\"CASH\",\"cashDenomination\":\"10.00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderId").value(pendingCollection.getId()))
+                .andExpect(jsonPath("$.currentStatus").value("COMPLETED"))
+                .andExpect(jsonPath("$.paymentMethod").value("CASH"))
+                .andExpect(jsonPath("$.paymentCollectedByUserId").value(cashier.id()));
+        assertThat(orderRepository.findById(pendingCollection.getId()).orElseThrow().getStatus()).isEqualTo("COMPLETED");
+
+        mockMvc.perform(put("/api/orders/{id}/collect-payment", kitchenOrder.getId())
+                        .with(user("kitchen").roles("KITCHEN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentMethod\":\"CARD\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/orders/{id}/collect-payment", kitchenOrder.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentMethod\":\"CARD\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void malformedLegacyRejectJsonIsNotClassifiedAsPosVoidValidation() throws Exception {
         OrderRecord order = order("PENDING", OrderPaymentMethod.CASH, 1);
 
@@ -275,6 +316,18 @@ class OrderLifecycleControllerIntegrationTest {
         order.setStatus(status);
         order.setCreatedAt(LocalDateTime.of(2026, 8, 11, 11, minute));
         order.setOrderDetails("Orden de prueba");
+        return orderRepository.saveAndFlush(order);
+    }
+
+    private OrderRecord readyPayOnDeliveryOrder(int sequence) {
+        java.time.LocalDate businessDate = java.time.Instant.now().atZone(ZoneId.of("America/Mexico_City")).toLocalDate();
+        OrderRecord order = order("READY", null, sequence);
+        order.setOrderSource(OrderSource.ANDROID_MANUAL);
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
+        order.setDeliveryAddress("Calle " + sequence);
+        order.setCreatedAt(businessDate.atTime(12, sequence).atZone(ZoneId.of("America/Mexico_City"))
+                .toInstant().atOffset(ZoneOffset.UTC).toLocalDateTime());
         return orderRepository.saveAndFlush(order);
     }
 

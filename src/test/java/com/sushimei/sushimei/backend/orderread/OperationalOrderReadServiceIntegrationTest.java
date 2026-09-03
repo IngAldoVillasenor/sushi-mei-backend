@@ -9,6 +9,7 @@ import com.sushimei.sushimei.backend.entity.OrderLineKind;
 import com.sushimei.sushimei.backend.entity.OrderLineRecord;
 import com.sushimei.sushimei.backend.entity.OrderLineSelectionSnapshot;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -118,6 +119,34 @@ class OperationalOrderReadServiceIntegrationTest {
             assertThat(summary.requiresPaymentValidation()).isTrue();
             assertThat(summary.structuredLinesAvailable()).isTrue();
         });
+    }
+
+    @Test
+    void operationalReadsExposePendingPayOnDeliveryWithoutInferringItFromANullMethod() {
+        OrderRecord order = manualOrder("READY", 10, null);
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setDeliveryAddress("Calle Principal 123");
+        order.setPickupName(null);
+        order.setPaymentMethod(null);
+        order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
+        order = orderRepository.saveAndFlush(order);
+        Long orderId = order.getId();
+
+        OperationalOrderDetailResponse detail = operationalOrderReadService.order(orderId);
+        OperationalOrderSummaryResponse summary = operationalOrderReadService.activeOrders().stream()
+                .filter(candidate -> candidate.id().equals(orderId)).findFirst().orElseThrow();
+
+        assertThat(detail.paymentMethod()).isNull();
+        assertThat(detail.paymentTiming()).isEqualTo(OrderPaymentTiming.ON_DELIVERY);
+        assertThat(detail.requiresPaymentCollection()).isTrue();
+        assertThat(summary.paymentMethod()).isNull();
+        assertThat(summary.paymentTiming()).isEqualTo(OrderPaymentTiming.ON_DELIVERY);
+        assertThat(summary.requiresPaymentCollection()).isTrue();
+        HistoricalOrderSummaryResponse historical = operationalOrderReadService.historicalOrders(null, null,
+                OrderSource.ANDROID_MANUAL, "READY", 0, 10).getContent().stream()
+                .filter(candidate -> candidate.id().equals(orderId)).findFirst().orElseThrow();
+        assertThat(historical.paymentTiming()).isEqualTo(OrderPaymentTiming.ON_DELIVERY);
+        assertThat(historical.requiresPaymentCollection()).isTrue();
     }
 
     @Test
@@ -281,6 +310,11 @@ class OperationalOrderReadServiceIntegrationTest {
     @Test
     void voidedPosOrderDetailExposesPersistedCancellationAuditEvidence() {
         OrderRecord order = manualOrder("VOIDED", 9, null);
+        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setDeliveryAddress("Calle Principal 123");
+        order.setPickupName(null);
+        order.setPaymentMethod(null);
+        order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
         order.setVoidReason("Cliente canceló el pedido");
         order.setVoidedAt(Instant.parse("2026-08-11T08:15:00Z"));
         order.setVoidedByUserId(1L);
@@ -292,6 +326,15 @@ class OperationalOrderReadServiceIntegrationTest {
         assertThat(detail.voidReason()).isEqualTo("Cliente canceló el pedido");
         assertThat(detail.voidedAt()).isEqualTo(Instant.parse("2026-08-11T08:15:00Z"));
         assertThat(detail.voidedByUserId()).isEqualTo(1L);
+        assertThat(detail.paymentTiming()).isEqualTo(OrderPaymentTiming.ON_DELIVERY);
+        assertThat(detail.paymentMethod()).isNull();
+        assertThat(detail.requiresPaymentCollection()).isFalse();
+        assertThat(operationalOrderReadService.activeOrders()).extracting(OperationalOrderSummaryResponse::id)
+                .doesNotContain(order.getId());
+        HistoricalOrderSummaryResponse historical = operationalOrderReadService.historicalOrders(null, null,
+                OrderSource.ANDROID_MANUAL, "VOIDED", 0, 10).getContent().stream()
+                .filter(candidate -> candidate.id().equals(order.getId())).findFirst().orElseThrow();
+        assertThat(historical.requiresPaymentCollection()).isFalse();
     }
 
     private OrderRecord legacyOrder(String status, int minute) {

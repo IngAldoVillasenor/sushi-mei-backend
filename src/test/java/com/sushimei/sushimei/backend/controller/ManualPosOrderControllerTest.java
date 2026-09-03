@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.controller;
 
 import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.pos.ManualOrderResult;
 import com.sushimei.sushimei.backend.pos.ManualPosOrderError;
@@ -32,8 +33,9 @@ class ManualPosOrderControllerTest {
                 OrderPaymentMethod.CASH, null, "Ana", new BigDecimal("100.00"),
                 List.of(new PromotionQuoteLineRequest("line", 1L, 1, List.of(), List.of())));
         ManualPosOrderResponse response = new ManualPosOrderResponse(44L, requestId, ManualOrderResult.CREATED,
-                OrderSource.ANDROID_MANUAL, 7L, OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH, null, "Ana",
-                null, "PENDING", Instant.parse("2026-08-11T12:00:00Z"), List.of(), new BigDecimal("79.00"));
+                OrderSource.ANDROID_MANUAL, 7L, OrderFulfillmentType.PICKUP, OrderPaymentMethod.CASH,
+                OrderPaymentTiming.IMMEDIATE, false, null, "Ana", null, null, null, "PENDING",
+                Instant.parse("2026-08-11T12:00:00Z"), List.of(), new BigDecimal("79.00"));
         Jwt jwt = mock(Jwt.class);
         when(jwt.getSubject()).thenReturn("7");
         when(service.create(7L, request)).thenReturn(response);

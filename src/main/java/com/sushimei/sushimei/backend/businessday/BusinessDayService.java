@@ -157,6 +157,15 @@ public class BusinessDayService {
      */
     @Transactional
     public void assertOpenBusinessDayForOpenSale(Instant createdAt) {
+        assertOpenBusinessDayForOperationalSettlement(createdAt);
+    }
+
+    /**
+     * Requires an OPEN business day for an operational settlement that changes an order into a completed sale.
+     * It shares the singleton operation lock with close so settlement cannot escape the closing snapshot.
+     */
+    @Transactional
+    public void assertOpenBusinessDayForOperationalSettlement(Instant createdAt) {
         if (createdAt == null) {
             throw failure(BusinessDayError.BUSINESS_DAY_INVALID);
         }

@@ -2,6 +2,7 @@ package com.sushimei.sushimei.backend.pos;
 
 import com.sushimei.sushimei.backend.catalog.MenuQuoteGroupRequest;
 import com.sushimei.sushimei.backend.catalog.MenuQuoteSelectionRequest;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.promotion.PromotionQuoteLineRequest;
 import com.sushimei.sushimei.backend.promotion.PromotionRewardConfigurationRequest;
 import java.io.ByteArrayOutputStream;
@@ -19,9 +20,11 @@ import org.springframework.stereotype.Component;
 public class ManualPosOrderFingerprint {
 
     private static final int V22_EXTENSION_MAGIC = 0x56323201;
+    private static final int V25_PAYMENT_TIMING_EXTENSION_MAGIC = 0x56323501;
 
     public String fingerprint(com.sushimei.sushimei.backend.entity.OrderFulfillmentType fulfillmentType,
                               com.sushimei.sushimei.backend.entity.OrderPaymentMethod paymentMethod,
+                              OrderPaymentTiming paymentTiming,
                               String deliveryAddress,
                               String pickupName,
                               BigDecimal cashDenomination,
@@ -42,11 +45,27 @@ public class ManualPosOrderFingerprint {
                 writeNestedAndRewardCustomizations(output, lines);
                 writeManualLines(output, manualLines == null ? List.of() : manualLines);
             }
+            // The omitted/default IMMEDIATE form remains byte-compatible with pre-V25 requests.
+            if (paymentTiming == OrderPaymentTiming.ON_DELIVERY) {
+                output.writeInt(V25_PAYMENT_TIMING_EXTENSION_MAGIC);
+                writeString(output, paymentTiming.name());
+            }
             output.flush();
             return hex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
         } catch (IOException | NoSuchAlgorithmException exception) {
             throw new IllegalStateException("Unable to canonicalize manual order input", exception);
         }
+    }
+
+    public String fingerprint(com.sushimei.sushimei.backend.entity.OrderFulfillmentType fulfillmentType,
+                              com.sushimei.sushimei.backend.entity.OrderPaymentMethod paymentMethod,
+                              String deliveryAddress,
+                              String pickupName,
+                              BigDecimal cashDenomination,
+                              List<PromotionQuoteLineRequest> lines,
+                              List<NormalizedManualPricedLine> manualLines) {
+        return fingerprint(fulfillmentType, paymentMethod, null, deliveryAddress, pickupName, cashDenomination, lines,
+                manualLines);
     }
 
     private void writeLines(DataOutputStream output, List<PromotionQuoteLineRequest> lines) throws IOException {

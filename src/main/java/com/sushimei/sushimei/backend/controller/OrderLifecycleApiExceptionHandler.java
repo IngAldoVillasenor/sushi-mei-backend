@@ -27,7 +27,7 @@ public class OrderLifecycleApiExceptionHandler {
     private HttpStatus status(OrderLifecycleError error) {
         return switch (error) {
             case ORDER_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case ORDER_INVALID_VOID_REQUEST -> HttpStatus.BAD_REQUEST;
+            case ORDER_INVALID_VOID_REQUEST, ORDER_INVALID_PAYMENT_COLLECTION_REQUEST -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.CONFLICT;
         };
     }
@@ -37,6 +37,10 @@ public class OrderLifecycleApiExceptionHandler {
             case ORDER_NOT_FOUND -> "La orden no existe.";
             case ORDER_INVALID_TRANSITION -> "La operación no es válida para el estado actual de la orden.";
             case ORDER_PAYMENT_NOT_VALIDATABLE -> "El pago de esta orden no puede validarse.";
+            case ORDER_PAYMENT_COLLECTION_REQUIRED -> "Esta orden requiere cobro al entregar antes de completarse.";
+            case ORDER_PAYMENT_COLLECTION_NOT_SUPPORTED -> "La orden no admite cobro al entregar.";
+            case ORDER_INVALID_PAYMENT_COLLECTION_REQUEST -> "Los datos de cobro no son válidos.";
+            case ORDER_PAYMENT_COLLECTION_BUSINESS_DAY_NOT_OPEN -> "El día de negocio correspondiente no está abierto.";
             case ORDER_OPERATION_NOT_SUPPORTED -> "La orden no admite esta operación.";
             case ORDER_INVALID_VOID_REQUEST -> "La razón de cancelación no es válida.";
         };

@@ -1,6 +1,8 @@
 package com.sushimei.sushimei.backend.order;
 
 import com.sushimei.sushimei.backend.entity.OrderRecord;
+import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import java.time.LocalDateTime;
 
 /** Stable operational projection for Kitchen/POS clients; never exposes OrderRecord directly. */
@@ -13,6 +15,9 @@ public record ActiveOrderResponse(
         String paymentNotes,
         String orderDetails,
         Double totalAmount,
+        OrderPaymentMethod paymentMethod,
+        OrderPaymentTiming paymentTiming,
+        boolean requiresPaymentCollection,
         String status,
         LocalDateTime createdAt
 ) {
@@ -26,6 +31,9 @@ public record ActiveOrderResponse(
                 order.getPaymentNotes(),
                 order.getOrderDetails(),
                 order.getTotalAmount(),
+                order.getPaymentMethod(),
+                order.getPaymentTiming(),
+                order.requiresPaymentCollection(),
                 order.getStatus(),
                 order.getCreatedAt());
     }

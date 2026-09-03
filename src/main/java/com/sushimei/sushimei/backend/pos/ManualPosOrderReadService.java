@@ -44,9 +44,10 @@ class ManualPosOrderReadService {
                 .map(line -> lineResponse(line, order.getOrderLines()))
                 .toList();
         return new ManualPosOrderResponse(order.getId(), order.getClientRequestId(), result, order.getOrderSource(),
-                order.getCreatedByUserId(), order.getFulfillmentType(), order.getPaymentMethod(), order.getDeliveryAddress(),
-                order.getPickupName(), order.getCashDenomination(), order.getStatus(), asUtcInstant(order.getCreatedAt()), paid,
-                order.getTotalAmountAmount());
+                order.getCreatedByUserId(), order.getFulfillmentType(), order.getPaymentMethod(),
+                order.getPaymentTiming(), order.requiresPaymentCollection(), order.getDeliveryAddress(), order.getPickupName(),
+                order.getCashDenomination(), order.getPaymentCollectedAt(), order.getPaymentCollectedByUserId(), order.getStatus(),
+                asUtcInstant(order.getCreatedAt()), paid, order.getTotalAmountAmount());
     }
 
     private static Instant asUtcInstant(LocalDateTime value) {

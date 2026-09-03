@@ -1,6 +1,11 @@
 package com.sushimei.sushimei.backend.order;
 
+import com.sushimei.sushimei.backend.businessday.BusinessDayError;
+import com.sushimei.sushimei.backend.businessday.BusinessDayException;
+import com.sushimei.sushimei.backend.businessday.BusinessDayService;
+import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
+import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
 import com.sushimei.sushimei.backend.entity.OrderSource;
 import com.sushimei.sushimei.backend.repository.OrderRepository;
@@ -20,10 +25,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderLifecycleService {
 
     private final OrderRepository orderRepository;
+    private final BusinessDayService businessDayService;
+    private final CheckoutMoney checkoutMoney;
     private final Clock clock;
 
-    public OrderLifecycleService(OrderRepository orderRepository, Clock clock) {
+    public OrderLifecycleService(OrderRepository orderRepository,
+                                 BusinessDayService businessDayService,
+                                 CheckoutMoney checkoutMoney,
+                                 Clock clock) {
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
+        this.businessDayService = Objects.requireNonNull(businessDayService, "businessDayService must not be null");
+        this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
@@ -54,7 +66,38 @@ public class OrderLifecycleService {
     @Transactional
     public OrderLifecycleTransitionResult complete(Long orderId) {
         OrderRecord order = lockRequired(orderId);
-        return transition(order, requiredStatus(order), OrderLifecycleStatus.READY, OrderLifecycleStatus.COMPLETED);
+        OrderLifecycleStatus current = requiredStatus(order);
+        if (current == OrderLifecycleStatus.READY && order.requiresPaymentCollection()) {
+            throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_REQUIRED);
+        }
+        return transition(order, current, OrderLifecycleStatus.READY, OrderLifecycleStatus.COMPLETED);
+    }
+
+    /** Collects the real final method and completes a READY delivery order in the same transaction. */
+    @Transactional
+    public OrderPaymentCollectionResponse collectPayment(Long orderId, Long actorUserId,
+                                                          OrderPaymentCollectionRequest request) {
+        if (actorUserId == null || actorUserId <= 0) {
+            throw failure(OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+        }
+        OrderPaymentCollectionReference reference = requiredPaymentCollectionReference(orderId);
+        assertBusinessDayOpen(reference);
+
+        OrderRecord order = lockRequired(orderId);
+        requirePaymentCollectionSupported(order);
+        OrderLifecycleStatus current = requireReadyPendingPaymentCollection(order);
+
+        PaymentCollectionInput input = validatedCollectionInput(request, order);
+        Instant collectedAt = clock.instant();
+        order.setPaymentMethod(input.paymentMethod());
+        order.setCashDenomination(input.cashDenomination());
+        order.setPaymentCollectedAt(collectedAt);
+        order.setPaymentCollectedByUserId(actorUserId);
+        order.setStatus(OrderLifecycleStatus.COMPLETED.persistedValue());
+        orderRepository.flush();
+        return new OrderPaymentCollectionResponse(order.getId(), current, OrderLifecycleStatus.COMPLETED,
+                order.getPaymentTiming(), order.getPaymentMethod(), order.getCashDenomination(),
+                order.getPaymentCollectedAt(), order.getPaymentCollectedByUserId());
     }
 
     @Transactional
@@ -138,6 +181,68 @@ public class OrderLifecycleService {
                 .orElseThrow(() -> failure(OrderLifecycleError.ORDER_NOT_FOUND));
     }
 
+    private OrderPaymentCollectionReference requiredPaymentCollectionReference(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            throw failure(OrderLifecycleError.ORDER_NOT_FOUND);
+        }
+        return orderRepository.findPaymentCollectionReferenceById(orderId)
+                .orElseThrow(() -> failure(OrderLifecycleError.ORDER_NOT_FOUND));
+    }
+
+    private void assertBusinessDayOpen(OrderPaymentCollectionReference reference) {
+        try {
+            if (reference.createdAt() == null) {
+                throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_BUSINESS_DAY_NOT_OPEN);
+            }
+            businessDayService.assertOpenBusinessDayForOperationalSettlement(
+                    reference.createdAt().toInstant(java.time.ZoneOffset.UTC));
+        } catch (BusinessDayException exception) {
+            if (exception.getError() == BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED) {
+                throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_BUSINESS_DAY_NOT_OPEN);
+            }
+            throw exception;
+        }
+    }
+
+    private void requirePaymentCollectionSupported(OrderRecord order) {
+        if (!isPhysicalPosSource(order.getOrderSource())
+                || order.getPaymentTiming() != OrderPaymentTiming.ON_DELIVERY) {
+            throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_NOT_SUPPORTED);
+        }
+    }
+
+    private OrderLifecycleStatus requireReadyPendingPaymentCollection(OrderRecord order) {
+        OrderLifecycleStatus current = requiredStatus(order);
+        if (current != OrderLifecycleStatus.READY || !order.requiresPaymentCollection()
+                || order.getPaymentCollectedAt() != null || order.getPaymentCollectedByUserId() != null) {
+            throw failure(OrderLifecycleError.ORDER_INVALID_TRANSITION);
+        }
+        return current;
+    }
+
+    private PaymentCollectionInput validatedCollectionInput(OrderPaymentCollectionRequest request, OrderRecord order) {
+        if (request == null || request.paymentMethod() == null) {
+            throw failure(OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+        }
+        if (request.paymentMethod() == OrderPaymentMethod.CASH) {
+            try {
+                java.math.BigDecimal denomination = checkoutMoney.normalizeNumericAmount(request.cashDenomination());
+                java.math.BigDecimal total = checkoutMoney.normalizeNumericAmount(order.getTotalAmountAmount());
+                if (denomination.compareTo(total) < 0) {
+                    throw failure(OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+                }
+                return new PaymentCollectionInput(OrderPaymentMethod.CASH, denomination);
+            } catch (IllegalArgumentException exception) {
+                throw failure(OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+            }
+        }
+        if ((request.paymentMethod() != OrderPaymentMethod.TRANSFER && request.paymentMethod() != OrderPaymentMethod.CARD)
+                || request.cashDenomination() != null) {
+            throw failure(OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
+        }
+        return new PaymentCollectionInput(request.paymentMethod(), null);
+    }
+
     private OrderLifecycleStatus requiredStatus(OrderRecord order) {
         try {
             return OrderLifecycleStatus.fromPersisted(order.getStatus());
@@ -163,5 +268,8 @@ public class OrderLifecycleService {
 
     private static OrderLifecycleException failure(OrderLifecycleError error) {
         return new OrderLifecycleException(error);
+    }
+
+    private record PaymentCollectionInput(OrderPaymentMethod paymentMethod, java.math.BigDecimal cashDenomination) {
     }
 }
