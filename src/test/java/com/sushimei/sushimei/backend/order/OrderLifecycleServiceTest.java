@@ -32,7 +32,7 @@ class OrderLifecycleServiceTest {
     private BusinessDayService businessDayService;
 
     @Test
-    void persistedPickupPayOnDeliveryIsRejectedDefensivelyBeforeAnyPaymentMutation() {
+    void persistedPickupPayOnDeliveryCanBeCollectedAtReady() {
         OrderRecord order = new OrderRecord();
         order.setId(41L);
         order.setOrderSource(OrderSource.ANDROID_MANUAL);
@@ -47,18 +47,16 @@ class OrderLifecycleServiceTest {
         OrderLifecycleService service = new OrderLifecycleService(orderRepository, businessDayService,
                 new CheckoutMoney(), Clock.systemUTC());
 
-        assertThatThrownBy(() -> service.collectPayment(order.getId(), 7L,
-                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null)))
-                .isInstanceOf(OrderLifecycleException.class)
-                .extracting(exception -> ((OrderLifecycleException) exception).getError())
-                .isEqualTo(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_NOT_SUPPORTED);
+        OrderPaymentCollectionResponse response = service.collectPayment(order.getId(), 7L,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null));
 
-        assertThat(order.getStatus()).isEqualTo(OrderLifecycleStatus.READY.persistedValue());
-        assertThat(order.getPaymentMethod()).isNull();
+        assertThat(response.currentStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED);
+        assertThat(order.getStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED.persistedValue());
+        assertThat(order.getPaymentMethod()).isEqualTo(OrderPaymentMethod.CARD);
         assertThat(order.getCashDenomination()).isNull();
-        assertThat(order.getPaymentCollectedAt()).isNull();
-        assertThat(order.getPaymentCollectedByUserId()).isNull();
+        assertThat(order.getPaymentCollectedAt()).isNotNull();
+        assertThat(order.getPaymentCollectedByUserId()).isEqualTo(7L);
         verify(orderRepository).findByIdForUpdate(order.getId());
-        verify(orderRepository, never()).flush();
+        verify(orderRepository).flush();
     }
 }

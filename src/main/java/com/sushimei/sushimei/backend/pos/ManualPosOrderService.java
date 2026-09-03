@@ -77,7 +77,7 @@ public class ManualPosOrderService {
             if (!bounded(pickupName, 2, 120) || deliveryAddress != null) throw invalid();
         } else throw invalid();
         if (paymentTiming == OrderPaymentTiming.ON_DELIVERY) {
-            if (fulfillment != OrderFulfillmentType.DELIVERY || payment != null || cash != null) {
+            if (payment != null || cash != null) {
                 throw invalid();
             }
             return null;

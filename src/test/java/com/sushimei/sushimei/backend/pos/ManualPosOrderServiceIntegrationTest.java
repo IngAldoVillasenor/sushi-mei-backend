@@ -683,7 +683,7 @@ class ManualPosOrderServiceIntegrationTest {
     }
 
     @Test
-    void deliveryPayOnDeliveryCreatesAPreparingUnpaidOrderAndRejectsPrematurePaymentEvidence() {
+    void pickupAndDeliveryPayOnDeliveryCreatePreparingUnpaidOrdersAndRejectPrematurePaymentEvidence() {
         MenuItemResponse california = item("California", "79.00");
         Long userId = insertUser("cashier-pay-on-delivery");
         UUID requestId = UUID.randomUUID();
@@ -712,10 +712,18 @@ class ManualPosOrderServiceIntegrationTest {
         ManualPosOrderRequest prematureCash = new ManualPosOrderRequest(UUID.randomUUID(), OrderFulfillmentType.DELIVERY,
                 null, OrderPaymentTiming.ON_DELIVERY, "Calle Principal 123", null, new BigDecimal("100.00"),
                 onDelivery.lines(), List.of());
-        assertError(() -> manualPosOrderService.create(userId, pickup), ManualPosOrderError.ORDER_INVALID);
+        ManualPosOrderResponse pickupCreated = manualPosOrderService.create(userId, pickup);
+        assertThat(pickupCreated.result()).isEqualTo(ManualOrderResult.CREATED);
+        assertThat(pickupCreated.status()).isEqualTo("PREPARING");
+        assertThat(pickupCreated.paymentTiming()).isEqualTo(OrderPaymentTiming.ON_DELIVERY);
+        assertThat(pickupCreated.requiresPaymentCollection()).isTrue();
+        assertThat(pickupCreated.paymentMethod()).isNull();
+        assertThat(pickupCreated.cashDenomination()).isNull();
+        assertThat(pickupCreated.pickupName()).isEqualTo("Ana");
+        assertThat(pickupCreated.deliveryAddress()).isNull();
         assertError(() -> manualPosOrderService.create(userId, prematureMethod), ManualPosOrderError.ORDER_INVALID);
         assertError(() -> manualPosOrderService.create(userId, prematureCash), ManualPosOrderError.ORDER_INVALID);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.orders", Integer.class)).isEqualTo(2);
     }
 
     @Test

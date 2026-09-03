@@ -4,7 +4,6 @@ import com.sushimei.sushimei.backend.businessday.BusinessDayError;
 import com.sushimei.sushimei.backend.businessday.BusinessDayException;
 import com.sushimei.sushimei.backend.businessday.BusinessDayService;
 import com.sushimei.sushimei.backend.checkout.CheckoutMoney;
-import com.sushimei.sushimei.backend.entity.OrderFulfillmentType;
 import com.sushimei.sushimei.backend.entity.OrderPaymentMethod;
 import com.sushimei.sushimei.backend.entity.OrderPaymentTiming;
 import com.sushimei.sushimei.backend.entity.OrderRecord;
@@ -207,7 +206,6 @@ public class OrderLifecycleService {
 
     private void requirePaymentCollectionSupported(OrderRecord order) {
         if (!isPhysicalPosSource(order.getOrderSource())
-                || order.getFulfillmentType() != OrderFulfillmentType.DELIVERY
                 || order.getPaymentTiming() != OrderPaymentTiming.ON_DELIVERY) {
             throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_NOT_SUPPORTED);
         }

@@ -64,6 +64,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V23_SCRIPT = "V23__add_pos_order_void_audit.sql";
     private static final String V24_SCRIPT = "V24__add_business_day_cash_expenses.sql";
     private static final String V25_SCRIPT = "V25__add_pay_on_delivery_payment_timing.sql";
+    private static final String V26_SCRIPT = "V26__allow_pickup_pay_on_delivery.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -112,7 +113,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 23, "SQL", V23_SCRIPT);
         assertSqlMigration(jdbcTemplate, 24, "SQL", V24_SCRIPT);
         assertSqlMigration(jdbcTemplate, 25, "SQL", V25_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("25");
+        assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("26");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -222,7 +224,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 23, "SQL", V23_SCRIPT);
         assertSqlMigration(jdbcTemplate, 24, "SQL", V24_SCRIPT);
         assertSqlMigration(jdbcTemplate, 25, "SQL", V25_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("25");
+        assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("26");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -525,7 +528,9 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 24)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 25, "SQL", V25_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 25)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("25");
+        assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 26)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("26");
         assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 26);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);

@@ -337,6 +337,26 @@ class OrderLifecycleServiceIntegrationTest {
     }
 
     @Test
+    void readyPickupPayOnDeliveryCollectsAndCannotUseNormalComplete() {
+        OrderRecord pickup = readyPayOnDeliveryOrder(4, OrderFulfillmentType.PICKUP);
+        businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
+
+        assertError(() -> orderLifecycleService.complete(pickup.getId()),
+                OrderLifecycleError.ORDER_PAYMENT_COLLECTION_REQUIRED);
+
+        OrderPaymentCollectionResponse collected = orderLifecycleService.collectPayment(pickup.getId(), voidActorUserId,
+                new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null));
+
+        assertThat(collected.currentStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED);
+        assertThat(collected.paymentMethod()).isEqualTo(OrderPaymentMethod.CARD);
+        assertThat(collected.cashDenomination()).isNull();
+        OrderRecord persisted = orderRepository.findById(pickup.getId()).orElseThrow();
+        assertThat(persisted.getFulfillmentType()).isEqualTo(OrderFulfillmentType.PICKUP);
+        assertThat(persisted.getStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED.persistedValue());
+        assertThat(persisted.requiresPaymentCollection()).isFalse();
+    }
+
+    @Test
     void concurrentPayOnDeliveryCollectionsHaveOneWinnerAndPreserveOnlyItsPaymentEvidence() throws Exception {
         OrderRecord order = readyPayOnDeliveryOrder(1);
         businessDayService.open(voidActorUserId, new OpenBusinessDayRequest(BigDecimal.ZERO));
@@ -535,15 +555,23 @@ class OrderLifecycleServiceIntegrationTest {
     }
 
     private OrderRecord readyPayOnDeliveryOrder(int sequence) {
+        return readyPayOnDeliveryOrder(sequence, OrderFulfillmentType.DELIVERY);
+    }
+
+    private OrderRecord readyPayOnDeliveryOrder(int sequence, OrderFulfillmentType fulfillmentType) {
         java.time.LocalDate businessDate = java.time.Instant.now().atZone(ZoneId.of("America/Mexico_City")).toLocalDate();
         LocalDateTime createdAt = businessDate.atTime(12, sequence).atZone(ZoneId.of("America/Mexico_City"))
                 .toInstant().atOffset(ZoneOffset.UTC).toLocalDateTime();
         OrderRecord order = new OrderRecord();
         order.setPhoneNumber("521477200" + sequence);
         order.setOrderSource(OrderSource.ANDROID_MANUAL);
-        order.setFulfillmentType(OrderFulfillmentType.DELIVERY);
+        order.setFulfillmentType(fulfillmentType);
         order.setPaymentTiming(OrderPaymentTiming.ON_DELIVERY);
-        order.setDeliveryAddress("Calle " + sequence);
+        if (fulfillmentType == OrderFulfillmentType.PICKUP) {
+            order.setPickupName("Cliente " + sequence);
+        } else {
+            order.setDeliveryAddress("Calle " + sequence);
+        }
         order.setTotalAmount(10.00d);
         order.setTotalAmountAmount(new BigDecimal("10.00"));
         order.setStatus(OrderLifecycleStatus.READY.persistedValue());
