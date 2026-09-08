@@ -55,21 +55,21 @@ server:
 development:
   ai-harness:
     enabled: ${DEV_AI_HARNESS_ENABLED:false}
-sushimei:
+merkon:
   vendis-import:
-    enabled: ${SUSHIMEI_VENDIS_IMPORT_ENABLED:false}
-    file: ${SUSHIMEI_VENDIS_IMPORT_FILE:}
-    dry-run: ${SUSHIMEI_VENDIS_IMPORT_DRY_RUN:true}
+    enabled: ${MERKON_VENDIS_IMPORT_ENABLED:${SUSHIMEI_VENDIS_IMPORT_ENABLED:false}}
+    file: ${MERKON_VENDIS_IMPORT_FILE:${SUSHIMEI_VENDIS_IMPORT_FILE:}}
+    dry-run: ${MERKON_VENDIS_IMPORT_DRY_RUN:${SUSHIMEI_VENDIS_IMPORT_DRY_RUN:true}}
   security:
     jwt:
-      private-key-location: ${SUSHIMEI_JWT_PRIVATE_KEY_LOCATION:}
-      public-key-location: ${SUSHIMEI_JWT_PUBLIC_KEY_LOCATION:}
-      key-id: ${SUSHIMEI_JWT_KEY_ID:sushi-mei-primary}
-      issuer: ${SUSHIMEI_JWT_ISSUER:urn:sushi-mei:auth}
-      audience: ${SUSHIMEI_JWT_AUDIENCE:urn:sushi-mei:api}
-      access-token-ttl: ${SUSHIMEI_JWT_ACCESS_TOKEN_TTL:15m}
-    session-ttl: ${SUSHIMEI_SESSION_TTL:15d}
-    bcrypt-strength: ${SUSHIMEI_BCRYPT_STRENGTH:12}
-    bootstrap-owner-username: ${SUSHIMEI_BOOTSTRAP_OWNER_USERNAME:}
-    bootstrap-owner-password: ${SUSHIMEI_BOOTSTRAP_OWNER_PASSWORD:}
-    bootstrap-owner-display-name: ${SUSHIMEI_BOOTSTRAP_OWNER_DISPLAY_NAME:Owner}
+      private-key-location: ${MERKON_JWT_PRIVATE_KEY_LOCATION:${SUSHIMEI_JWT_PRIVATE_KEY_LOCATION:}}
+      public-key-location: ${MERKON_JWT_PUBLIC_KEY_LOCATION:${SUSHIMEI_JWT_PUBLIC_KEY_LOCATION:}}
+      key-id: ${MERKON_JWT_KEY_ID:${SUSHIMEI_JWT_KEY_ID:merkon-primary}}
+      issuer: ${MERKON_JWT_ISSUER:${SUSHIMEI_JWT_ISSUER:urn:merkon:auth}}
+      audience: ${MERKON_JWT_AUDIENCE:${SUSHIMEI_JWT_AUDIENCE:urn:merkon:api}}
+      access-token-ttl: ${MERKON_JWT_ACCESS_TOKEN_TTL:${SUSHIMEI_JWT_ACCESS_TOKEN_TTL:15m}}
+    session-ttl: ${MERKON_SESSION_TTL:${SUSHIMEI_SESSION_TTL:15d}}
+    bcrypt-strength: ${MERKON_BCRYPT_STRENGTH:${SUSHIMEI_BCRYPT_STRENGTH:12}}
+    bootstrap-owner-username: ${MERKON_BOOTSTRAP_OWNER_USERNAME:${SUSHIMEI_BOOTSTRAP_OWNER_USERNAME:}}
+    bootstrap-owner-password: ${MERKON_BOOTSTRAP_OWNER_PASSWORD:${SUSHIMEI_BOOTSTRAP_OWNER_PASSWORD:}}
+    bootstrap-owner-display-name: ${MERKON_BOOTSTRAP_OWNER_DISPLAY_NAME:${SUSHIMEI_BOOTSTRAP_OWNER_DISPLAY_NAME:Owner}}

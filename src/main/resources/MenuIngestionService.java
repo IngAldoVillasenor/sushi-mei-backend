@@ -1,4 +1,4 @@
-package com.sushimei.sushimei.backend.service;
+package com.cardovia.merkon.backend.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

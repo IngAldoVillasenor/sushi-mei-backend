@@ -1,0 +1,180 @@
+package com.cardovia.merkon.backend.agent;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
+import java.util.Optional;
+import java.util.Set;
+
+@Service
+@ConditionalOnProperty(prefix = "merkon.features.ai", name = "enabled", havingValue = "true", matchIfMissing = true)
+public class AiConversationService {
+
+    private static final Logger log = LoggerFactory.getLogger(AiConversationService.class);
+    private static final String FINISH_ORDER_RESPONSE = "Perfecto, tomo nota de que por ahora no deseas agregar m\u00e1s. "
+            + "Si necesitas cambiar algo, dime el producto que deseas agregar o quitar.";
+    private static final String GREETING_RESPONSE = "\u00a1Hola! Soy el asistente de Sushi Mei. \u00bfQu\u00e9 te gustar\u00eda pedir hoy?";
+    private static final String ADD_CLARIFICATION_RESPONSE = "Claro. \u00bfQu\u00e9 producto y presentaci\u00f3n exactos deseas agregar? "
+            + "Por ejemplo, indica el tipo de charola o el tama\u00f1o de la bebida.";
+    private static final String REMOVE_CLARIFICATION_RESPONSE = "Claro. \u00bfQu\u00e9 producto deseas quitar?";
+    private static final String AMBIGUOUS_REFERENCE_RESPONSE = "Claro. \u00bfQu\u00e9 producto deseas agregar o quitar?";
+    private static final String MUTATION_FAILURE_RESPONSE =
+            "No se pudo modificar el carrito en este momento. Intenta nuevamente o solicita ayuda del restaurante.";
+    private static final String CONFIRMATION_BLOCKED_RESPONSE =
+            "No puedo confirmar una orden todav\u00eda. La finalizaci\u00f3n se procesa por un flujo separado.";
+    private static final String CATALOG_OPERATION_CLAIM_RESPONSE =
+            "Puedo ayudarte con informaci\u00f3n del men\u00fa. \u00bfQu\u00e9 producto deseas consultar?";
+    private static final String UNVERIFIED_OPERATION_CLAIM_RESPONSE =
+            "No pude verificar ese cambio en tu carrito. Ind\u00edcame el producto y la presentaci\u00f3n exactos para intentarlo nuevamente.";
+    private static final String CALPI_PRESENTATION_CLARIFICATION =
+            "\u00bfQu\u00e9 Calpi deseas? Escribe la presentaci\u00f3n exacta: 'Agrega Calpi 500ml', "
+                    + "'Agrega Calpi de fresa 500ml', 'Agrega Calpi de mango' o 'Agrega Calpi mineral 500ml'.";
+    private static final String MULTI_ITEM_INCOMPLETE_RESPONSE =
+            "Agregu\u00e9 los productos confirmados, pero no pude identificar todos. "
+                    + "Env\u00edame el producto faltante con su presentaci\u00f3n exacta.";
+    private static final Set<String> OPERATION_SUCCESS_TOKENS = Set.of(
+            "agregue", "agrego", "agregado", "anadi", "anadio", "anadido",
+            "quite", "quito", "quitado", "elimine", "elimino", "eliminado");
+    private static final Set<String> OPERATION_TARGET_TOKENS = Set.of("carrito", "pedido", "orden");
+    private static final Set<String> ORDER_COMPLETION_TOKENS = Set.of(
+            "creado", "creada", "procesado", "procesada", "confirmado", "confirmada", "listo", "lista");
+
+    private final SushiAgent sushiAgent;
+    private final CatalogAgent catalogAgent;
+    private final AiToolSafetyGuard toolSafetyGuard;
+    private final ConversationRetrievalPolicy retrievalPolicy;
+    private final DeterministicCartAddRouter deterministicCartAddRouter;
+
+    public AiConversationService(SushiAgent sushiAgent,
+                                 CatalogAgent catalogAgent,
+                                 AiToolSafetyGuard toolSafetyGuard,
+                                 ConversationRetrievalPolicy retrievalPolicy,
+                                 DeterministicCartAddRouter deterministicCartAddRouter) {
+        this.sushiAgent = sushiAgent;
+        this.catalogAgent = catalogAgent;
+        this.toolSafetyGuard = toolSafetyGuard;
+        this.retrievalPolicy = retrievalPolicy;
+        this.deterministicCartAddRouter = deterministicCartAddRouter;
+    }
+
+    public String chat(String memoryId, String phoneNumber, String message) {
+        if (AiToolSafetyGuard.isSimpleGreeting(message)) {
+            log.info("AI conversation outcome=SAFE_GREETING");
+            return GREETING_RESPONSE;
+        }
+        if (AiToolSafetyGuard.isAmbiguousAddPronounRequest(message)) {
+            log.info("AI conversation outcome=SAFE_ADD_CLARIFICATION");
+            return ADD_CLARIFICATION_RESPONSE;
+        }
+        if (AiToolSafetyGuard.isAmbiguousRemovePronounRequest(message)) {
+            log.info("AI conversation outcome=SAFE_REMOVE_CLARIFICATION");
+            return REMOVE_CLARIFICATION_RESPONSE;
+        }
+        if (AiToolSafetyGuard.isStandaloneAmbiguousReference(message)) {
+            log.info("AI conversation outcome=SAFE_AMBIGUOUS_REFERENCE_CLARIFICATION");
+            return AMBIGUOUS_REFERENCE_RESPONSE;
+        }
+        if (AiToolSafetyGuard.isStandaloneAmbiguousCalpiAdd(message)) {
+            log.info("AI conversation outcome=SAFE_CALPI_PRESENTATION_CLARIFICATION");
+            return CALPI_PRESENTATION_CLARIFICATION;
+        }
+        if (AiToolSafetyGuard.isFinishOrderIntent(message)) {
+            log.info("AI conversation outcome=SAFE_FINISH_ACKNOWLEDGEMENT");
+            return FINISH_ORDER_RESPONSE;
+        }
+        if (retrievalPolicy.isReadOnlyCatalogTurn(message)) {
+            String catalogResponse = catalogAgent.chat(message);
+            if (containsOperationalClaim(catalogResponse)) {
+                log.warn("AI conversation outcome=CATALOG_RESPONSE_BLOCKED reason=OPERATIONAL_CLAIM");
+                return CATALOG_OPERATION_CLAIM_RESPONSE;
+            }
+            log.info("AI conversation outcome=CATALOG_AGENT_RESPONSE");
+            return catalogResponse;
+        }
+
+        AiToolTurnResult<String> result = toolSafetyGuard.executeTextTurn(message,
+                () -> deterministicCartAddRouter.tryAdd(phoneNumber, message)
+                        .orElseGet(() -> invokeAgent(memoryId, phoneNumber, message)));
+        return safeResponseFor(result, message).orElseGet(() -> authoritativeResponseFor(result, message).orElseGet(() -> {
+            if (containsOperationalClaim(result.value())) {
+                log.warn("AI conversation outcome=MODEL_RESPONSE_BLOCKED reason=UNVERIFIED_OPERATIONAL_CLAIM");
+                return UNVERIFIED_OPERATION_CLAIM_RESPONSE;
+            }
+            log.info("AI conversation outcome=MODEL_RESPONSE");
+            return result.value();
+        }));
+    }
+
+    private Optional<String> authoritativeResponseFor(AiToolTurnResult<String> result, String message) {
+        if (!result.mutationOutcome().isSuccessfulCartOperation() || result.authoritativeToolResponse() == null) {
+            return Optional.empty();
+        }
+        log.info("AI conversation outcome=AUTHORITATIVE_TOOL_RESPONSE toolOutcome={}", result.mutationOutcome());
+        int requestedItemCount = AiToolSafetyGuard.requestedItemCountLowerBound(message);
+        if (result.mutationOutcome() == AiMutationTurnOutcome.ADD_SUCCEEDED
+                && result.successfulAddCount() < requestedItemCount) {
+            log.info("AI conversation outcome=PARTIAL_MULTI_ITEM_ADD addedCount={} requestedLowerBound={}",
+                    result.successfulAddCount(), requestedItemCount);
+            return Optional.of(appendResponse(result.authoritativeToolResponse(), addClarificationFor(message)));
+        }
+        return Optional.of(result.authoritativeToolResponse());
+    }
+
+    private boolean containsOperationalClaim(String response) {
+        if (response == null || response.isBlank()) {
+            return false;
+        }
+        Set<String> responseTokens = AiToolSafetyGuard.tokens(response);
+        boolean namesOperationalTarget = responseTokens.stream().anyMatch(OPERATION_TARGET_TOKENS::contains);
+        return namesOperationalTarget && (responseTokens.stream().anyMatch(OPERATION_SUCCESS_TOKENS::contains)
+                || responseTokens.stream().anyMatch(ORDER_COMPLETION_TOKENS::contains));
+    }
+
+    private String invokeAgent(String memoryId, String phoneNumber, String message) {
+        try {
+            return sushiAgent.chat(memoryId, phoneNumber, message);
+        } catch (RuntimeException exception) {
+            log.warn("AI conversation outcome=MODEL_FAILURE reason={}", exception.getClass().getSimpleName());
+            throw exception;
+        }
+    }
+
+    private Optional<String> safeResponseFor(AiToolTurnResult<String> result, String message) {
+        AiMutationTurnOutcome mutationOutcome = result.mutationOutcome();
+        return switch (mutationOutcome) {
+            case NONE, ADD_SUCCEEDED, REMOVE_SUCCEEDED, CART_QUERY_SUCCEEDED -> Optional.empty();
+            case ADD_BLOCKED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), addClarificationFor(message)));
+            case REMOVE_BLOCKED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), AiToolSafetyGuard.isAddRequest(message)
+                            ? addClarificationFor(message)
+                            : REMOVE_CLARIFICATION_RESPONSE));
+            case ADD_FAILED, REMOVE_FAILED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), MUTATION_FAILURE_RESPONSE));
+            case CONFIRMATION_BLOCKED -> safeToolResponse(mutationOutcome,
+                    appendResponse(result.authoritativeToolResponse(), CONFIRMATION_BLOCKED_RESPONSE));
+        };
+    }
+
+    private String addClarificationFor(String message) {
+        if (AiToolSafetyGuard.mentionsAmbiguousCalpi(message)) {
+            return CALPI_PRESENTATION_CLARIFICATION;
+        }
+        return AiToolSafetyGuard.requestedItemCountLowerBound(message) > 1
+                ? MULTI_ITEM_INCOMPLETE_RESPONSE
+                : ADD_CLARIFICATION_RESPONSE;
+    }
+
+    private String appendResponse(String authoritativeResponse, String fallback) {
+        return authoritativeResponse == null || authoritativeResponse.isBlank()
+                ? fallback
+                : authoritativeResponse + "\n\n" + fallback;
+    }
+
+    private Optional<String> safeToolResponse(AiMutationTurnOutcome outcome, String response) {
+        log.info("AI conversation outcome=SAFE_TOOL_RESPONSE reason={}", outcome);
+        return Optional.of(response);
+    }
+}
