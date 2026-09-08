@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:sushimei-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:mem:merkon-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     username: sa
     password:
   jpa:
@@ -41,15 +41,15 @@ rag:
     min-score: 0.0
   memory:
     max-messages: 20
-sushimei:
+merkon:
   vendis-import:
     enabled: false
     dry-run: true
   security:
     jwt:
       key-id: test-key
-      issuer: urn:sushi-mei:test-auth
-      audience: urn:sushi-mei:test-api
+      issuer: urn:merkon:test-auth
+      audience: urn:merkon:test-api
       access-token-ttl: 15m
     session-ttl: 15d
     bcrypt-strength: 4

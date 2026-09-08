@@ -1,0 +1,1 @@
+package com.cardovia.merkon.backend.security; public record SecurityApiError(String code,String message) { }

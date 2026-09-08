@@ -13,7 +13,7 @@ spring:
 server:
   shutdown: graceful
 
-sushimei:
+merkon:
   features:
     ai:
       enabled: false
