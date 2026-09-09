@@ -5,6 +5,8 @@ import com.cardovia.merkon.backend.conversation.ConversationSessionRepository;
 import com.cardovia.merkon.backend.conversation.ConversationStateMachine;
 import com.cardovia.merkon.backend.conversation.FulfillmentType;
 import com.cardovia.merkon.backend.conversation.PaymentMethod;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.businessday.BusinessDayService;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.OrderFulfillmentType;
@@ -48,6 +50,7 @@ public class OrderService {
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
     private final BusinessDayService businessDayService;
+    private final LegacyBusinessResolver legacyBusinessResolver;
     private final LegacyOrderDetailsFormatter legacyOrderDetailsFormatter = new LegacyOrderDetailsFormatter();
 
     public OrderService(CartRepository cartRepository,
@@ -58,7 +61,8 @@ public class OrderService {
                         ParallelMoneyResolver parallelMoneyResolver,
                         CheckoutMoney checkoutMoney,
                         Clock clock,
-                        BusinessDayService businessDayService) {
+                        BusinessDayService businessDayService,
+                        LegacyBusinessResolver legacyBusinessResolver) {
         this.cartRepository = Objects.requireNonNull(cartRepository, "cartRepository must not be null");
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
         this.conversationSessionRepository = Objects.requireNonNull(conversationSessionRepository,
@@ -71,6 +75,8 @@ public class OrderService {
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.businessDayService = Objects.requireNonNull(businessDayService, "businessDayService must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
     }
 
     /**
@@ -80,29 +86,30 @@ public class OrderService {
     @Transactional
     public CheckoutCompletionResult completeCheckout(CheckoutCompletionCommand command) {
         CompletionRequest request = validateCommand(command);
+        Business business = legacyBusinessResolver.requireLegacyBusiness();
 
-        OrderRecord existingBeforeLock = orderRepository.findBySourceCartId(request.sourceCartId()).orElse(null);
+        OrderRecord existingBeforeLock = orderRepository.findByBusinessIdAndSourceCartId(business.getId(), request.sourceCartId()).orElse(null);
         if (existingBeforeLock != null) {
             return existingResult(existingBeforeLock, request);
         }
 
-        Cart sourceCart = cartRepository.findByIdForUpdate(request.sourceCartId())
+        Cart sourceCart = cartRepository.findByIdAndBusinessIdForUpdate(request.sourceCartId(), business.getId())
                 .orElseThrow(() -> failure(CheckoutCompletionFailureReason.CART_NOT_FOUND));
 
-        OrderRecord existingAfterLock = orderRepository.findBySourceCartId(request.sourceCartId()).orElse(null);
+        OrderRecord existingAfterLock = orderRepository.findByBusinessIdAndSourceCartId(business.getId(), request.sourceCartId()).orElse(null);
         if (existingAfterLock != null) {
             return existingResult(existingAfterLock, request);
         }
 
         validateExactCart(sourceCart, request.phoneNumber());
         CartSnapshot snapshot = cartSnapshotService.snapshotOf(sourceCart);
-        ConversationSession session = conversationSessionRepository.findById(request.phoneNumber())
+        ConversationSession session = conversationSessionRepository.findByPhoneNumberAndBusinessId(request.phoneNumber(), business.getId())
                 .orElseThrow(() -> failure(CheckoutCompletionFailureReason.CONVERSATION_SESSION_NOT_FOUND));
         validateCashDenomination(session, snapshot.total());
         Instant now = clock.instant();
         businessDayService.assertPhysicalOrderCreationAllowed(request.orderSource(), now);
 
-        OrderRecord order = buildOrder(request, snapshot, session, now);
+        OrderRecord order = buildOrder(business, request, snapshot, session, now);
         OrderRecord savedOrder = orderRepository.save(order);
         sourceCart.setStatus(CLOSED_CART_STATUS);
         conversationStateMachine.confirmCheckout(session, now);
@@ -148,12 +155,14 @@ public class OrderService {
         }
     }
 
-    private OrderRecord buildOrder(CompletionRequest request,
+    private OrderRecord buildOrder(Business business,
+                                   CompletionRequest request,
                                    CartSnapshot snapshot,
                                    ConversationSession session,
                                    Instant now) {
         ParallelMoney legacyTotal = parallelMoneyResolver.forWriteFromExact(snapshot.total());
         OrderRecord order = new OrderRecord();
+        order.setBusiness(business);
         order.setPhoneNumber(request.phoneNumber());
         order.setSourceCartId(snapshot.cartId());
         order.setOrderSource(request.orderSource());

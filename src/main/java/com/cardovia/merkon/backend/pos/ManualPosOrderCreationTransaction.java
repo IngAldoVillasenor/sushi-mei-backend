@@ -24,6 +24,8 @@ import com.cardovia.merkon.backend.promotion.PromotionRewardQuoteResponse;
 import com.cardovia.merkon.backend.promotion.TemporalPromotionQuoteService;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import com.cardovia.merkon.backend.security.AppUserRepository;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.BusinessRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.Clock;
@@ -39,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class ManualPosOrderCreationTransaction {
     private final OrderRepository orderRepository;
+    private final BusinessRepository businessRepository;
     private final AppUserRepository appUserRepository;
     private final TemporalPromotionQuoteService promotionQuoteService;
     private final ParallelMoneyResolver parallelMoneyResolver;
@@ -48,6 +51,7 @@ class ManualPosOrderCreationTransaction {
     private final Clock clock;
 
     ManualPosOrderCreationTransaction(OrderRepository orderRepository,
+                                      BusinessRepository businessRepository,
                                       AppUserRepository appUserRepository,
                                       TemporalPromotionQuoteService promotionQuoteService,
                                       ParallelMoneyResolver parallelMoneyResolver,
@@ -56,6 +60,7 @@ class ManualPosOrderCreationTransaction {
                                       MenuItemComponentService menuItemComponentService,
                                       Clock clock) {
         this.orderRepository = orderRepository;
+        this.businessRepository = businessRepository;
         this.appUserRepository = appUserRepository;
         this.promotionQuoteService = promotionQuoteService;
         this.parallelMoneyResolver = parallelMoneyResolver;
@@ -66,8 +71,8 @@ class ManualPosOrderCreationTransaction {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.REPEATABLE_READ)
-    ManualPosOrderResponse create(Long userId, NormalizedManualPosOrder request) {
-        OrderRecord existing = orderRepository.findByClientRequestId(request.requestId()).orElse(null);
+    ManualPosOrderResponse create(Long businessId, Long userId, NormalizedManualPosOrder request) {
+        OrderRecord existing = orderRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).orElse(null);
         if (existing != null) {
             ManualPosOrderReadService.verifyOwnershipAndFingerprint(existing, userId, request.fingerprint());
             return ManualPosOrderReadService.response(existing, ManualOrderResult.ALREADY_CREATED);
@@ -75,13 +80,15 @@ class ManualPosOrderCreationTransaction {
         appUserRepository.findById(userId).orElseThrow(() -> new ManualPosOrderException(ManualPosOrderError.ORDER_FORBIDDEN_OPERATION));
         PromotionQuoteResponse quote = request.lines().isEmpty()
                 ? emptyQuote(clock.instant())
-                : promotionQuoteService.quote(new PromotionQuoteRequest(request.lines()));
+                : promotionQuoteService.quote(businessId, new PromotionQuoteRequest(request.lines()));
         BigDecimal manualTotal = request.manualLines().stream().map(NormalizedManualPricedLine::lineTotal)
                 .reduce(zero(), (left, right) -> positive(left.add(right)));
         BigDecimal total = positive(quote.total().add(manualTotal));
         validateDeliveryCashDenomination(request, total);
-        businessDayService.assertPhysicalOrderCreationAllowed(OrderSource.ANDROID_MANUAL, quote.quotedAt());
+        businessDayService.assertPhysicalOrderCreationAllowed(businessId, OrderSource.ANDROID_MANUAL, quote.quotedAt());
         OrderRecord order = createOrder(userId, request, quote, total);
+        order.setBusiness(businessRepository.findById(businessId).filter(Business::isActive)
+                .orElseThrow(() -> new ManualPosOrderException(ManualPosOrderError.ORDER_FORBIDDEN_OPERATION)));
         java.util.Map<String, PromotionQuoteLineRequest> requestsByLineKey = request.lines().stream()
                 .collect(java.util.stream.Collectors.toMap(PromotionQuoteLineRequest::lineKey, value -> value));
         int linePosition = 1;
@@ -96,7 +103,7 @@ class ManualPosOrderCreationTransaction {
                     promotion == null ? null : promotion.id(), promotion == null ? null : promotion.name(),
                     promotion == null ? null : promotion.benefitType().name(), requestedLine.note());
             snapshots(paid, quoteLine.configuration());
-            componentOmissions(paid, quoteLine.menuItemId(), requestedLine.omittedComponentIds());
+            componentOmissions(businessId, paid, quoteLine.menuItemId(), requestedLine.omittedComponentIds());
             order.addOrderLine(paid);
             for (PromotionRewardQuoteResponse reward : quoteLine.rewards()) {
                 AppliedPromotionResponse rewardPromotion = reward.promotion();
@@ -117,9 +124,9 @@ class ManualPosOrderCreationTransaction {
         return ManualPosOrderReadService.response(saved, ManualOrderResult.CREATED);
     }
 
-    private void componentOmissions(OrderLineRecord line, Long menuItemId, java.util.List<Long> componentIds) {
+    private void componentOmissions(Long businessId, OrderLineRecord line, Long menuItemId, java.util.List<Long> componentIds) {
         for (MenuItemDefaultComponent component : menuItemComponentService
-                .resolveActiveOmittedComponents(menuItemId, componentIds)) {
+                .resolveActiveOmittedComponents(businessId, menuItemId, componentIds)) {
             line.addComponentOmissionSnapshot(OrderLineComponentOmissionSnapshot.create(component.getId(),
                     component.getComponentCode(), component.getDisplayName(), component.getDetail(),
                     component.getDisplayOrder()));

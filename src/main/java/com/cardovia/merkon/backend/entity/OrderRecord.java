@@ -1,6 +1,7 @@
 package com.cardovia.merkon.backend.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.cardovia.merkon.backend.business.Business;
 import com.cardovia.merkon.backend.order.OrderLifecycleStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -10,6 +11,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.OrderBy;
@@ -33,6 +36,11 @@ public class OrderRecord {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @JsonIgnore
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
 
     @JsonIgnore
     @Column(name = "external_order_id", length = 120)

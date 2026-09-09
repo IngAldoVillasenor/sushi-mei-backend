@@ -1,10 +1,14 @@
 package com.cardovia.merkon.backend.catalog;
 
+import com.cardovia.merkon.backend.business.Business;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
@@ -19,7 +23,11 @@ public class CatalogTag {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 64, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
+
+    @Column(nullable = false, length = 64)
     private String code;
 
     @Column(nullable = false, length = 120)
@@ -56,6 +64,14 @@ public class CatalogTag {
         return tag;
     }
 
+    public void assignBusiness(Business business) {
+        Business required = Objects.requireNonNull(business, "business must not be null");
+        if (this.business != null && !this.business.getId().equals(required.getId())) {
+            throw new IllegalStateException("Catalog tag business cannot change");
+        }
+        this.business = required;
+    }
+
     void update(String name, boolean active, int displayOrder, Instant now) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.active = active;
@@ -71,6 +87,8 @@ public class CatalogTag {
     public Long getId() {
         return id;
     }
+
+    public Business getBusiness() { return business; }
 
     public String getCode() {
         return code;

@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.checkout;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.conversation.ConversationSession;
 import com.cardovia.merkon.backend.conversation.ConversationSessionRepository;
 import com.cardovia.merkon.backend.conversation.ConversationState;
@@ -71,6 +72,9 @@ class OrderServiceIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @BeforeEach
     void clearFixtures() {
@@ -291,10 +295,10 @@ class OrderServiceIntegrationTest {
         String orderingPhone = "5214770000110";
         Cart orderingCart = persistOpenCart(orderingPhone, item("Maki", 1, "10.50"));
         jdbcTemplate.update("""
-                        insert into public.conversation_sessions (
-                            phone_number, state, created_at, updated_at, last_activity_at, version
-                        ) values (?, 'ORDERING', ?, ?, ?, 0)
-                        """, orderingPhone, Timestamp.from(COMPLETION_TIME), Timestamp.from(COMPLETION_TIME),
+                insert into public.conversation_sessions (
+                            business_id, phone_number, state, created_at, updated_at, last_activity_at, version
+                        ) values (?, ?, 'ORDERING', ?, ?, ?, 0)
+                        """, legacyBusinessResolver.requireLegacyBusinessId(), orderingPhone, Timestamp.from(COMPLETION_TIME), Timestamp.from(COMPLETION_TIME),
                 Timestamp.from(COMPLETION_TIME));
         assertThatThrownBy(() -> orderService.completeCheckout(command(orderingPhone, orderingCart.getId())))
                 .isInstanceOf(RuntimeException.class);
@@ -306,10 +310,10 @@ class OrderServiceIntegrationTest {
         String phoneNumber = "5214770000111";
         Cart cart = persistOpenCart(phoneNumber, item("Maki", 1, "10.50"));
         jdbcTemplate.update("""
-                        insert into public.conversation_sessions (
-                            phone_number, state, created_at, updated_at, last_activity_at, version
-                        ) values (?, 'READY_TO_CONFIRM', ?, ?, ?, 0)
-                        """, phoneNumber, Timestamp.from(COMPLETION_TIME), Timestamp.from(COMPLETION_TIME),
+                insert into public.conversation_sessions (
+                            business_id, phone_number, state, created_at, updated_at, last_activity_at, version
+                        ) values (?, ?, 'READY_TO_CONFIRM', ?, ?, ?, 0)
+                        """, legacyBusinessResolver.requireLegacyBusinessId(), phoneNumber, Timestamp.from(COMPLETION_TIME), Timestamp.from(COMPLETION_TIME),
                 Timestamp.from(COMPLETION_TIME));
 
         assertThatThrownBy(() -> orderService.completeCheckout(command(phoneNumber, cart.getId())))
@@ -363,6 +367,7 @@ class OrderServiceIntegrationTest {
 
     private Cart persistOpenCart(String phoneNumber, CartItem... items) {
         Cart cart = new Cart();
+        cart.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         cart.setPhoneNumber(phoneNumber);
         cart.setStatus("OPEN");
         for (CartItem item : items) {

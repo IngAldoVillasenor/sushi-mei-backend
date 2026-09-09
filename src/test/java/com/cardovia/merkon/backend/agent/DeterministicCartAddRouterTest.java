@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.agent;
 import com.cardovia.merkon.backend.catalog.MenuCatalogRepository;
 import com.cardovia.merkon.backend.catalog.MenuItem;
 import com.cardovia.merkon.backend.catalog.MenuItemPricingMode;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.tools.OrderTools;
 import com.cardovia.merkon.backend.tools.ResolvedMenuItem;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 class DeterministicCartAddRouterTest {
 
     private static final String PHONE_NUMBER = "5214770000001";
+    private static final long LEGACY_BUSINESS_ID = 91L;
 
     @Mock
     private MenuCatalogRepository menuCatalogRepository;
@@ -35,11 +37,14 @@ class DeterministicCartAddRouterTest {
     @Mock
     private OrderTools orderTools;
 
+    @Mock
+    private LegacyBusinessResolver legacyBusiness;
+
     private DeterministicCartAddRouter router;
 
     @BeforeEach
     void setUp() {
-        router = new DeterministicCartAddRouter(menuCatalogRepository, orderTools);
+        router = new DeterministicCartAddRouter(menuCatalogRepository, orderTools, legacyBusiness);
         lenient().when(orderTools.addServerResolvedDishToCart(anyString(), any(ResolvedMenuItem.class), anyInt()))
                 .thenReturn("ok");
     }
@@ -96,7 +101,9 @@ class DeterministicCartAddRouterTest {
     }
 
     private void catalog(MenuItem... items) {
-        when(menuCatalogRepository.findByActiveTrueAndStandaloneOrderableTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc())
+        when(legacyBusiness.requireLegacyBusinessId()).thenReturn(LEGACY_BUSINESS_ID);
+        when(menuCatalogRepository.findByBusinessIdAndActiveTrueAndStandaloneOrderableTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc(
+                LEGACY_BUSINESS_ID))
                 .thenReturn(List.of(items));
     }
 

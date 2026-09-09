@@ -7,9 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
-public interface BusinessDayOperationLockRepository extends JpaRepository<BusinessDayOperationLock, Integer> {
+public interface BusinessDayOperationLockRepository extends JpaRepository<BusinessDayOperationLock, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select operationLock from BusinessDayOperationLock operationLock where operationLock.lockKey = 1")
-    Optional<BusinessDayOperationLock> findSingletonForUpdate();
+    @Query("select operationLock from BusinessDayOperationLock operationLock where operationLock.businessId = :businessId")
+    Optional<BusinessDayOperationLock> findByBusinessIdForUpdate(@org.springframework.data.repository.query.Param("businessId") Long businessId);
 }

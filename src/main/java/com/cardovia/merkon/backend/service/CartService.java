@@ -5,7 +5,8 @@ import com.cardovia.merkon.backend.checkout.CheckoutMoney;
 import com.cardovia.merkon.backend.checkout.EmptyCartException;
 import com.cardovia.merkon.backend.checkout.ParallelMoney;
 import com.cardovia.merkon.backend.checkout.ParallelMoneyResolver;
-
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
+import com.cardovia.merkon.backend.business.Business;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.CartItem;
 import com.cardovia.merkon.backend.repository.CartRepository;
@@ -25,20 +26,25 @@ public class CartService {
     private final CartRepository cartRepository;
     private final CheckoutMoney checkoutMoney;
     private final ParallelMoneyResolver parallelMoneyResolver;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     public CartService(CartRepository cartRepository,
                        CheckoutMoney checkoutMoney,
-                       ParallelMoneyResolver parallelMoneyResolver) {
+                       ParallelMoneyResolver parallelMoneyResolver,
+                       LegacyBusinessResolver legacyBusinessResolver) {
         this.cartRepository = cartRepository;
         this.checkoutMoney = checkoutMoney;
         this.parallelMoneyResolver = parallelMoneyResolver;
+        this.legacyBusinessResolver = legacyBusinessResolver;
     }
 
     // ACTUALIZADO: Ahora busca el carrito asociado específicamente al número de WhatsApp
     private Cart getOrCreateActiveCart(String phoneNumber) {
-        return cartRepository.findOpenCartByPhoneNumberForUpdate(phoneNumber)
+        Business business = legacyBusinessResolver.requireLegacyBusiness();
+        return cartRepository.findOpenCartByBusinessIdAndPhoneNumberForUpdate(business.getId(), phoneNumber)
                 .orElseGet(() -> {
                     Cart activeCart = new Cart();
+                    activeCart.setBusiness(business);
                     activeCart.setPhoneNumber(phoneNumber);
                     activeCart.setStatus("OPEN");
                     return cartRepository.save(activeCart);
@@ -65,7 +71,7 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public String getCartContents(String phoneNumber) {
-        Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        Cart cart = cartRepository.findByBusinessIdAndPhoneNumberAndStatus(legacyBusinessResolver.requireLegacyBusinessId(), phoneNumber, "OPEN");
         if (cart == null || cart.getItems().isEmpty()) {
             return "El carrito est\u00e1 vac\u00edo.";
         }
@@ -90,7 +96,7 @@ public class CartService {
     // NUEVO: Método para obtener solo el total numérico (útil para guardar en la BD final)
     @Transactional(readOnly = true)
     public Double getCartTotal(String phoneNumber) {
-        Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        Cart cart = cartRepository.findByBusinessIdAndPhoneNumberAndStatus(legacyBusinessResolver.requireLegacyBusinessId(), phoneNumber, "OPEN");
         if (cart == null || cart.getItems().isEmpty()) {
             return 0.0;
         }
@@ -103,7 +109,7 @@ public class CartService {
      */
     @Transactional(readOnly = true)
     public ParallelMoney getCartTotalForOrder(String phoneNumber) {
-        Cart cart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        Cart cart = cartRepository.findByBusinessIdAndPhoneNumberAndStatus(legacyBusinessResolver.requireLegacyBusinessId(), phoneNumber, "OPEN");
         if (cart == null) {
             throw new ActiveCartNotFoundException();
         }
@@ -150,7 +156,8 @@ public class CartService {
 
     @Transactional
     public boolean clearCart(String phoneNumber) {
-        Optional<Cart> cart = cartRepository.findOpenCartByPhoneNumberForUpdate(phoneNumber);
+        Optional<Cart> cart = cartRepository.findOpenCartByBusinessIdAndPhoneNumberForUpdate(
+                legacyBusinessResolver.requireLegacyBusinessId(), phoneNumber);
         if (cart.isEmpty()) {
             return false;
         }
@@ -161,14 +168,16 @@ public class CartService {
 
     @Transactional
     public void reopenCart(String phoneNumber) {
-        Cart lastClosedCart = cartRepository.findFirstByPhoneNumberAndStatusOrderByIdDesc(phoneNumber, "CLOSED");
+        Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
+        Cart lastClosedCart = cartRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByIdDesc(
+                businessId, phoneNumber, "CLOSED");
 
         if (lastClosedCart == null) {
             System.out.println("No closed cart was found for the customer.");
             return;
         }
 
-        Cart currentOpenCart = cartRepository.findByPhoneNumberAndStatus(phoneNumber, "OPEN");
+        Cart currentOpenCart = cartRepository.findByBusinessIdAndPhoneNumberAndStatus(businessId, phoneNumber, "OPEN");
         if (currentOpenCart != null) {
             List<ReopenLine> preparedLines = prepareReopenLines(currentOpenCart, lastClosedCart);
             for (ReopenLine line : preparedLines) {

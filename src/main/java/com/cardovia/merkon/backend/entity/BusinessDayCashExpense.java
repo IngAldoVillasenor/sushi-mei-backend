@@ -1,11 +1,15 @@
 package com.cardovia.merkon.backend.entity;
 
+import com.cardovia.merkon.backend.business.Business;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Objects;
@@ -22,10 +26,14 @@ public class BusinessDayCashExpense {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
+
     @Column(name = "business_day_id", nullable = false)
     private Long businessDayId;
 
-    @Column(name = "client_request_id", nullable = false, unique = true)
+    @Column(name = "client_request_id", nullable = false)
     private UUID clientRequestId;
 
     @Column(name = "request_fingerprint", nullable = false, length = 64)
@@ -49,7 +57,8 @@ public class BusinessDayCashExpense {
     protected BusinessDayCashExpense() {
     }
 
-    public static BusinessDayCashExpense create(Long businessDayId,
+    public static BusinessDayCashExpense create(Business business,
+                                                Long businessDayId,
                                                 UUID clientRequestId,
                                                 String requestFingerprint,
                                                 BigDecimal amount,
@@ -58,6 +67,7 @@ public class BusinessDayCashExpense {
                                                 Instant createdAt,
                                                 Long createdByUserId) {
         BusinessDayCashExpense expense = new BusinessDayCashExpense();
+        expense.business = Objects.requireNonNull(business, "business must not be null");
         expense.businessDayId = Objects.requireNonNull(businessDayId, "businessDayId must not be null");
         expense.clientRequestId = Objects.requireNonNull(clientRequestId, "clientRequestId must not be null");
         expense.requestFingerprint = Objects.requireNonNull(requestFingerprint, "requestFingerprint must not be null");
@@ -70,6 +80,7 @@ public class BusinessDayCashExpense {
     }
 
     public Long getId() { return id; }
+    public Business getBusiness() { return business; }
     public Long getBusinessDayId() { return businessDayId; }
     public UUID getClientRequestId() { return clientRequestId; }
     public String getRequestFingerprint() { return requestFingerprint; }

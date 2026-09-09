@@ -356,6 +356,7 @@ class AiConversationServiceTest {
             };
             return new ResolvedMenuItem(name, java.math.BigDecimal.valueOf(price));
         });
-        return new OrderTools(mock(OrderRepository.class), cartService, guard, menuItemResolver);
+        return new OrderTools(mock(OrderRepository.class), cartService, guard, menuItemResolver,
+                mock(com.cardovia.merkon.backend.business.LegacyBusinessResolver.class));
     }
 }

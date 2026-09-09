@@ -244,9 +244,10 @@ class TemporalPromotionQuoteServiceIntegrationTest {
                 .extracting(exception -> ((PromotionException) exception).getError())
                 .isEqualTo(PromotionError.PROMOTION_SCHEDULE_CONFLICT);
         jdbcTemplate.update("""
-                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                insert into public.promotions (business_id, name, active, priority, benefit_type, fixed_unit_price_amount,
                     created_at, updated_at, version)
-                values ('Corrupted tie', true, 10, 'FIXED_UNIT_PRICE', 70.00, current_timestamp, current_timestamp, 0)
+                values ((select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'),
+                    'Corrupted tie', true, 10, 'FIXED_UNIT_PRICE', 70.00, current_timestamp, current_timestamp, 0)
                 """);
         Long tieId = jdbcTemplate.queryForObject("select id from public.promotions where name = 'Corrupted tie'", Long.class);
         jdbcTemplate.update("insert into public.promotion_weekdays (promotion_id, iso_day_of_week) values (?, 4)", tieId);

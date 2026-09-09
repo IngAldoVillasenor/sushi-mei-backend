@@ -2,8 +2,12 @@ package com.cardovia.merkon.backend.businessday;
 
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
 import com.cardovia.merkon.backend.checkout.ParallelMoneyResolver;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.BusinessRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.BusinessDay;
 import com.cardovia.merkon.backend.entity.BusinessDayClosure;
+import com.cardovia.merkon.backend.entity.BusinessDayOperationLock;
 import com.cardovia.merkon.backend.entity.OrderPaymentMethod;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.entity.OrderSource;
@@ -36,6 +40,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class BusinessDayService {
 
     private final BusinessDayRepository businessDayRepository;
+    private final BusinessRepository businessRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final BusinessDayClosureRepository businessDayClosureRepository;
     private final BusinessDayOperationLockRepository businessDayOperationLockRepository;
     private final BusinessDayCashExpenseRepository cashExpenseRepository;
@@ -46,6 +52,8 @@ public class BusinessDayService {
     private final ZoneId businessZone;
 
     public BusinessDayService(BusinessDayRepository businessDayRepository,
+                              BusinessRepository businessRepository,
+                              LegacyBusinessResolver legacyBusiness,
                               BusinessDayClosureRepository businessDayClosureRepository,
                               BusinessDayOperationLockRepository businessDayOperationLockRepository,
                               BusinessDayCashExpenseRepository cashExpenseRepository,
@@ -55,6 +63,8 @@ public class BusinessDayService {
                               Clock clock,
                               @Value("${merkon.business-zone:America/Mexico_City}") String businessZone) {
         this.businessDayRepository = Objects.requireNonNull(businessDayRepository, "businessDayRepository must not be null");
+        this.businessRepository = Objects.requireNonNull(businessRepository, "businessRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.businessDayClosureRepository = Objects.requireNonNull(businessDayClosureRepository,
                 "businessDayClosureRepository must not be null");
         this.businessDayOperationLockRepository = Objects.requireNonNull(businessDayOperationLockRepository,
@@ -71,16 +81,22 @@ public class BusinessDayService {
 
     @Transactional
     public BusinessDayResponse open(Long openedByUserId, OpenBusinessDayRequest request) {
+        return open(legacyBusiness.requireLegacyBusinessId(), openedByUserId, request);
+    }
+
+    @Transactional
+    public BusinessDayResponse open(Long businessId, Long openedByUserId, OpenBusinessDayRequest request) {
         requireActor(openedByUserId);
+        Business business = requireBusiness(businessId);
         BigDecimal openingCashAmount = nonNegative(request == null ? null : request.openingCashAmount());
         Instant now = clock.instant();
         LocalDate businessDate = now.atZone(businessZone).toLocalDate();
 
-        lockCurrentDayOperations();
-        if (businessDayRepository.findOpenForUpdate().isPresent()) {
+        lockCurrentDayOperations(businessId);
+        if (businessDayRepository.findOpenForUpdate(businessId).isPresent()) {
             throw failure(BusinessDayError.BUSINESS_DAY_ALREADY_OPEN);
         }
-        Optional<BusinessDay> existingForDate = businessDayRepository.findByBusinessDate(businessDate);
+        Optional<BusinessDay> existingForDate = businessDayRepository.findByBusinessIdAndBusinessDate(businessId, businessDate);
         if (existingForDate.isPresent()) {
             throw failure(existingForDate.orElseThrow().getStatus() == BusinessDayStatus.OPEN
                     ? BusinessDayError.BUSINESS_DAY_ALREADY_OPEN
@@ -89,7 +105,7 @@ public class BusinessDayService {
 
         try {
             BusinessDay saved = businessDayRepository.saveAndFlush(
-                    BusinessDay.open(businessDate, openingCashAmount, now, openedByUserId));
+                    BusinessDay.open(business, businessDate, openingCashAmount, now, openedByUserId));
             return BusinessDayResponse.from(saved);
         } catch (DataIntegrityViolationException exception) {
             // The unique open_guard / business_date constraints are the concurrency backstop.
@@ -99,17 +115,27 @@ public class BusinessDayService {
 
     @Transactional(readOnly = true)
     public Optional<BusinessDayResponse> current() {
-        Optional<BusinessDay> openBusinessDay = businessDayRepository.findByStatus(BusinessDayStatus.OPEN);
+        return current(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<BusinessDayResponse> current(Long businessId) {
+        Optional<BusinessDay> openBusinessDay = businessDayRepository.findByBusinessIdAndStatus(businessId, BusinessDayStatus.OPEN);
         if (openBusinessDay.isPresent()) {
             return openBusinessDay.map(BusinessDayResponse::from);
         }
         LocalDate today = clock.instant().atZone(businessZone).toLocalDate();
-        return businessDayRepository.findByBusinessDate(today).map(this::currentResponse);
+        return businessDayRepository.findByBusinessIdAndBusinessDate(businessId, today).map(this::currentResponse);
     }
 
     @Transactional(readOnly = true)
     public boolean hasOpenBusinessDay() {
-        return businessDayRepository.existsByStatus(BusinessDayStatus.OPEN);
+        return hasOpenBusinessDay(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasOpenBusinessDay(Long businessId) {
+        return businessDayRepository.findByBusinessIdAndStatus(businessId, BusinessDayStatus.OPEN).isPresent();
     }
 
     /**
@@ -118,8 +144,13 @@ public class BusinessDayService {
      */
     @Transactional(readOnly = true)
     public Optional<BusinessDayStatus> currentBusinessDayStatus() {
+        return currentBusinessDayStatus(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<BusinessDayStatus> currentBusinessDayStatus(Long businessId) {
         LocalDate businessDate = clock.instant().atZone(businessZone).toLocalDate();
-        return businessDayRepository.findByBusinessDate(businessDate).map(BusinessDay::getStatus);
+        return businessDayRepository.findByBusinessIdAndBusinessDate(businessId, businessDate).map(BusinessDay::getStatus);
     }
 
     /**
@@ -134,6 +165,11 @@ public class BusinessDayService {
      */
     @Transactional
     public void assertPhysicalOrderCreationAllowed(OrderSource orderSource, Instant createdAt) {
+        assertPhysicalOrderCreationAllowed(legacyBusiness.requireLegacyBusinessId(), orderSource, createdAt);
+    }
+
+    @Transactional
+    public void assertPhysicalOrderCreationAllowed(Long businessId, OrderSource orderSource, Instant createdAt) {
         if (orderSource != OrderSource.ANDROID_MANUAL && orderSource != OrderSource.COUNTER) {
             return;
         }
@@ -141,9 +177,9 @@ public class BusinessDayService {
             throw failure(BusinessDayError.BUSINESS_DAY_INVALID);
         }
 
-        lockCurrentDayOperations();
+        lockCurrentDayOperations(businessId);
         LocalDate businessDate = createdAt.atZone(businessZone).toLocalDate();
-        if (businessDayRepository.findByBusinessDate(businessDate)
+        if (businessDayRepository.findByBusinessIdAndBusinessDate(businessId, businessDate)
                 .map(BusinessDay::getStatus)
                 .orElse(null) == BusinessDayStatus.CLOSED) {
             throw failure(BusinessDayError.BUSINESS_DAY_CLOSED);
@@ -157,7 +193,12 @@ public class BusinessDayService {
      */
     @Transactional
     public void assertOpenBusinessDayForOpenSale(Instant createdAt) {
-        assertOpenBusinessDayForOperationalSettlement(createdAt);
+        assertOpenBusinessDayForOpenSale(legacyBusiness.requireLegacyBusinessId(), createdAt);
+    }
+
+    @Transactional
+    public void assertOpenBusinessDayForOpenSale(Long businessId, Instant createdAt) {
+        assertOpenBusinessDayForOperationalSettlement(businessId, createdAt);
     }
 
     /**
@@ -166,12 +207,17 @@ public class BusinessDayService {
      */
     @Transactional
     public void assertOpenBusinessDayForOperationalSettlement(Instant createdAt) {
+        assertOpenBusinessDayForOperationalSettlement(legacyBusiness.requireLegacyBusinessId(), createdAt);
+    }
+
+    @Transactional
+    public void assertOpenBusinessDayForOperationalSettlement(Long businessId, Instant createdAt) {
         if (createdAt == null) {
             throw failure(BusinessDayError.BUSINESS_DAY_INVALID);
         }
-        lockCurrentDayOperations();
+        lockCurrentDayOperations(businessId);
         LocalDate businessDate = createdAt.atZone(businessZone).toLocalDate();
-        BusinessDayStatus status = businessDayRepository.findByBusinessDate(businessDate)
+        BusinessDayStatus status = businessDayRepository.findByBusinessIdAndBusinessDate(businessId, businessDate)
                 .map(BusinessDay::getStatus)
                 .orElse(null);
         if (status != BusinessDayStatus.OPEN) {
@@ -181,13 +227,18 @@ public class BusinessDayService {
 
     @Transactional
     public BusinessDayResponse close(Long closedByUserId, CloseBusinessDayRequest request) {
+        return close(legacyBusiness.requireLegacyBusinessId(), closedByUserId, request);
+    }
+
+    @Transactional
+    public BusinessDayResponse close(Long businessId, Long closedByUserId, CloseBusinessDayRequest request) {
         requireActor(closedByUserId);
         BigDecimal actualClosingCashAmount = nonNegative(request == null ? null : request.actualClosingCashAmount());
-        lockCurrentDayOperations();
-        BusinessDay businessDay = businessDayRepository.findOpenForUpdate()
+        lockCurrentDayOperations(businessId);
+        BusinessDay businessDay = businessDayRepository.findOpenForUpdate(businessId)
                 .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_NOT_OPEN));
-        rejectIfNonTerminalOrdersExist(businessDay.getBusinessDate());
-        SalesSnapshot sales = completedSalesFor(businessDay.getBusinessDate());
+        rejectIfNonTerminalOrdersExist(businessId, businessDay.getBusinessDate());
+        SalesSnapshot sales = completedSalesFor(businessId, businessDay.getBusinessDate());
         CashExpenseSnapshot expenses = cashExpensesFor(businessDay.getId());
         BigDecimal expectedClosingCashAmount = subtractNonNegative(
                 add(sales.cashSalesAmount(), businessDay.getOpeningCashAmount()), expenses.cashExpenseAmount());
@@ -224,17 +275,22 @@ public class BusinessDayService {
      */
     @Transactional
     public BusinessDayResponse reopen(Long reopenedByUserId) {
+        return reopen(legacyBusiness.requireLegacyBusinessId(), reopenedByUserId);
+    }
+
+    @Transactional
+    public BusinessDayResponse reopen(Long businessId, Long reopenedByUserId) {
         requireActor(reopenedByUserId);
         Instant now = clock.instant();
         LocalDate today = now.atZone(businessZone).toLocalDate();
 
-        lockCurrentDayOperations();
-        BusinessDay businessDay = businessDayRepository.findByBusinessDateForUpdate(today)
+        lockCurrentDayOperations(businessId);
+        BusinessDay businessDay = businessDayRepository.findByBusinessIdAndBusinessDateForUpdate(businessId, today)
                 .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_REOPEN_NOT_ALLOWED));
         if (businessDay.getStatus() != BusinessDayStatus.CLOSED) {
             throw failure(BusinessDayError.BUSINESS_DAY_NOT_CLOSED);
         }
-        if (businessDayRepository.findOpenForUpdate().isPresent()) {
+        if (businessDayRepository.findOpenForUpdate(businessId).isPresent()) {
             throw failure(BusinessDayError.BUSINESS_DAY_REOPEN_NOT_ALLOWED);
         }
         if (!businessDayClosureRepository.existsByBusinessDayId(businessDay.getId())) {
@@ -246,13 +302,13 @@ public class BusinessDayService {
         return BusinessDayResponse.from(businessDay);
     }
 
-    private SalesSnapshot completedSalesFor(LocalDate businessDate) {
+    private SalesSnapshot completedSalesFor(Long businessId, LocalDate businessDate) {
         BusinessDateInterval interval = intervalFor(businessDate);
         BigDecimal cash = zero();
         BigDecimal transfer = zero();
         BigDecimal card = zero();
         BigDecimal unclassified = zero();
-        List<OrderRecord> completed = orderRepository.findCompletedForBusinessDate(interval.from(), interval.to());
+        List<OrderRecord> completed = orderRepository.findCompletedForBusinessDateForBusiness(businessId, interval.from(), interval.to());
         for (OrderRecord order : completed) {
             BigDecimal total = total(order);
             if (order.getPaymentMethod() == OrderPaymentMethod.CASH) {
@@ -266,7 +322,7 @@ public class BusinessDayService {
             }
         }
         BigDecimal completedSales = add(add(cash, transfer), add(card, unclassified));
-        long voided = orderRepository.countVoidedOrders(interval.from(), interval.to());
+        long voided = orderRepository.countVoidedOrdersForBusiness(businessId, interval.from(), interval.to());
         return new SalesSnapshot(completedSales, cash, transfer, card, unclassified, completed.size(), voided);
     }
 
@@ -290,10 +346,10 @@ public class BusinessDayService {
         return BusinessDayResponse.fromClosed(businessDay, closure);
     }
 
-    private void rejectIfNonTerminalOrdersExist(LocalDate businessDate) {
+    private void rejectIfNonTerminalOrdersExist(Long businessId, LocalDate businessDate) {
         BusinessDateInterval interval = intervalFor(businessDate);
-        long nonTerminalOrders = orderRepository.countNonTerminalForBusinessDate(
-                interval.from(), interval.to(), OrderLifecycleStatus.terminalPersistedValues());
+        long nonTerminalOrders = orderRepository.countNonTerminalForBusinessDateForBusiness(
+                businessId, interval.from(), interval.to(), OrderLifecycleStatus.terminalPersistedValues());
         if (nonTerminalOrders > 0) {
             throw failure(BusinessDayError.BUSINESS_DAY_HAS_ACTIVE_ORDERS);
         }
@@ -316,8 +372,20 @@ public class BusinessDayService {
         }
     }
 
-    private void lockCurrentDayOperations() {
-        businessDayOperationLockRepository.findSingletonForUpdate()
+    private void lockCurrentDayOperations(Long businessId) {
+        // The business row serializes first-operation lock-row creation per tenant without
+        // imposing contention on an unrelated business.
+        businessRepository.findByIdForBusinessDayOperations(businessId)
+                .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_INVALID));
+        if (!businessDayOperationLockRepository.existsById(businessId)) {
+            businessDayOperationLockRepository.saveAndFlush(BusinessDayOperationLock.forBusiness(businessId));
+        }
+        businessDayOperationLockRepository.findByBusinessIdForUpdate(businessId)
+                .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_INVALID));
+    }
+
+    private Business requireBusiness(Long businessId) {
+        return businessRepository.findById(businessId).filter(Business::isActive)
                 .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_INVALID));
     }
 

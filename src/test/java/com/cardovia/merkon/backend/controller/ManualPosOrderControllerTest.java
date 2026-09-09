@@ -11,6 +11,7 @@ import com.cardovia.merkon.backend.pos.ManualPosOrderRequest;
 import com.cardovia.merkon.backend.pos.ManualPosOrderResponse;
 import com.cardovia.merkon.backend.pos.ManualPosOrderService;
 import com.cardovia.merkon.backend.promotion.PromotionQuoteLineRequest;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -27,7 +28,8 @@ class ManualPosOrderControllerTest {
     @Test
     void createdManualOrderReturns201WithoutAFalseLocationHeader() {
         ManualPosOrderService service = mock(ManualPosOrderService.class);
-        ManualPosOrderController controller = new ManualPosOrderController(service);
+        TrustedBusinessContext businessContext = mock(TrustedBusinessContext.class);
+        ManualPosOrderController controller = new ManualPosOrderController(service, businessContext);
         UUID requestId = UUID.randomUUID();
         ManualPosOrderRequest request = new ManualPosOrderRequest(requestId, OrderFulfillmentType.PICKUP,
                 OrderPaymentMethod.CASH, null, "Ana", new BigDecimal("100.00"),
@@ -38,7 +40,8 @@ class ManualPosOrderControllerTest {
                 Instant.parse("2026-08-11T12:00:00Z"), List.of(), new BigDecimal("79.00"));
         Jwt jwt = mock(Jwt.class);
         when(jwt.getSubject()).thenReturn("7");
-        when(service.create(7L, request)).thenReturn(response);
+        when(businessContext.requireBusinessId(jwt)).thenReturn(3L);
+        when(service.create(3L, 7L, request)).thenReturn(response);
 
         var entity = controller.create(jwt, request);
 

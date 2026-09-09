@@ -4,6 +4,7 @@ import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -35,10 +36,13 @@ class ConversationSessionRepositoryTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
+
     @Test
     void savesAndReloadsAnOrderingSessionWithStringEnumsTimestampsAndVersion() throws NoSuchFieldException {
         ConversationSession saved = conversationSessionRepository.saveAndFlush(
-                ConversationSession.create("525512345678", CREATED_AT));
+                ConversationSession.create(legacyBusinessResolver.requireLegacyBusiness(), "525512345678", CREATED_AT));
         entityManager.clear();
 
         ConversationSession reloaded = conversationSessionRepository.findById("525512345678").orElseThrow();

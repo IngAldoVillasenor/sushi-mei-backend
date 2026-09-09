@@ -3,6 +3,8 @@ package com.cardovia.merkon.backend.catalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
+import com.cardovia.merkon.backend.business.BusinessRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -63,6 +65,8 @@ class AuthoritativeCatalogRulesService {
             107L, 108L);
 
     private final MenuCatalogRepository menuItems;
+    private final BusinessRepository businesses;
+    private final LegacyBusinessResolver legacyBusiness;
     private final CatalogTagRepository tags;
     private final MenuSelectionGroupRepository groups;
     private final MenuSelectionRuleRepository rules;
@@ -72,6 +76,8 @@ class AuthoritativeCatalogRulesService {
     private final CheckoutMoney checkoutMoney;
 
     AuthoritativeCatalogRulesService(MenuCatalogRepository menuItems,
+                                     BusinessRepository businesses,
+                                     LegacyBusinessResolver legacyBusiness,
                                      CatalogTagRepository tags,
                                      MenuSelectionGroupRepository groups,
                                      MenuSelectionRuleRepository rules,
@@ -80,6 +86,8 @@ class AuthoritativeCatalogRulesService {
                                      ObjectMapper objectMapper,
                                      CheckoutMoney checkoutMoney) {
         this.menuItems = menuItems;
+        this.businesses = businesses;
+        this.legacyBusiness = legacyBusiness;
         this.tags = tags;
         this.groups = groups;
         this.rules = rules;
@@ -95,18 +103,19 @@ class AuthoritativeCatalogRulesService {
             return;
         }
 
+        Long businessId = legacyBusiness.requireLegacyBusinessId();
         Instant now = clock.instant();
         OffsetDateTime databaseNow = jdbcTimestamp(now);
         Map<Long, BaseCatalogItem> baseCatalog = loadBaseCatalog();
-        initializeEmptyBaseCatalog(baseCatalog, databaseNow);
+        initializeEmptyBaseCatalog(businessId, baseCatalog, databaseNow);
 
-        Map<Long, MenuItem> items = requireExpectedItems(baseCatalog);
-        Map<String, CatalogTag> authoritativeTags = synchronizeTags(now);
-        synchronizeTagMembership(authoritativeTags, now);
+        Map<Long, MenuItem> items = requireExpectedItems(businessId, baseCatalog);
+        Map<String, CatalogTag> authoritativeTags = synchronizeTags(businessId, now);
+        synchronizeTagMembership(businessId, authoritativeTags, now);
         archiveDiscontinuedItems(items, now);
 
         configureFixedCharolas(items, authoritativeTags, now);
-        configureBuildYourOwnCharolas(authoritativeTags, now);
+        configureBuildYourOwnCharolas(businessId, authoritativeTags, now);
         configureSushiBoxes(items, authoritativeTags, now);
         menuItems.flush();
         groups.flush();
@@ -147,8 +156,8 @@ class AuthoritativeCatalogRulesService {
         return instant.atOffset(ZoneOffset.UTC);
     }
 
-    private void initializeEmptyBaseCatalog(Map<Long, BaseCatalogItem> baseCatalog, OffsetDateTime databaseNow) {
-        if (menuItems.count() != 0) {
+    private void initializeEmptyBaseCatalog(Long businessId, Map<Long, BaseCatalogItem> baseCatalog, OffsetDateTime databaseNow) {
+        if (!menuItems.findByBusinessIdOrderByCategoryAscDisplayOrderAscNameAscIdAsc(businessId).isEmpty()) {
             return;
         }
 
@@ -156,17 +165,17 @@ class AuthoritativeCatalogRulesService {
         for (BaseCatalogItem item : baseCatalog.values()) {
             int displayOrder = displayOrdersByCategory.merge(item.category(), 1, Integer::sum);
             jdbcTemplate.update("""
-                    insert into public.menu_items (id, name, description, category, price_amount, pricing_mode,
+                    insert into public.menu_items (id, business_id, name, description, category, price_amount, pricing_mode,
                         active, available, standalone_orderable, display_order, created_at, updated_at, version)
-                    values (?, ?, null, ?, ?, 'BASE_PLUS_ADJUSTMENTS', true, true, true, ?, ?, ?, 0)
-                    """, item.id(), item.name(), item.category(), item.price(), displayOrder, databaseNow, databaseNow);
+                    values (?, ?, ?, null, ?, ?, 'BASE_PLUS_ADJUSTMENTS', true, true, true, ?, ?, ?, 0)
+                    """, item.id(), businessId, item.name(), item.category(), item.price(), displayOrder, databaseNow, databaseNow);
         }
     }
 
-    private Map<Long, MenuItem> requireExpectedItems(Map<Long, BaseCatalogItem> baseCatalog) {
+    private Map<Long, MenuItem> requireExpectedItems(Long businessId, Map<Long, BaseCatalogItem> baseCatalog) {
         Map<Long, MenuItem> result = new LinkedHashMap<>();
         for (BaseCatalogItem expected : baseCatalog.values()) {
-            MenuItem item = menuItems.findById(expected.id()).orElseThrow(() -> new IllegalStateException(
+            MenuItem item = menuItems.findByIdAndBusinessId(expected.id(), businessId).orElseThrow(() -> new IllegalStateException(
                     "Missing verified base catalog item id " + expected.id() + " (" + expected.name() + ")"));
             if (!item.getName().equals(expected.name()) || !item.getCategory().equals(expected.category())) {
                 throw new IllegalStateException("Verified base catalog item id " + expected.id()
@@ -222,7 +231,7 @@ class AuthoritativeCatalogRulesService {
         }
     }
 
-    private Map<String, CatalogTag> synchronizeTags(Instant now) {
+    private Map<String, CatalogTag> synchronizeTags(Long businessId, Instant now) {
         Map<String, TagDefinition> definitions = Map.of(
                 "ROLLO_CLASICO", new TagDefinition("Rollos clásicos", 10),
                 "ROLLO_ESPECIAL", new TagDefinition("Rollos especiales", 20),
@@ -231,8 +240,11 @@ class AuthoritativeCatalogRulesService {
                 "TOPPING", new TagDefinition("Toppings", 50));
         Map<String, CatalogTag> result = new HashMap<>();
         for (Map.Entry<String, TagDefinition> entry : definitions.entrySet()) {
-            CatalogTag tag = tags.findByCode(entry.getKey()).orElseGet(() ->
-                    tags.save(CatalogTag.create(entry.getKey(), entry.getValue().name(), entry.getValue().displayOrder(), now)));
+            CatalogTag tag = tags.findByBusinessIdAndCode(businessId, entry.getKey()).orElseGet(() -> {
+                CatalogTag created = CatalogTag.create(entry.getKey(), entry.getValue().name(), entry.getValue().displayOrder(), now);
+                created.assignBusiness(businesses.getReferenceById(businessId));
+                return tags.save(created);
+            });
             if (!tag.getName().equals(entry.getValue().name())
                     || !tag.isActive()
                     || tag.getDisplayOrder() != entry.getValue().displayOrder()) {
@@ -243,7 +255,7 @@ class AuthoritativeCatalogRulesService {
         return result;
     }
 
-    private void synchronizeTagMembership(Map<String, CatalogTag> authoritativeTags,
+    private void synchronizeTagMembership(Long businessId, Map<String, CatalogTag> authoritativeTags,
                                           Instant now) {
         Map<String, Set<Long>> memberships = Map.of(
                 "ROLLO_CLASICO", Set.of(18L, 24L, 49L, 80L, 107L),
@@ -252,7 +264,7 @@ class AuthoritativeCatalogRulesService {
                 "ROLLO_EZTRELLA", Set.of(66L, 85L, 105L),
                 "TOPPING", Set.of(53L, 74L, 108L));
         Set<CatalogTag> managedTags = new LinkedHashSet<>(authoritativeTags.values());
-        for (MenuItem item : menuItems.findAll()) {
+        for (MenuItem item : menuItems.findByBusinessIdOrderByCategoryAscDisplayOrderAscNameAscIdAsc(businessId)) {
             Set<CatalogTag> desired = new LinkedHashSet<>();
             for (Map.Entry<String, Set<Long>> membership : memberships.entrySet()) {
                 if (membership.getValue().contains(item.getId())) {
@@ -289,9 +301,9 @@ class AuthoritativeCatalogRulesService {
                 SelectionPricingPolicy.INCLUDED, null, now);
     }
 
-    private void configureBuildYourOwnCharolas(Map<String, CatalogTag> authoritativeTags, Instant now) {
-        MenuItem familiar = findOrCreateContainer("Arma tu Charola Familiar", now);
-        MenuItem supreme = findOrCreateContainer("Arma tu Charola Supreme", now);
+    private void configureBuildYourOwnCharolas(Long businessId, Map<String, CatalogTag> authoritativeTags, Instant now) {
+        MenuItem familiar = findOrCreateContainer(businessId, "Arma tu Charola Familiar", now);
+        MenuItem supreme = findOrCreateContainer(businessId, "Arma tu Charola Supreme", now);
         List<CatalogTag> rollTags = List.of(authoritativeTags.get("ROLLO_CLASICO"), authoritativeTags.get("ROLLO_ESPECIAL"),
                 authoritativeTags.get("ROLLO_CAMARON"), authoritativeTags.get("ROLLO_EZTRELLA"));
         configureMultiTagGroup(familiar, "Elige 3 rollos", 3, rollTags, SelectionPricingPolicy.FULL_ITEM_PRICE, null, now);
@@ -305,7 +317,7 @@ class AuthoritativeCatalogRulesService {
         configureSushiBox(items.get(97L), "Elige 2 rollos", "ROLLO_ESPECIAL", "89.00", authoritativeTags, now);
         configureSushiBox(items.get(95L), "Elige 2 rollos", "ROLLO_CAMARON", "99.00", authoritativeTags, now);
 
-        MenuItem drinkPackage = findOrCreateDrinkPackage(now);
+        MenuItem drinkPackage = findOrCreateDrinkPackage(items.get(96L).getBusiness().getId(), now);
         for (long sushiBoxId : List.of(96L, 97L, 95L)) {
             MenuSelectionGroup extra = ensureGroup(items.get(sushiBoxId), "Agregar 2 bebidas", 0, 1, false, 10, now);
             synchronizeRules(extra, List.of(RuleDefinition.forItem(drinkPackage, SelectionPricingPolicy.FULL_ITEM_PRICE, null)), now);
@@ -356,31 +368,40 @@ class AuthoritativeCatalogRulesService {
                 .toList(), now);
     }
 
-    private MenuItem findOrCreateContainer(String name, Instant now) {
-        List<MenuItem> matches = menuItems.findAll().stream().filter(item -> item.getName().equals(name)).toList();
+    private MenuItem findOrCreateContainer(Long businessId, String name, Instant now) {
+        List<MenuItem> matches = menuItems.findByBusinessIdOrderByCategoryAscDisplayOrderAscNameAscIdAsc(businessId)
+                .stream().filter(item -> item.getName().equals(name)).toList();
         if (matches.size() > 1) {
             throw new IllegalStateException("Ambiguous authoritative container item: " + name);
         }
         MenuItem item = matches.isEmpty()
-                ? menuItems.save(MenuItem.create(name, null, CATEGORY, BigDecimal.ZERO.setScale(2),
-                MenuItemPricingMode.SELECTION_SUM, true, true, 0, now))
+                ? menuItems.save(createMenuItem(businessId, name, BigDecimal.ZERO.setScale(2),
+                MenuItemPricingMode.SELECTION_SUM, true, now))
                 : matches.get(0);
         item.synchronizeAuthoritativeState(BigDecimal.ZERO.setScale(2), MenuItemPricingMode.SELECTION_SUM,
                 true, true, true, now);
         return item;
     }
 
-    private MenuItem findOrCreateDrinkPackage(Instant now) {
-        List<MenuItem> matches = menuItems.findAll().stream().filter(item -> item.getName().equals(DRINK_PACKAGE_NAME)).toList();
+    private MenuItem findOrCreateDrinkPackage(Long businessId, Instant now) {
+        List<MenuItem> matches = menuItems.findByBusinessIdOrderByCategoryAscDisplayOrderAscNameAscIdAsc(businessId)
+                .stream().filter(item -> item.getName().equals(DRINK_PACKAGE_NAME)).toList();
         if (matches.size() > 1) {
             throw new IllegalStateException("Ambiguous authoritative drink package item");
         }
         MenuItem item = matches.isEmpty()
-                ? menuItems.save(MenuItem.create(DRINK_PACKAGE_NAME, null, CATEGORY, new BigDecimal("39.00"),
-                MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS, true, false, 0, now))
+                ? menuItems.save(createMenuItem(businessId, DRINK_PACKAGE_NAME, new BigDecimal("39.00"),
+                MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS, false, now))
                 : matches.get(0);
         item.synchronizeAuthoritativeState(new BigDecimal("39.00"), MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS,
                 true, true, false, now);
+        return item;
+    }
+
+    private MenuItem createMenuItem(Long businessId, String name, BigDecimal price,
+                                    MenuItemPricingMode pricingMode, boolean standaloneOrderable, Instant now) {
+        MenuItem item = MenuItem.create(name, null, CATEGORY, price, pricingMode, true, standaloneOrderable, 0, now);
+        item.assignBusiness(businesses.getReferenceById(businessId));
         return item;
     }
 

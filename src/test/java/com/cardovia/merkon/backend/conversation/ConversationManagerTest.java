@@ -1,6 +1,7 @@
 package com.cardovia.merkon.backend.conversation;
 
 import com.cardovia.merkon.backend.agent.AiConversationService;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,7 @@ import static org.mockito.Mockito.when;
 class ConversationManagerTest {
 
     private static final String PHONE_NUMBER = "525512345678";
+    private static final long LEGACY_BUSINESS_ID = 91L;
     private static final String TEXT_MESSAGE = "Quiero un rollo";
     private static final String RECEIPT_PATH = "receipts/payment.jpg";
     private static final String IMAGE_RECEIPT_INSTRUCTION =
@@ -47,12 +49,15 @@ class ConversationManagerTest {
     @Mock
     private OrderRepository orderRepository;
 
+    @Mock
+    private LegacyBusinessResolver legacyBusiness;
+
     private ConversationManager conversationManager;
 
     @BeforeEach
     void setUp() {
         conversationManager = new ConversationManager(aiConversationService, whatsAppCheckoutFlowService,
-                conversationSessionService, orderRepository);
+                conversationSessionService, orderRepository, legacyBusiness);
     }
 
     @Test
@@ -98,7 +103,9 @@ class ConversationManagerTest {
     void imageHandlingRecordsReceiptAssociatesPendingOrderAndPreservesAgentInstruction() {
         OrderRecord pendingOrder = new OrderRecord();
         pendingOrder.setId(42L);
-        when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
+        when(legacyBusiness.requireLegacyBusinessId()).thenReturn(LEGACY_BUSINESS_ID);
+        when(orderRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                LEGACY_BUSINESS_ID, PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenReturn(pendingOrder);
         when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
@@ -109,7 +116,8 @@ class ConversationManagerTest {
         verify(conversationSessionService).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         verify(conversationSessionService, never()).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
-        verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION");
+        verify(orderRepository).findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                LEGACY_BUSINESS_ID, PHONE_NUMBER, "PENDING_VALIDATION");
         verify(orderRepository).save(pendingOrder);
         verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
@@ -117,7 +125,9 @@ class ConversationManagerTest {
 
     @Test
     void imageHandlingWithoutPendingOrderContinuesToTheAgent() {
-        when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
+        when(legacyBusiness.requireLegacyBusinessId()).thenReturn(LEGACY_BUSINESS_ID);
+        when(orderRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                LEGACY_BUSINESS_ID, PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenReturn(null);
         when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
@@ -127,7 +137,8 @@ class ConversationManagerTest {
         verify(conversationSessionService).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
         verify(conversationSessionService, never()).recordInboundActivity(PHONE_NUMBER);
         verify(conversationSessionService, never()).resetSession(PHONE_NUMBER);
-        verify(orderRepository).findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION");
+        verify(orderRepository).findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                LEGACY_BUSINESS_ID, PHONE_NUMBER, "PENDING_VALIDATION");
         verify(orderRepository, never()).save(org.mockito.ArgumentMatchers.any(OrderRecord.class));
         verify(whatsAppCheckoutFlowService).handleImage(PHONE_NUMBER, RECEIPT_PATH);
         verify(aiConversationService).chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION);
@@ -149,9 +160,11 @@ class ConversationManagerTest {
     void shadowReceiptFailureDoesNotBlockOrderAssociationOrTheAgentResponse() {
         OrderRecord pendingOrder = new OrderRecord();
         pendingOrder.setId(42L);
+        when(legacyBusiness.requireLegacyBusinessId()).thenReturn(LEGACY_BUSINESS_ID);
         doThrow(new IllegalStateException("database unavailable"))
                 .when(conversationSessionService).recordTransferReceipt(PHONE_NUMBER, RECEIPT_PATH);
-        when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
+        when(orderRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                LEGACY_BUSINESS_ID, PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenReturn(pendingOrder);
         when(aiConversationService.chat(PHONE_NUMBER, PHONE_NUMBER, IMAGE_RECEIPT_INSTRUCTION)).thenReturn("thanks");
 
@@ -170,7 +183,9 @@ class ConversationManagerTest {
     @Test
     void orderRepositoryFailureIsNotSwallowed() {
         IllegalStateException failure = new IllegalStateException("database unavailable");
-        when(orderRepository.findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(PHONE_NUMBER, "PENDING_VALIDATION"))
+        when(legacyBusiness.requireLegacyBusinessId()).thenReturn(LEGACY_BUSINESS_ID);
+        when(orderRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                LEGACY_BUSINESS_ID, PHONE_NUMBER, "PENDING_VALIDATION"))
                 .thenThrow(failure);
 
         assertThatThrownBy(() -> conversationManager.handleImageMessage(PHONE_NUMBER, RECEIPT_PATH))

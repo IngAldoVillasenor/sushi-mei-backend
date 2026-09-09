@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.entity;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -34,6 +35,7 @@ class StructuredOrderFoundationsIntegrationTest {
     @Test
     void paidHistoricalLineCanExistWithExternalProductReferenceAndNoSourceIds() {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("5551234");
         order.setTotalAmount(150.0);
         order.setTotalAmountAmount(new BigDecimal("150.00"));
@@ -75,6 +77,9 @@ class StructuredOrderFoundationsIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @BeforeEach
     void removeStructuredOrderFixtures() {
@@ -180,6 +185,7 @@ class StructuredOrderFoundationsIntegrationTest {
 
     private OrderRecord validOrder(Long sourceCartId) {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("5214770000001");
         order.setStatus("PENDING");
         order.setCreatedAt(LocalDateTime.of(2026, 8, 7, 12, 0));
@@ -193,10 +199,10 @@ class StructuredOrderFoundationsIntegrationTest {
     private Long insertLegacyCompatibleOrder(Long sourceCartId) {
         jdbcTemplate.update("""
                         insert into public.orders (
-                            phone_number, total_amount, total_amount_amount, status, created_at, source_cart_id
-                        ) values (?, ?, ?, ?, current_timestamp, ?)
+                            business_id, phone_number, total_amount, total_amount_amount, status, created_at, source_cart_id
+                        ) values (?, ?, ?, ?, ?, current_timestamp, ?)
                         """,
-                "5214770000001", 10.50d, new BigDecimal("10.50"), "PENDING", sourceCartId);
+                legacyBusinessResolver.requireLegacyBusinessId(), "5214770000001", 10.50d, new BigDecimal("10.50"), "PENDING", sourceCartId);
         return jdbcTemplate.queryForObject("select max(id) from public.orders", Long.class);
     }
 

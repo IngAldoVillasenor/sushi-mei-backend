@@ -1,6 +1,9 @@
 package com.cardovia.merkon.backend.catalog;
 
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.BusinessRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +40,8 @@ public class CatalogConfigurationService {
                     .thenComparing(CatalogTagSummary::id);
 
     private final MenuCatalogRepository menuCatalogRepository;
+    private final BusinessRepository businessRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final CatalogTagRepository catalogTagRepository;
     private final MenuSelectionGroupRepository menuSelectionGroupRepository;
     private final MenuSelectionRuleRepository menuSelectionRuleRepository;
@@ -45,6 +50,8 @@ public class CatalogConfigurationService {
     private final Clock clock;
 
     public CatalogConfigurationService(MenuCatalogRepository menuCatalogRepository,
+                                       BusinessRepository businessRepository,
+                                       LegacyBusinessResolver legacyBusiness,
                                        CatalogTagRepository catalogTagRepository,
                                        MenuSelectionGroupRepository menuSelectionGroupRepository,
                                        MenuSelectionRuleRepository menuSelectionRuleRepository,
@@ -52,6 +59,8 @@ public class CatalogConfigurationService {
                                        CheckoutMoney checkoutMoney,
                                        Clock clock) {
         this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository, "menuCatalogRepository must not be null");
+        this.businessRepository = Objects.requireNonNull(businessRepository, "businessRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.catalogTagRepository = Objects.requireNonNull(catalogTagRepository, "catalogTagRepository must not be null");
         this.menuSelectionGroupRepository = Objects.requireNonNull(menuSelectionGroupRepository,
                 "menuSelectionGroupRepository must not be null");
@@ -65,33 +74,49 @@ public class CatalogConfigurationService {
 
     @Transactional(readOnly = true)
     public List<CatalogTagResponse> listTags(boolean includeInactive) {
+        return listTags(legacyBusiness.requireLegacyBusinessId(), includeInactive);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CatalogTagResponse> listTags(Long businessId, boolean includeInactive) {
         List<CatalogTag> tags = includeInactive
-                ? catalogTagRepository.findAllByOrderByDisplayOrderAscCodeAscIdAsc()
-                : catalogTagRepository.findByActiveTrueOrderByDisplayOrderAscCodeAscIdAsc();
+                ? catalogTagRepository.findByBusinessIdOrderByDisplayOrderAscCodeAscIdAsc(businessId)
+                : catalogTagRepository.findByBusinessIdAndActiveTrueOrderByDisplayOrderAscCodeAscIdAsc(businessId);
         return tags.stream().map(CatalogTagResponse::from).toList();
     }
 
     @Transactional
     public CatalogTagResponse createTag(CreateCatalogTagRequest request) {
+        return createTag(legacyBusiness.requireLegacyBusinessId(), request);
+    }
+
+    @Transactional
+    public CatalogTagResponse createTag(Long businessId, CreateCatalogTagRequest request) {
         if (request == null) {
             throw invalidConfiguration();
         }
         String code = normalizeTagCode(request.code());
-        if (catalogTagRepository.findByCode(code).isPresent()) {
+        if (catalogTagRepository.findByBusinessIdAndCode(businessId, code).isPresent()) {
             throw invalidConfiguration();
         }
         Instant now = clock.instant();
         CatalogTag tag = CatalogTag.create(code, normalizeRequiredText(request.name(), MAX_TAG_NAME_LENGTH),
                 normalizeDisplayOrder(request.displayOrder(), 0), now);
+        tag.assignBusiness(requireBusiness(businessId));
         return CatalogTagResponse.from(catalogTagRepository.saveAndFlush(tag));
     }
 
     @Transactional
     public CatalogTagResponse updateTag(Long tagId, UpdateCatalogTagRequest request) {
+        return updateTag(legacyBusiness.requireLegacyBusinessId(), tagId, request);
+    }
+
+    @Transactional
+    public CatalogTagResponse updateTag(Long businessId, Long tagId, UpdateCatalogTagRequest request) {
         if (request == null || request.version() == null) {
             throw invalidConfiguration();
         }
-        CatalogTag tag = findTag(tagId);
+        CatalogTag tag = findTag(businessId, tagId);
         verifyVersion(tag.getVersion(), request.version(), CatalogDomainError.CATALOG_TAG_VERSION_CONFLICT);
         tag.update(normalizeRequiredText(request.name(), MAX_TAG_NAME_LENGTH), requireBoolean(request.active()),
                 normalizeDisplayOrder(request.displayOrder(), null), clock.instant());
@@ -101,16 +126,26 @@ public class CatalogConfigurationService {
 
     @Transactional
     public void archiveTag(Long tagId) {
-        CatalogTag tag = findTag(tagId);
+        archiveTag(legacyBusiness.requireLegacyBusinessId(), tagId);
+    }
+
+    @Transactional
+    public void archiveTag(Long businessId, Long tagId) {
+        CatalogTag tag = findTag(businessId, tagId);
         tag.archive(clock.instant());
     }
 
     @Transactional
     public MenuItemResponse replaceItemTags(Long itemId, ReplaceMenuItemTagsRequest request) {
+        return replaceItemTags(legacyBusiness.requireLegacyBusinessId(), itemId, request);
+    }
+
+    @Transactional
+    public MenuItemResponse replaceItemTags(Long businessId, Long itemId, ReplaceMenuItemTagsRequest request) {
         if (request == null || request.itemVersion() == null || request.tagIds() == null) {
             throw invalidConfiguration();
         }
-        MenuItem item = findMenuItem(itemId);
+        MenuItem item = findMenuItem(businessId, itemId);
         if (item.getVersion() != request.itemVersion()) {
             throw new MenuCatalogVersionConflictException();
         }
@@ -120,25 +155,30 @@ public class CatalogConfigurationService {
                 throw invalidConfiguration();
             }
         }
-        List<CatalogTag> tags = catalogTagRepository.findAllById(requestedIds);
+        List<CatalogTag> tags = requestedIds.stream().map(tagId -> findTag(businessId, tagId)).toList();
         if (tags.size() != requestedIds.size() || tags.stream().anyMatch(tag -> !tag.isActive())) {
             throw new CatalogConfigurationException(CatalogDomainError.CATALOG_TAG_NOT_FOUND);
         }
         item.replaceTags(new LinkedHashSet<>(tags), clock.instant());
         menuCatalogRepository.flush();
         boolean requiresConfiguration = !menuCatalogRepository
-                .findIdsWithRequiredSelectionGroups(List.of(item.getId())).isEmpty();
+                .findIdsWithRequiredSelectionGroups(item.getBusiness().getId(), List.of(item.getId())).isEmpty();
         return MenuItemResponse.from(item, requiresConfiguration);
     }
 
     @Transactional
     public MenuSelectionGroupResponse createGroup(Long itemId, CreateMenuSelectionGroupRequest request) {
+        return createGroup(legacyBusiness.requireLegacyBusinessId(), itemId, request);
+    }
+
+    @Transactional
+    public MenuSelectionGroupResponse createGroup(Long businessId, Long itemId, CreateMenuSelectionGroupRequest request) {
         if (request == null) {
             throw invalidConfiguration();
         }
         SelectionRange range = normalizeSelectionRange(request.minSelections(), request.maxSelections());
         Instant now = clock.instant();
-        MenuSelectionGroup group = MenuSelectionGroup.create(findMenuItem(itemId),
+        MenuSelectionGroup group = MenuSelectionGroup.create(findMenuItem(businessId, itemId),
                 normalizeRequiredText(request.name(), MAX_GROUP_NAME_LENGTH), range.minSelections(), range.maxSelections(),
                 requireBoolean(request.allowDuplicates()), normalizeDisplayOrder(request.displayOrder(), 0), now);
         return MenuSelectionGroupResponse.from(menuSelectionGroupRepository.saveAndFlush(group));
@@ -146,10 +186,15 @@ public class CatalogConfigurationService {
 
     @Transactional
     public MenuSelectionGroupResponse updateGroup(Long itemId, Long groupId, UpdateMenuSelectionGroupRequest request) {
+        return updateGroup(legacyBusiness.requireLegacyBusinessId(), itemId, groupId, request);
+    }
+
+    @Transactional
+    public MenuSelectionGroupResponse updateGroup(Long businessId, Long itemId, Long groupId, UpdateMenuSelectionGroupRequest request) {
         if (request == null || request.version() == null) {
             throw invalidConfiguration();
         }
-        MenuSelectionGroup group = findGroupForItem(itemId, groupId);
+        MenuSelectionGroup group = findGroupForItem(businessId, itemId, groupId);
         verifyVersion(group.getVersion(), request.version(), CatalogDomainError.MENU_SELECTION_GROUP_VERSION_CONFLICT);
         SelectionRange range = normalizeSelectionRange(request.minSelections(), request.maxSelections());
         group.update(normalizeRequiredText(request.name(), MAX_GROUP_NAME_LENGTH), range.minSelections(), range.maxSelections(),
@@ -161,17 +206,27 @@ public class CatalogConfigurationService {
 
     @Transactional
     public void archiveGroup(Long itemId, Long groupId) {
-        MenuSelectionGroup group = findGroupForItem(itemId, groupId);
+        archiveGroup(legacyBusiness.requireLegacyBusinessId(), itemId, groupId);
+    }
+
+    @Transactional
+    public void archiveGroup(Long businessId, Long itemId, Long groupId) {
+        MenuSelectionGroup group = findGroupForItem(businessId, itemId, groupId);
         group.archive(clock.instant());
     }
 
     @Transactional
     public MenuSelectionRuleResponse createRule(Long groupId, CreateMenuSelectionRuleRequest request) {
+        return createRule(legacyBusiness.requireLegacyBusinessId(), groupId, request);
+    }
+
+    @Transactional
+    public MenuSelectionRuleResponse createRule(Long businessId, Long groupId, CreateMenuSelectionRuleRequest request) {
         if (request == null) {
             throw invalidConfiguration();
         }
-        MenuSelectionGroup group = findGroup(groupId);
-        RuleTarget target = resolveTarget(request.targetType(), request.targetId());
+        MenuSelectionGroup group = findGroup(businessId, groupId);
+        RuleTarget target = resolveTarget(businessId, request.targetType(), request.targetId());
         RulePricing pricing = normalizeRulePricing(request.pricingPolicy(), request.referencePrice(), request.fixedSurcharge());
         int priority = normalizePriority(request.priority());
         Instant now = clock.instant();
@@ -182,12 +237,17 @@ public class CatalogConfigurationService {
 
     @Transactional
     public MenuSelectionRuleResponse updateRule(Long groupId, Long ruleId, UpdateMenuSelectionRuleRequest request) {
+        return updateRule(legacyBusiness.requireLegacyBusinessId(), groupId, ruleId, request);
+    }
+
+    @Transactional
+    public MenuSelectionRuleResponse updateRule(Long businessId, Long groupId, Long ruleId, UpdateMenuSelectionRuleRequest request) {
         if (request == null || request.version() == null) {
             throw invalidConfiguration();
         }
-        MenuSelectionRule rule = findRuleForGroup(groupId, ruleId);
+        MenuSelectionRule rule = findRuleForGroup(businessId, groupId, ruleId);
         verifyVersion(rule.getVersion(), request.version(), CatalogDomainError.MENU_SELECTION_RULE_VERSION_CONFLICT);
-        RuleTarget target = resolveTarget(request.targetType(), request.targetId());
+        RuleTarget target = resolveTarget(businessId, request.targetType(), request.targetId());
         RulePricing pricing = normalizeRulePricing(request.pricingPolicy(), request.referencePrice(), request.fixedSurcharge());
         rule.update(target.menuItem(), target.tag(), pricing.policy(), pricing.referencePrice(), pricing.fixedSurcharge(),
                 normalizePriority(request.priority()), requireBoolean(request.active()), clock.instant());
@@ -197,13 +257,23 @@ public class CatalogConfigurationService {
 
     @Transactional
     public void archiveRule(Long groupId, Long ruleId) {
-        findRuleForGroup(groupId, ruleId).archive(clock.instant());
+        archiveRule(legacyBusiness.requireLegacyBusinessId(), groupId, ruleId);
+    }
+
+    @Transactional
+    public void archiveRule(Long businessId, Long groupId, Long ruleId) {
+        findRuleForGroup(businessId, groupId, ruleId).archive(clock.instant());
     }
 
     @Transactional(readOnly = true)
     public MenuItemConfigurationResponse operationalConfiguration(Long itemId) {
-        MenuItem item = findMenuItem(itemId);
-        List<MenuItem> candidates = menuCatalogRepository.findByActiveTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+        return operationalConfiguration(legacyBusiness.requireLegacyBusinessId(), itemId);
+    }
+
+    @Transactional(readOnly = true)
+    public MenuItemConfigurationResponse operationalConfiguration(Long businessId, Long itemId) {
+        MenuItem item = findMenuItem(businessId, itemId);
+        List<MenuItem> candidates = menuCatalogRepository.findByBusinessIdAndActiveTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc(businessId);
         List<MenuSelectionGroupConfigurationResponse> groups = activeGroupsFor(item).stream()
                 .map(group -> operationalGroup(group, candidates))
                 .toList();
@@ -213,7 +283,12 @@ public class CatalogConfigurationService {
 
     @Transactional(readOnly = true)
     public MenuItemConfigurationDefinitionResponse configurationDefinition(Long itemId) {
-        MenuItem item = findMenuItem(itemId);
+        return configurationDefinition(legacyBusiness.requireLegacyBusinessId(), itemId);
+    }
+
+    @Transactional(readOnly = true)
+    public MenuItemConfigurationDefinitionResponse configurationDefinition(Long businessId, Long itemId) {
+        MenuItem item = findMenuItem(businessId, itemId);
         List<CatalogTagSummary> tags = item.getTags().stream().map(CatalogTagSummary::from)
                 .sorted(TAG_SUMMARY_ORDER).toList();
         List<MenuSelectionGroupDefinitionResponse> groups = allGroupsFor(item).stream()
@@ -226,18 +301,23 @@ public class CatalogConfigurationService {
 
     @Transactional(readOnly = true)
     public MenuItemQuoteResponse quote(Long itemId, MenuItemQuoteRequest request) {
+        return quote(legacyBusiness.requireLegacyBusinessId(), itemId, request);
+    }
+
+    @Transactional(readOnly = true)
+    public MenuItemQuoteResponse quote(Long businessId, Long itemId, MenuItemQuoteRequest request) {
         if (request == null) {
             throw invalidConfiguration();
         }
         int quantity = requirePositiveQuantity(request.quantity());
-        MenuItem root = findMenuItem(itemId);
+        MenuItem root = findMenuItem(businessId, itemId);
         if (!root.isActive() || !root.isAvailable()) {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_ITEM_UNAVAILABLE);
         }
         if (!root.isStandaloneOrderable()) {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_ITEM_NOT_ORDERABLE);
         }
-        ConfiguredNode configuration = configureItem(root, request.groups(), new LinkedHashSet<>(Set.of(root.getId())), 0);
+        ConfiguredNode configuration = configureItem(businessId, root, request.groups(), new LinkedHashSet<>(Set.of(root.getId())), 0);
         BigDecimal baseUnitPrice = root.getPricingMode() == MenuItemPricingMode.SELECTION_SUM
                 ? zeroAmount()
                 : requirePositiveMoney(root.getPriceAmount());
@@ -267,7 +347,7 @@ public class CatalogConfigurationService {
                 group.getMaxSelections(), group.isAllowDuplicates(), options);
     }
 
-    private ConfiguredNode configureItem(MenuItem item,
+    private ConfiguredNode configureItem(Long businessId, MenuItem item,
                                          List<MenuQuoteGroupRequest> requestGroups,
                                          Set<Long> ancestorItemIds,
                                          int depth) {
@@ -297,7 +377,7 @@ public class CatalogConfigurationService {
                     .findBySelectionGroupIdAndActiveTrueOrderByPriorityDescIdAsc(group.getId());
             List<MenuQuoteSelectionResponse> quotedSelections = new ArrayList<>();
             for (MenuQuoteSelectionRequest selection : selections) {
-                MenuItem selectedItem = findSelectedItem(selection.menuItemId());
+                MenuItem selectedItem = findSelectedItem(businessId, selection.menuItemId());
                 if (!selectedItem.isActive() || !selectedItem.isAvailable()) {
                     throw new CatalogConfigurationException(CatalogDomainError.MENU_ITEM_UNAVAILABLE);
                 }
@@ -310,9 +390,9 @@ public class CatalogConfigurationService {
                 }
                 Set<Long> descendants = new LinkedHashSet<>(ancestorItemIds);
                 descendants.add(selectedItem.getId());
-                ConfiguredNode nested = configureItem(selectedItem, selection.groups(), descendants, depth + 1);
+                ConfiguredNode nested = configureItem(businessId, selectedItem, selection.groups(), descendants, depth + 1);
                 List<DefaultComponentResponse> omittedComponents = menuItemComponentService
-                        .resolveActiveOmittedComponents(selectedItem.getId(), selection.omittedComponentIds()).stream()
+                .resolveActiveOmittedComponents(businessId, selectedItem.getId(), selection.omittedComponentIds()).stream()
                         .map(DefaultComponentResponse::from)
                         .toList();
                 BigDecimal adjustment = ruleAdjustment(rule, selectedItem);
@@ -426,39 +506,41 @@ public class CatalogConfigurationService {
         return menuSelectionGroupRepository.findByParentMenuItemIdOrderByDisplayOrderAscIdAsc(item.getId());
     }
 
-    private MenuItem findMenuItem(Long itemId) {
+    private MenuItem findMenuItem(Long businessId, Long itemId) {
         if (itemId == null || itemId <= 0) {
             throw new MenuCatalogItemNotFoundException();
         }
-        return menuCatalogRepository.findById(itemId).orElseThrow(MenuCatalogItemNotFoundException::new);
+        return menuCatalogRepository.findByIdAndBusinessId(itemId, businessId)
+                .orElseThrow(MenuCatalogItemNotFoundException::new);
     }
 
-    private MenuItem findSelectedItem(Long itemId) {
+    private MenuItem findSelectedItem(Long businessId, Long itemId) {
         if (itemId == null || itemId <= 0) {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_NOT_ALLOWED);
         }
-        return menuCatalogRepository.findById(itemId)
+        return menuCatalogRepository.findByIdAndBusinessId(itemId, businessId)
                 .orElseThrow(() -> new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_NOT_ALLOWED));
     }
 
-    private CatalogTag findTag(Long tagId) {
+    private CatalogTag findTag(Long businessId, Long tagId) {
         if (tagId == null || tagId <= 0) {
             throw new CatalogConfigurationException(CatalogDomainError.CATALOG_TAG_NOT_FOUND);
         }
-        return catalogTagRepository.findById(tagId)
+        return catalogTagRepository.findByIdAndBusinessId(tagId, businessId)
                 .orElseThrow(() -> new CatalogConfigurationException(CatalogDomainError.CATALOG_TAG_NOT_FOUND));
     }
 
-    private MenuSelectionGroup findGroup(Long groupId) {
+    private MenuSelectionGroup findGroup(Long businessId, Long groupId) {
         if (groupId == null || groupId <= 0) {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_GROUP_NOT_FOUND);
         }
-        return menuSelectionGroupRepository.findById(groupId)
+        MenuSelectionGroup group = menuSelectionGroupRepository.findByIdAndBusinessId(groupId, businessId)
                 .orElseThrow(() -> new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_GROUP_NOT_FOUND));
+        return group;
     }
 
-    private MenuSelectionGroup findGroupForItem(Long itemId, Long groupId) {
-        MenuItem item = findMenuItem(itemId);
+    private MenuSelectionGroup findGroupForItem(Long businessId, Long itemId, Long groupId) {
+        MenuItem item = findMenuItem(businessId, itemId);
         if (groupId == null || groupId <= 0) {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_GROUP_NOT_FOUND);
         }
@@ -466,8 +548,8 @@ public class CatalogConfigurationService {
                 .orElseThrow(() -> new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_GROUP_NOT_FOUND));
     }
 
-    private MenuSelectionRule findRuleForGroup(Long groupId, Long ruleId) {
-        MenuSelectionGroup group = findGroup(groupId);
+    private MenuSelectionRule findRuleForGroup(Long businessId, Long groupId, Long ruleId) {
+        MenuSelectionGroup group = findGroup(businessId, groupId);
         if (ruleId == null || ruleId <= 0) {
             throw new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_RULE_NOT_FOUND);
         }
@@ -475,14 +557,19 @@ public class CatalogConfigurationService {
                 .orElseThrow(() -> new CatalogConfigurationException(CatalogDomainError.MENU_SELECTION_RULE_NOT_FOUND));
     }
 
-    private RuleTarget resolveTarget(SelectionRuleTargetType targetType, Long targetId) {
+    private RuleTarget resolveTarget(Long businessId, SelectionRuleTargetType targetType, Long targetId) {
         if (targetType == null || targetId == null || targetId <= 0) {
             throw invalidConfiguration();
         }
         return switch (targetType) {
-            case ITEM -> new RuleTarget(findMenuItem(targetId), null);
-            case TAG -> new RuleTarget(null, findTag(targetId));
+            case ITEM -> new RuleTarget(findMenuItem(businessId, targetId), null);
+            case TAG -> new RuleTarget(null, findTag(businessId, targetId));
         };
+    }
+
+    private Business requireBusiness(Long businessId) {
+        return businessRepository.findById(businessId).filter(Business::isActive)
+                .orElseThrow(this::invalidConfiguration);
     }
 
     private RulePricing normalizeRulePricing(SelectionPricingPolicy policy,

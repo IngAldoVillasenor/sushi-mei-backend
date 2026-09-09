@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.entity;
 
+import com.cardovia.merkon.backend.business.Business;
 import com.cardovia.merkon.backend.businessday.BusinessDayStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -8,6 +9,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
@@ -23,7 +26,11 @@ public class BusinessDay {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "business_date", nullable = false, unique = true)
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
+
+    @Column(name = "business_date", nullable = false)
     private LocalDate businessDate;
 
     @Enumerated(EnumType.STRING)
@@ -100,11 +107,13 @@ public class BusinessDay {
     protected BusinessDay() {
     }
 
-    public static BusinessDay open(LocalDate businessDate,
+    public static BusinessDay open(Business business,
+                                   LocalDate businessDate,
                                    BigDecimal openingCashAmount,
                                    Instant openedAt,
                                    Long openedByUserId) {
         BusinessDay businessDay = new BusinessDay();
+        businessDay.business = Objects.requireNonNull(business, "business must not be null");
         businessDay.businessDate = Objects.requireNonNull(businessDate, "businessDate must not be null");
         businessDay.openingCashAmount = Objects.requireNonNull(openingCashAmount, "openingCashAmount must not be null");
         businessDay.openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
@@ -178,6 +187,7 @@ public class BusinessDay {
     }
 
     public Long getId() { return id; }
+    public Business getBusiness() { return business; }
     public LocalDate getBusinessDate() { return businessDate; }
     public BusinessDayStatus getStatus() { return status; }
     public BigDecimal getOpeningCashAmount() { return openingCashAmount; }

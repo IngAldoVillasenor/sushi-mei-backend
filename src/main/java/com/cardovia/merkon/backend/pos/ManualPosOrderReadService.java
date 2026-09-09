@@ -22,8 +22,8 @@ class ManualPosOrderReadService {
     ManualPosOrderReadService(OrderRepository orderRepository) { this.orderRepository = orderRepository; }
 
     @Transactional(readOnly = true)
-    ManualPosOrderResponse existing(java.util.UUID requestId, Long userId, String fingerprint) {
-        OrderRecord order = orderRepository.findByClientRequestId(requestId)
+    ManualPosOrderResponse existing(Long businessId, java.util.UUID requestId, Long userId, String fingerprint) {
+        OrderRecord order = orderRepository.findByBusinessIdAndClientRequestId(businessId, requestId)
                 .orElseThrow(() -> new ManualPosOrderException(ManualPosOrderError.ORDER_IDEMPOTENCY_CONFLICT));
         verifyOwnershipAndFingerprint(order, userId, fingerprint);
         return response(order, ManualOrderResult.ALREADY_CREATED);

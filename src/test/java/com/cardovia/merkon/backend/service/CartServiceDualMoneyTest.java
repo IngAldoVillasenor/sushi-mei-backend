@@ -8,6 +8,9 @@ import com.cardovia.merkon.backend.checkout.ParallelMoneyResolver;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.CartItem;
 import com.cardovia.merkon.backend.repository.CartRepository;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -23,13 +26,23 @@ import static org.mockito.Mockito.when;
 class CartServiceDualMoneyTest {
 
     private final CartRepository cartRepository = mock(CartRepository.class);
+    private final LegacyBusinessResolver legacyBusinessResolver = mock(LegacyBusinessResolver.class);
+    private final Business business = mock(Business.class);
     private final ParallelMoneyResolver moneyResolver = new ParallelMoneyResolver(new CheckoutMoney());
-    private final CartService cartService = new CartService(cartRepository, new CheckoutMoney(), moneyResolver);
+    private final CartService cartService = new CartService(cartRepository, new CheckoutMoney(), moneyResolver,
+            legacyBusinessResolver);
+
+    @BeforeEach
+    void tenant() {
+        when(business.getId()).thenReturn(3L);
+        when(legacyBusinessResolver.requireLegacyBusiness()).thenReturn(business);
+        when(legacyBusinessResolver.requireLegacyBusinessId()).thenReturn(3L);
+    }
 
     @Test
     void newCartItemDualWritesTheValidatedLegacyAndNumericRepresentations() {
         Cart activeCart = activeCart("525512345678");
-        when(cartRepository.findOpenCartByPhoneNumberForUpdate("525512345678")).thenReturn(java.util.Optional.of(activeCart));
+        when(cartRepository.findOpenCartByBusinessIdAndPhoneNumberForUpdate(3L, "525512345678")).thenReturn(java.util.Optional.of(activeCart));
 
         cartService.addItem("525512345678", "Maki", 2, 10.5d);
 
@@ -53,7 +66,7 @@ class CartServiceDualMoneyTest {
     void cartContentsPreservesTheLegacyTicketFormatForValidMoney() {
         Cart activeCart = activeCart("525512345678");
         activeCart.addItem(item("Maki", 2, 10.5d, new BigDecimal("10.50")));
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(activeCart);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(activeCart);
 
         assertThat(cartService.getCartContents("525512345678"))
                 .isEqualTo("Detalle exacto de la orden:\n"
@@ -64,7 +77,7 @@ class CartServiceDualMoneyTest {
     void strictOrderTotalReturnsOneRoundTripSafePair() {
         Cart activeCart = activeCart("525512345678");
         activeCart.addItem(item("Maki", 2, 10.5d, new BigDecimal("10.50")));
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(activeCart);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(activeCart);
 
         ParallelMoney total = cartService.getCartTotalForOrder("525512345678");
 
@@ -76,7 +89,7 @@ class CartServiceDualMoneyTest {
     void strictOrderTotalRejectsAnUnsafeLegacyRoundTrip() {
         Cart activeCart = activeCart("525512345678");
         activeCart.addItem(item("Maki", 1, null, new BigDecimal("99999999999999.99")));
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(activeCart);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(activeCart);
 
         assertThatThrownBy(() -> cartService.getCartTotalForOrder("525512345678"))
                 .isInstanceOf(MonetaryCompatibilityException.class)
@@ -89,8 +102,8 @@ class CartServiceDualMoneyTest {
         Cart closed = cartWithStatus("525512345678", "CLOSED");
         Cart current = activeCart("525512345678");
         current.addItem(item("Maki", 1, null, new BigDecimal("10.50")));
-        when(cartRepository.findFirstByPhoneNumberAndStatusOrderByIdDesc("525512345678", "CLOSED")).thenReturn(closed);
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(current);
+        when(cartRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByIdDesc(3L, "525512345678", "CLOSED")).thenReturn(closed);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(current);
 
         cartService.reopenCart("525512345678");
 
@@ -106,8 +119,8 @@ class CartServiceDualMoneyTest {
         Cart closed = cartWithStatus("525512345678", "CLOSED");
         Cart current = activeCart("525512345678");
         current.addItem(item("Maki", 1, null, new BigDecimal("99999999999999.99")));
-        when(cartRepository.findFirstByPhoneNumberAndStatusOrderByIdDesc("525512345678", "CLOSED")).thenReturn(closed);
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(current);
+        when(cartRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByIdDesc(3L, "525512345678", "CLOSED")).thenReturn(closed);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(current);
 
         assertThatThrownBy(() -> cartService.reopenCart("525512345678"))
                 .isInstanceOf(MonetaryCompatibilityException.class)
@@ -125,8 +138,8 @@ class CartServiceDualMoneyTest {
         closed.addItem(item("Maki", 1, 10.5d, new BigDecimal("10.50")));
         Cart current = activeCart("525512345678");
         current.addItem(item("Maki", 2, 11.0d, new BigDecimal("11.00")));
-        when(cartRepository.findFirstByPhoneNumberAndStatusOrderByIdDesc("525512345678", "CLOSED")).thenReturn(closed);
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(current);
+        when(cartRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByIdDesc(3L, "525512345678", "CLOSED")).thenReturn(closed);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(current);
 
         assertThatThrownBy(() -> cartService.reopenCart("525512345678"))
                 .isInstanceOf(CartReopenException.class)
@@ -145,8 +158,8 @@ class CartServiceDualMoneyTest {
         Cart current = activeCart("525512345678");
         current.addItem(item("Valid", 1, null, new BigDecimal("10.50")));
         current.addItem(item("Invalid", 1, null, new BigDecimal("99999999999999.99")));
-        when(cartRepository.findFirstByPhoneNumberAndStatusOrderByIdDesc("525512345678", "CLOSED")).thenReturn(closed);
-        when(cartRepository.findByPhoneNumberAndStatus("525512345678", "OPEN")).thenReturn(current);
+        when(cartRepository.findFirstByBusinessIdAndPhoneNumberAndStatusOrderByIdDesc(3L, "525512345678", "CLOSED")).thenReturn(closed);
+        when(cartRepository.findByBusinessIdAndPhoneNumberAndStatus(3L, "525512345678", "OPEN")).thenReturn(current);
 
         assertThatThrownBy(() -> cartService.reopenCart("525512345678"))
                 .isInstanceOf(MonetaryCompatibilityException.class);

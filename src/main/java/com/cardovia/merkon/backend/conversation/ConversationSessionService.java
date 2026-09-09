@@ -1,5 +1,7 @@
 package com.cardovia.merkon.backend.conversation;
 
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,10 +18,14 @@ import java.util.Optional;
 public class ConversationSessionService {
 
     private final ConversationSessionRepository conversationSessionRepository;
+    private final LegacyBusinessResolver legacyBusinessResolver;
     private final Clock clock;
 
-    public ConversationSessionService(ConversationSessionRepository conversationSessionRepository, Clock clock) {
+    public ConversationSessionService(ConversationSessionRepository conversationSessionRepository,
+                                      LegacyBusinessResolver legacyBusinessResolver,
+                                      Clock clock) {
         this.conversationSessionRepository = conversationSessionRepository;
+        this.legacyBusinessResolver = legacyBusinessResolver;
         this.clock = clock;
     }
 
@@ -31,7 +37,8 @@ public class ConversationSessionService {
 
     @Transactional(readOnly = true)
     public Optional<ConversationSession> findSession(String phoneNumber) {
-        return conversationSessionRepository.findById(validatedPhoneNumber(phoneNumber));
+        return conversationSessionRepository.findByPhoneNumberAndBusinessId(validatedPhoneNumber(phoneNumber),
+                legacyBusinessResolver.requireLegacyBusinessId());
     }
 
     @Transactional
@@ -66,8 +73,9 @@ public class ConversationSessionService {
     }
 
     private ConversationSession getOrCreateSession(String phoneNumber, Instant now) {
-        return conversationSessionRepository.findById(phoneNumber)
-                .orElseGet(() -> conversationSessionRepository.save(ConversationSession.create(phoneNumber, now)));
+        Business business = legacyBusinessResolver.requireLegacyBusiness();
+        return conversationSessionRepository.findByPhoneNumberAndBusinessId(phoneNumber, business.getId())
+                .orElseGet(() -> conversationSessionRepository.save(ConversationSession.create(business, phoneNumber, now)));
     }
 
     private String validatedPhoneNumber(String phoneNumber) {

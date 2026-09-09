@@ -1,5 +1,7 @@
 package com.cardovia.merkon.backend.conversation;
 
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,21 +17,26 @@ public class ConversationTransitionService {
     private final ConversationSessionRepository conversationSessionRepository;
     private final ConversationStateMachine conversationStateMachine;
     private final Clock clock;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     public ConversationTransitionService(ConversationSessionRepository conversationSessionRepository,
                                          ConversationStateMachine conversationStateMachine,
-                                         Clock clock) {
+                                         Clock clock,
+                                         LegacyBusinessResolver legacyBusinessResolver) {
         this.conversationSessionRepository = conversationSessionRepository;
         this.conversationStateMachine = conversationStateMachine;
         this.clock = clock;
+        this.legacyBusinessResolver = legacyBusinessResolver;
     }
 
     @Transactional
     public ConversationSession requestCheckoutReview(String phoneNumber) {
         String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
         Instant now = clock.instant();
-        ConversationSession session = conversationSessionRepository.findById(normalizedPhoneNumber)
-                .orElseGet(() -> ConversationSession.create(normalizedPhoneNumber, now));
+        Business business = legacyBusinessResolver.requireLegacyBusiness();
+        ConversationSession session = conversationSessionRepository.findByPhoneNumberAndBusinessId(
+                        normalizedPhoneNumber, business.getId())
+                .orElseGet(() -> ConversationSession.create(business, normalizedPhoneNumber, now));
         conversationStateMachine.requestCheckoutReview(session, now);
         return conversationSessionRepository.save(session);
     }
@@ -158,7 +165,8 @@ public class ConversationTransitionService {
     }
 
     private ConversationSession requiredSession(String phoneNumber, ConversationTransitionAction action) {
-        return conversationSessionRepository.findById(phoneNumber)
+        return conversationSessionRepository.findByPhoneNumberAndBusinessId(phoneNumber,
+                        legacyBusinessResolver.requireLegacyBusinessId())
                 .orElseThrow(() -> new ConversationSessionNotFoundException(action));
     }
 

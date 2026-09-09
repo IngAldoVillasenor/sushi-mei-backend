@@ -1,8 +1,8 @@
 package com.cardovia.merkon.backend.security;
 
 import com.cardovia.merkon.backend.business.BusinessMembershipRepository;
-import com.cardovia.merkon.backend.business.BusinessRepository;
 import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -14,13 +14,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class BootstrapOwnerInitializerTest {
 
     private final AppUserRepository users = mock(AppUserRepository.class);
-    private final BusinessRepository businesses = mock(BusinessRepository.class);
+    private final LegacyBusinessResolver legacyBusiness = mock(LegacyBusinessResolver.class);
     private final BusinessMembershipRepository memberships = mock(BusinessMembershipRepository.class);
     private final PasswordPolicyService passwords = mock(PasswordPolicyService.class);
     private final SecurityAuditService audit = mock(SecurityAuditService.class);
@@ -54,10 +53,10 @@ class BootstrapOwnerInitializerTest {
     }
 
     @Test
-    void firstBootstrapCreatesTheOwnerMembershipInTheOnlyActiveBusiness() {
+    void firstBootstrapCreatesTheOwnerMembershipInTheExplicitLegacyBusiness() {
         when(users.count()).thenReturn(0L);
         when(passwords.encodeValidated("owner", "una frase larga segura 123")).thenReturn("{bcrypt}hash");
-        when(businesses.findByActiveTrueOrderByIdAsc()).thenReturn(List.of(Business.create("Legacy business", clock.instant())));
+        when(legacyBusiness.requireLegacyBusiness()).thenReturn(Business.create("Legacy business", clock.instant()));
 
         initializer("owner", "una frase larga segura 123").run(null);
 
@@ -70,6 +69,6 @@ class BootstrapOwnerInitializerTest {
                 new MerkonSecurityProperties.Jwt("", "", "test-kid", "urn:test:issuer", "urn:test:audience",
                         Duration.ofMinutes(15)),
                 Duration.ofDays(15), 4, username, password, null);
-        return new BootstrapOwnerInitializer(properties, users, businesses, memberships, passwords, audit, clock);
+        return new BootstrapOwnerInitializer(properties, users, legacyBusiness, memberships, passwords, audit, clock);
     }
 }

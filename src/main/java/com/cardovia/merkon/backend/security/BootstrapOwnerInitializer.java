@@ -2,7 +2,7 @@ package com.cardovia.merkon.backend.security;
 
 import com.cardovia.merkon.backend.business.BusinessMembership;
 import com.cardovia.merkon.backend.business.BusinessMembershipRepository;
-import com.cardovia.merkon.backend.business.BusinessRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.time.Clock;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -14,7 +14,7 @@ public class BootstrapOwnerInitializer implements ApplicationRunner {
 
     private final MerkonSecurityProperties properties;
     private final AppUserRepository users;
-    private final BusinessRepository businesses;
+    private final LegacyBusinessResolver legacyBusiness;
     private final BusinessMembershipRepository memberships;
     private final PasswordPolicyService passwords;
     private final SecurityAuditService audit;
@@ -22,14 +22,14 @@ public class BootstrapOwnerInitializer implements ApplicationRunner {
 
     public BootstrapOwnerInitializer(MerkonSecurityProperties properties,
                                      AppUserRepository users,
-                                     BusinessRepository businesses,
+                                     LegacyBusinessResolver legacyBusiness,
                                      BusinessMembershipRepository memberships,
                                      PasswordPolicyService passwords,
                                      SecurityAuditService audit,
                                      Clock clock) {
         this.properties = properties;
         this.users = users;
-        this.businesses = businesses;
+        this.legacyBusiness = legacyBusiness;
         this.memberships = memberships;
         this.passwords = passwords;
         this.audit = audit;
@@ -56,11 +56,7 @@ public class BootstrapOwnerInitializer implements ApplicationRunner {
                 ApplicationRole.OWNER,
                 clock.instant());
         users.saveAndFlush(owner);
-        var activeBusinesses = businesses.findByActiveTrueOrderByIdAsc();
-        if (activeBusinesses.size() != 1) {
-            throw new IllegalStateException("Bootstrap owner requires exactly one active business");
-        }
-        memberships.save(BusinessMembership.create(owner, activeBusinesses.get(0), ApplicationRole.OWNER, clock.instant()));
+        memberships.save(BusinessMembership.create(owner, legacyBusiness.requireLegacyBusiness(), ApplicationRole.OWNER, clock.instant()));
         audit.record(
                 SecurityAuditEventType.USER_CREATED,
                 null,

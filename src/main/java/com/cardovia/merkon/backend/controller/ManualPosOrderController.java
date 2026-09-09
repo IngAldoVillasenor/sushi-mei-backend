@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.controller;
 import com.cardovia.merkon.backend.pos.ManualPosOrderRequest;
 import com.cardovia.merkon.backend.pos.ManualPosOrderResponse;
 import com.cardovia.merkon.backend.pos.ManualPosOrderService;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,15 +18,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/orders")
 public class ManualPosOrderController {
     private final ManualPosOrderService manualPosOrderService;
+    private final TrustedBusinessContext trustedBusinessContext;
 
-    public ManualPosOrderController(ManualPosOrderService manualPosOrderService) {
+    public ManualPosOrderController(ManualPosOrderService manualPosOrderService, TrustedBusinessContext trustedBusinessContext) {
         this.manualPosOrderService = manualPosOrderService;
+        this.trustedBusinessContext = trustedBusinessContext;
     }
 
     @PostMapping
     public ResponseEntity<ManualPosOrderResponse> create(@AuthenticationPrincipal Jwt jwt,
                                                           @Valid @RequestBody ManualPosOrderRequest request) {
-        ManualPosOrderResponse response = manualPosOrderService.create(Long.valueOf(jwt.getSubject()), request);
+        ManualPosOrderResponse response = manualPosOrderService.create(trustedBusinessContext.requireBusinessId(jwt),
+                Long.valueOf(jwt.getSubject()), request);
         if (response.result() == com.cardovia.merkon.backend.pos.ManualOrderResult.ALREADY_CREATED) {
             return ResponseEntity.ok(response);
         }

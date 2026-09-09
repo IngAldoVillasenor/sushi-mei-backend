@@ -2,6 +2,7 @@ package com.cardovia.merkon.backend.catalog;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Clock;
@@ -50,17 +51,21 @@ class SushiMeiItemComponentsService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     SushiMeiItemComponentsService(MenuCatalogRepository menuItemRepository,
                                   MenuItemDefaultComponentRepository componentRepository,
                                   JdbcTemplate jdbcTemplate,
                                   ObjectMapper objectMapper,
-                                  Clock clock) {
+                                  Clock clock,
+                                  LegacyBusinessResolver legacyBusinessResolver) {
         this.menuItemRepository = Objects.requireNonNull(menuItemRepository, "menuItemRepository must not be null");
         this.componentRepository = Objects.requireNonNull(componentRepository, "componentRepository must not be null");
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
     }
 
     @Transactional
@@ -70,10 +75,11 @@ class SushiMeiItemComponentsService {
         }
 
         Instant now = clock.instant();
+        Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
         List<ItemComponentsDefinition> definitions = loadDefinitions();
         validateDefinitions(definitions);
         for (ItemComponentsDefinition definition : definitions) {
-            MenuItem item = menuItemRepository.findById(definition.menuItemId())
+            MenuItem item = menuItemRepository.findByIdAndBusinessId(definition.menuItemId(), businessId)
                     .orElseThrow(() -> new IllegalStateException("Missing reviewed menu item " + definition.menuItemId()));
             if (!definition.expectedName().equals(item.getName())) {
                 throw new IllegalStateException("Reviewed component menu identity mismatch for item " + definition.menuItemId());

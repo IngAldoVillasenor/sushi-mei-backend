@@ -9,6 +9,7 @@ import com.cardovia.merkon.backend.catalog.MenuItemQuoteResponse;
 import com.cardovia.merkon.backend.catalog.MenuItemComponentService;
 import com.cardovia.merkon.backend.catalog.DefaultComponentResponse;
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +36,7 @@ public class TemporalPromotionQuoteService {
     private static final Logger LOGGER = LoggerFactory.getLogger(TemporalPromotionQuoteService.class);
 
     private final PromotionRepository promotionRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final MenuCatalogRepository menuCatalogRepository;
     private final CatalogConfigurationService catalogConfigurationService;
     private final MenuItemComponentService menuItemComponentService;
@@ -43,6 +45,7 @@ public class TemporalPromotionQuoteService {
     private final ZoneId businessZone;
 
     public TemporalPromotionQuoteService(PromotionRepository promotionRepository,
+                                         LegacyBusinessResolver legacyBusiness,
                                          MenuCatalogRepository menuCatalogRepository,
                                          CatalogConfigurationService catalogConfigurationService,
                                          MenuItemComponentService menuItemComponentService,
@@ -50,6 +53,7 @@ public class TemporalPromotionQuoteService {
                                          Clock clock,
                                          @Value("${merkon.business-zone:America/Mexico_City}") String businessZone) {
         this.promotionRepository = Objects.requireNonNull(promotionRepository, "promotionRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository, "menuCatalogRepository must not be null");
         this.catalogConfigurationService = Objects.requireNonNull(catalogConfigurationService,
                 "catalogConfigurationService must not be null");
@@ -62,18 +66,28 @@ public class TemporalPromotionQuoteService {
 
     @Transactional(readOnly = true)
     public List<PromotionResponse> listApplicable() {
+        return listApplicable(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<PromotionResponse> listApplicable(Long businessId) {
         LocalDate businessDate = clock.instant().atZone(businessZone).toLocalDate();
-        return applicablePromotions(businessDate).stream().map(PromotionResponse::from).toList();
+        return applicablePromotions(businessId, businessDate).stream().map(PromotionResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public PromotionQuoteResponse quote(PromotionQuoteRequest request) {
+        return quote(legacyBusiness.requireLegacyBusinessId(), request);
+    }
+
+    @Transactional(readOnly = true)
+    public PromotionQuoteResponse quote(Long businessId, PromotionQuoteRequest request) {
         if (request == null || request.lines() == null || request.lines().isEmpty()) {
             throw invalidQuote();
         }
         Instant quotedAt = clock.instant();
         LocalDate businessDate = quotedAt.atZone(businessZone).toLocalDate();
-        List<Promotion> applicablePromotions = applicablePromotions(businessDate);
+        List<Promotion> applicablePromotions = applicablePromotions(businessId, businessDate);
         Set<String> lineKeys = new HashSet<>();
         List<PromotionQuoteLineResponse> lines = new ArrayList<>();
         BigDecimal catalogBaseSubtotal = zero();
@@ -87,7 +101,7 @@ public class TemporalPromotionQuoteService {
                     || !lineKeys.add(line.lineKey().trim())) {
                 throw invalidQuote();
             }
-            QuotedLine quoted = quoteLine(line, applicablePromotions);
+            QuotedLine quoted = quoteLine(businessId, line, applicablePromotions);
             lines.add(quoted.response());
             catalogBaseSubtotal = addNonNegative(catalogBaseSubtotal, quoted.catalogBaseTotal());
             configurationAdjustmentTotal = addNonNegative(configurationAdjustmentTotal, quoted.configurationAdjustmentTotal());
@@ -98,13 +112,13 @@ public class TemporalPromotionQuoteService {
                 configurationAdjustmentTotal, promotionAdjustmentTotal, total);
     }
 
-    private QuotedLine quoteLine(PromotionQuoteLineRequest line,
+    private QuotedLine quoteLine(Long businessId, PromotionQuoteLineRequest line,
                                  List<Promotion> applicablePromotions) {
         String lineKey = line.lineKey().trim();
-        MenuItemQuoteResponse catalogQuote = catalogConfigurationService.quote(line.menuItemId(),
+        MenuItemQuoteResponse catalogQuote = catalogConfigurationService.quote(businessId, line.menuItemId(),
                 new MenuItemQuoteRequest(line.quantity(), line.groups()));
-        menuItemComponentService.resolveActiveOmittedComponents(line.menuItemId(), line.omittedComponentIds());
-        MenuItem rootItem = menuCatalogRepository.findById(line.menuItemId()).orElseThrow(this::invalidQuote);
+        menuItemComponentService.resolveActiveOmittedComponents(businessId, line.menuItemId(), line.omittedComponentIds());
+        MenuItem rootItem = menuCatalogRepository.findByIdAndBusinessId(line.menuItemId(), businessId).orElseThrow(this::invalidQuote);
         Promotion promotion = resolvePromotion(rootItem, applicablePromotions);
         BigDecimal catalogBaseUnit = catalogQuote.baseUnitPrice();
         BigDecimal catalogBaseTotal = catalogQuote.baseTotal();
@@ -120,7 +134,7 @@ public class TemporalPromotionQuoteService {
         } else if (promotion != null && (promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM
                 || promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_ELIGIBLE_ITEM)) {
             int rewardCount = rewardCount(promotion, line.quantity());
-            rewards = quoteRewards(lineKey, rootItem, promotion, line.rewardConfigurations(), rewardCount);
+            rewards = quoteRewards(businessId, lineKey, rootItem, promotion, line.rewardConfigurations(), rewardCount);
         } else {
             rejectRewardConfigurations(line.rewardConfigurations());
         }
@@ -139,7 +153,7 @@ public class TemporalPromotionQuoteService {
                 addNonNegative(configurationTotal, rewardConfigurationTotal), promotionAdjustment, lineTotal);
     }
 
-    private List<PromotionRewardQuoteResponse> quoteRewards(String lineKey,
+    private List<PromotionRewardQuoteResponse> quoteRewards(Long businessId, String lineKey,
                                                              MenuItem sourceItem,
                                                              Promotion promotion,
                                                              List<PromotionRewardConfigurationRequest> configurations,
@@ -149,12 +163,12 @@ public class TemporalPromotionQuoteService {
         List<PromotionRewardQuoteResponse> rewards = new ArrayList<>();
         for (int ordinal = 1; ordinal <= rewardCount; ordinal++) {
             PromotionRewardConfigurationRequest configuration = configurationsByOrdinal.get(ordinal);
-            MenuItem rewardItem = rewardItem(sourceItem, promotion, configuration);
-            MenuItemQuoteResponse rewardQuote = catalogConfigurationService.quote(rewardItem.getId(),
+            MenuItem rewardItem = rewardItem(businessId, sourceItem, promotion, configuration);
+            MenuItemQuoteResponse rewardQuote = catalogConfigurationService.quote(businessId, rewardItem.getId(),
                     new MenuItemQuoteRequest(1, configuration == null ? List.of() : configuration.groups()));
             List<DefaultComponentResponse> omittedComponents = configuration == null
                     ? List.of()
-                    : menuItemComponentService.resolveActiveOmittedComponents(rewardItem.getId(),
+                    : menuItemComponentService.resolveActiveOmittedComponents(businessId, rewardItem.getId(),
                             configuration.omittedComponentIds()).stream().map(DefaultComponentResponse::from).toList();
             BigDecimal configurationTotal = rewardQuote.unitAdjustmentTotal();
             rewards.add(new PromotionRewardQuoteResponse(lineKey, ordinal, AppliedPromotionResponse.from(promotion),
@@ -165,7 +179,7 @@ public class TemporalPromotionQuoteService {
         return List.copyOf(rewards);
     }
 
-    private MenuItem rewardItem(MenuItem sourceItem,
+    private MenuItem rewardItem(Long businessId, MenuItem sourceItem,
                                 Promotion promotion,
                                 PromotionRewardConfigurationRequest configuration) {
         if (promotion.getBenefitType() == PromotionBenefitType.BUY_X_GET_Y_SAME_ITEM) {
@@ -178,7 +192,7 @@ public class TemporalPromotionQuoteService {
         Long rewardMenuItemId = configuration == null || configuration.menuItemId() == null
                 ? sourceItem.getId()
                 : configuration.menuItemId();
-        MenuItem rewardItem = menuCatalogRepository.findById(rewardMenuItemId)
+        MenuItem rewardItem = menuCatalogRepository.findByIdAndBusinessId(rewardMenuItemId, businessId)
                 .orElseThrow(() -> new PromotionException(PromotionError.PROMOTION_REWARD_INVALID));
         if (!rewardItem.isActive() || !rewardItem.isAvailable() || !rewardItem.isStandaloneOrderable()
                 || !targets(promotion, rewardItem)) {
@@ -237,8 +251,8 @@ public class TemporalPromotionQuoteService {
         return highest.get(0);
     }
 
-    private List<Promotion> applicablePromotions(LocalDate businessDate) {
-        return promotionRepository.findByActiveTrueOrderByPriorityDescIdAsc().stream()
+    private List<Promotion> applicablePromotions(Long businessId, LocalDate businessDate) {
+        return promotionRepository.findByBusinessIdAndActiveTrueOrderByPriorityDescIdAsc(businessId).stream()
                 .filter(promotion -> appliesOn(promotion, businessDate))
                 .toList();
     }

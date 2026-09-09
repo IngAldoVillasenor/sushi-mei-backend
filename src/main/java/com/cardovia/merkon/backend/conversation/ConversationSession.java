@@ -1,10 +1,13 @@
 package com.cardovia.merkon.backend.conversation;
 
+import com.cardovia.merkon.backend.business.Business;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
@@ -19,6 +22,10 @@ public class ConversationSession {
     @Id
     @Column(name = "phone_number", nullable = false, updatable = false, length = 32)
     private String phoneNumber;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 48)
@@ -61,7 +68,8 @@ public class ConversationSession {
         // Required by JPA.
     }
 
-    private ConversationSession(String phoneNumber, Instant now) {
+    private ConversationSession(Business business, String phoneNumber, Instant now) {
+        this.business = Objects.requireNonNull(business, "business must not be null");
         this.phoneNumber = Objects.requireNonNull(phoneNumber, "phoneNumber must not be null");
         this.state = ConversationState.ORDERING;
         this.createdAt = Objects.requireNonNull(now, "now must not be null");
@@ -69,8 +77,8 @@ public class ConversationSession {
         this.lastActivityAt = now;
     }
 
-    public static ConversationSession create(String phoneNumber, Instant now) {
-        return new ConversationSession(phoneNumber, now);
+    public static ConversationSession create(Business business, String phoneNumber, Instant now) {
+        return new ConversationSession(business, phoneNumber, now);
     }
 
     public void recordActivity(Instant now) {
@@ -180,6 +188,10 @@ public class ConversationSession {
 
     public String getPhoneNumber() {
         return phoneNumber;
+    }
+
+    public Business getBusiness() {
+        return business;
     }
 
     public ConversationState getState() {

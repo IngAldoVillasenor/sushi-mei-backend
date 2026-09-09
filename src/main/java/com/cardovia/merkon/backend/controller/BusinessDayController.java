@@ -9,6 +9,7 @@ import com.cardovia.merkon.backend.businessday.CashExpenseResult;
 import com.cardovia.merkon.backend.businessday.CashExpenseService;
 import com.cardovia.merkon.backend.businessday.CloseBusinessDayRequest;
 import com.cardovia.merkon.backend.businessday.OpenBusinessDayRequest;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Objects;
@@ -28,50 +29,58 @@ public class BusinessDayController {
 
     private final BusinessDayService businessDayService;
     private final CashExpenseService cashExpenseService;
+    private final TrustedBusinessContext trustedBusinessContext;
 
-    public BusinessDayController(BusinessDayService businessDayService, CashExpenseService cashExpenseService) {
+    public BusinessDayController(BusinessDayService businessDayService, CashExpenseService cashExpenseService,
+                                 TrustedBusinessContext trustedBusinessContext) {
         this.businessDayService = Objects.requireNonNull(businessDayService, "businessDayService must not be null");
         this.cashExpenseService = Objects.requireNonNull(cashExpenseService, "cashExpenseService must not be null");
+        this.trustedBusinessContext = Objects.requireNonNull(trustedBusinessContext,
+                "trustedBusinessContext must not be null");
     }
 
     @PostMapping("/open")
     public ResponseEntity<BusinessDayResponse> open(@AuthenticationPrincipal Jwt jwt,
                                                      @Valid @RequestBody OpenBusinessDayRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(businessDayService.open(userId(jwt), request));
+                .body(businessDayService.open(businessId(jwt), userId(jwt), request));
     }
 
     @GetMapping("/current")
-    public ResponseEntity<BusinessDayResponse> current() {
-        return businessDayService.current().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+    public ResponseEntity<BusinessDayResponse> current(@AuthenticationPrincipal Jwt jwt) {
+        return businessDayService.current(businessId(jwt)).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/current/close")
     public BusinessDayResponse close(@AuthenticationPrincipal Jwt jwt,
                                      @Valid @RequestBody CloseBusinessDayRequest request) {
-        return businessDayService.close(userId(jwt), request);
+        return businessDayService.close(businessId(jwt), userId(jwt), request);
     }
 
     @PostMapping("/current/reopen")
     public BusinessDayResponse reopen(@AuthenticationPrincipal Jwt jwt) {
-        return businessDayService.reopen(userId(jwt));
+        return businessDayService.reopen(businessId(jwt), userId(jwt));
     }
 
     @PostMapping("/current/cash-expenses")
     public ResponseEntity<CashExpenseCreateResponse> createCashExpense(@AuthenticationPrincipal Jwt jwt,
                                                                          @Valid @RequestBody CashExpenseRequest request) {
-        CashExpenseCreateResponse response = cashExpenseService.create(userId(jwt), request);
+        CashExpenseCreateResponse response = cashExpenseService.create(businessId(jwt), userId(jwt), request);
         return response.result() == CashExpenseResult.ALREADY_CREATED
                 ? ResponseEntity.ok(response)
                 : ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/current/cash-expenses")
-    public List<CashExpenseResponse> currentCashExpenses() {
-        return cashExpenseService.listCurrent();
+    public List<CashExpenseResponse> currentCashExpenses(@AuthenticationPrincipal Jwt jwt) {
+        return cashExpenseService.listCurrent(businessId(jwt));
     }
 
     private static Long userId(Jwt jwt) {
         return Long.valueOf(jwt.getSubject());
+    }
+
+    private Long businessId(Jwt jwt) {
+        return trustedBusinessContext.requireBusinessId(jwt);
     }
 }

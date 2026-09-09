@@ -11,7 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface BusinessDayCashExpenseRepository extends JpaRepository<BusinessDayCashExpense, Long> {
 
-    Optional<BusinessDayCashExpense> findByClientRequestId(UUID clientRequestId);
+    Optional<BusinessDayCashExpense> findByBusinessIdAndClientRequestId(Long businessId, UUID clientRequestId);
 
     List<BusinessDayCashExpense> findByBusinessDayIdOrderByCreatedAtAscIdAsc(Long businessDayId);
 

@@ -2,6 +2,7 @@ package com.cardovia.merkon.backend.catalog;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Clock;
@@ -44,6 +45,7 @@ class SushiMeiOptionalSelectionGroupsService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     SushiMeiOptionalSelectionGroupsService(MenuCatalogRepository menuItemRepository,
                                            CatalogTagRepository tagRepository,
@@ -51,7 +53,8 @@ class SushiMeiOptionalSelectionGroupsService {
                                            MenuSelectionRuleRepository ruleRepository,
                                            JdbcTemplate jdbcTemplate,
                                            ObjectMapper objectMapper,
-                                           Clock clock) {
+                                           Clock clock,
+                                           LegacyBusinessResolver legacyBusinessResolver) {
         this.menuItemRepository = Objects.requireNonNull(menuItemRepository);
         this.tagRepository = Objects.requireNonNull(tagRepository);
         this.groupRepository = Objects.requireNonNull(groupRepository);
@@ -59,12 +62,14 @@ class SushiMeiOptionalSelectionGroupsService {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.clock = Objects.requireNonNull(clock);
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver);
     }
 
     @Transactional
     public void synchronize() {
         if (isAppliedWithLock()) return;
-        CatalogTag tag = tagRepository.findByCode(TARGET_TAG_CODE)
+        Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
+        CatalogTag tag = tagRepository.findByBusinessIdAndCode(businessId, TARGET_TAG_CODE)
                 .filter(CatalogTag::isActive)
                 .orElseThrow(() -> new IllegalStateException("Missing reviewed optional-selection tag"));
         Instant now = clock.instant();
@@ -76,7 +81,7 @@ class SushiMeiOptionalSelectionGroupsService {
                     || !ids.add(definition.menuItemId())) {
                 throw new IllegalStateException("Reviewed optional-selection catalog is invalid");
             }
-            MenuItem item = menuItemRepository.findById(definition.menuItemId())
+            MenuItem item = menuItemRepository.findByIdAndBusinessId(definition.menuItemId(), businessId)
                     .orElseThrow(() -> new IllegalStateException("Missing reviewed menu item " + definition.menuItemId()));
             if (!definition.expectedName().equals(item.getName())) {
                 throw new IllegalStateException("Reviewed optional-selection identity mismatch for item " + definition.menuItemId());

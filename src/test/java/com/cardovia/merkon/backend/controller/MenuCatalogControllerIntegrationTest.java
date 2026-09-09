@@ -8,6 +8,7 @@ import com.cardovia.merkon.backend.catalog.MenuItemDefaultComponent;
 import com.cardovia.merkon.backend.catalog.MenuItemDefaultComponentRepository;
 import com.cardovia.merkon.backend.catalog.MenuItemPricingMode;
 import com.cardovia.merkon.backend.catalog.UpdateMenuItemRequest;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -23,9 +24,14 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -36,12 +42,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@WithMockUser(roles = "OWNER")
 @Import({com.cardovia.merkon.backend.security.SecurityTestKeyConfiguration.class, MenuCatalogControllerIntegrationTest.TestInfrastructureConfiguration.class})
 class MenuCatalogControllerIntegrationTest {
 
@@ -49,6 +56,9 @@ class MenuCatalogControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private WebApplicationContext webApplicationContext;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -62,6 +72,11 @@ class MenuCatalogControllerIntegrationTest {
     @Autowired
     private MenuItemDefaultComponentRepository componentRepository;
 
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
+
+    private JwtRequestPostProcessor ownerJwt;
+
     @BeforeEach
     void removeCatalogFixtures() {
         jdbcTemplate.update("delete from public.promotion_targets");
@@ -73,6 +88,7 @@ class MenuCatalogControllerIntegrationTest {
         jdbcTemplate.update("delete from public.menu_item_default_components");
         jdbcTemplate.update("delete from public.catalog_tags");
         jdbcTemplate.update("delete from public.menu_items");
+        ownerJwt = authenticateOwner();
     }
 
     @Test
@@ -105,17 +121,17 @@ class MenuCatalogControllerIntegrationTest {
         CatalogItemView rollA = create(item("Alfa Roll", "Rollos", "Rollos", "79.00", true, 1));
         CatalogItemView archived = create(item("Archivado", "Bebidas", "Bebidas", "20.00", true, 0));
 
-        mockMvc.perform(delete(BASE_PATH + "/{id}", archived.id()))
+        mockMvc.perform(delete(BASE_PATH + "/{id}", archived.id()).with(ownerJwt))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get(BASE_PATH))
+        mockMvc.perform(get(BASE_PATH).with(ownerJwt))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(rollA.id()))
                 .andExpect(jsonPath("$[1].id").value(rollB.id()))
                 .andExpect(jsonPath("$[2].id").value(sushi.id()))
                 .andExpect(jsonPath("$[3]").doesNotExist());
 
-        mockMvc.perform(get(BASE_PATH).param("includeInactive", "true"))
+        mockMvc.perform(get(BASE_PATH).param("includeInactive", "true").with(ownerJwt))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(archived.id()))
                 .andExpect(jsonPath("$[1].id").value(rollA.id()))
@@ -137,14 +153,14 @@ class MenuCatalogControllerIntegrationTest {
     void getReturnsExistingDtoAndMissingItemsUseTheStableNotFoundError() throws Exception {
         CatalogItemView created = create(item("California", "Rollos", "Rollos", "79.00", true, 0));
 
-        mockMvc.perform(get(BASE_PATH + "/{id}", created.id()))
+        mockMvc.perform(get(BASE_PATH + "/{id}", created.id()).with(ownerJwt))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(created.id()))
                 .andExpect(jsonPath("$.price").value(79.00))
                 .andExpect(jsonPath("$.priceAmount").doesNotExist())
                 .andExpect(jsonPath("$.hibernateLazyInitializer").doesNotExist());
 
-        mockMvc.perform(get(BASE_PATH + "/{id}", 999999L))
+        mockMvc.perform(get(BASE_PATH + "/{id}", 999999L).with(ownerJwt))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("MENU_ITEM_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("Elemento de menú no encontrado."));
@@ -160,7 +176,7 @@ class MenuCatalogControllerIntegrationTest {
                 menuCatalogRepository.findById(created.id()).orElseThrow(),
                 "BATERIA", "Batería", null, true, false, 1));
 
-        mockMvc.perform(get(BASE_PATH + "/{id}/components", created.id()))
+        mockMvc.perform(get(BASE_PATH + "/{id}/components", created.id()).with(ownerJwt))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].code").value("CABLE_USB"))
                 .andExpect(jsonPath("$[0].detail").value("2 metros"))
@@ -191,7 +207,7 @@ class MenuCatalogControllerIntegrationTest {
                 BigDecimal.class,
                 created.id())).isEqualByComparingTo("80.50");
 
-        mockMvc.perform(put(BASE_PATH + "/{id}", created.id())
+        mockMvc.perform(put(BASE_PATH + "/{id}", created.id()).with(ownerJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(update)))
                 .andExpect(status().isConflict())
@@ -202,7 +218,7 @@ class MenuCatalogControllerIntegrationTest {
     void deleteArchivesTheRowAndUpdateCanDeliberatelyReactivateIt() throws Exception {
         CatalogItemView created = create(item("Coca Cola", "Bebidas", "Bebidas", "20.00", true, 0));
 
-        mockMvc.perform(delete(BASE_PATH + "/{id}", created.id()))
+        mockMvc.perform(delete(BASE_PATH + "/{id}", created.id()).with(ownerJwt))
                 .andExpect(status().isNoContent());
 
         assertThat(jdbcTemplate.queryForObject(
@@ -214,7 +230,7 @@ class MenuCatalogControllerIntegrationTest {
                 Boolean.class,
                 created.id())).isFalse();
 
-        mockMvc.perform(get(BASE_PATH))
+        mockMvc.perform(get(BASE_PATH).with(ownerJwt))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
         CatalogItemView archived = fetch(created.id());
@@ -242,7 +258,7 @@ class MenuCatalogControllerIntegrationTest {
         );
 
         for (CreateMenuItemRequest invalidRequest : invalidRequests) {
-            mockMvc.perform(post(BASE_PATH)
+            mockMvc.perform(post(BASE_PATH).with(ownerJwt)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(invalidRequest)))
                     .andExpect(status().isBadRequest())
@@ -250,7 +266,7 @@ class MenuCatalogControllerIntegrationTest {
         }
 
 
-        mockMvc.perform(post(BASE_PATH)
+        mockMvc.perform(post(BASE_PATH).with(ownerJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{"))
                 .andExpect(status().isBadRequest())
@@ -259,7 +275,7 @@ class MenuCatalogControllerIntegrationTest {
     }
 
     private CatalogItemView create(CreateMenuItemRequest request) throws Exception {
-        String response = mockMvc.perform(post(BASE_PATH)
+        String response = mockMvc.perform(post(BASE_PATH).with(ownerJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -270,8 +286,39 @@ class MenuCatalogControllerIntegrationTest {
         return toView(objectMapper.readTree(response));
     }
 
+    private JwtRequestPostProcessor authenticateOwner() {
+        String username = "catalog-owner-" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active, failed_login_attempts,
+                    password_changed_at, created_at, updated_at, version)
+                values (?, ?, '{bcrypt}not-used', 'OWNER', true, 0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """, username, username);
+        Long userId = jdbcTemplate.queryForObject("select id from public.app_users where username = ?", Long.class, username);
+        Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
+        jdbcTemplate.update("""
+                insert into public.business_memberships (user_id, business_id, role, created_at, updated_at, version)
+                values (?, ?, 'OWNER', current_timestamp, current_timestamp, 0)
+                """, userId, businessId);
+        Long membershipId = jdbcTemplate.queryForObject(
+                "select id from public.business_memberships where user_id = ? and business_id = ?", Long.class, userId, businessId);
+        UUID sessionId = UUID.randomUUID();
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                insert into public.auth_sessions (id, user_id, active_membership_id, device_id, current_refresh_token_hash, created_at,
+                    last_refreshed_at, absolute_expires_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                """, sessionId, userId, membershipId, "catalog-device-" + username,
+                UUID.randomUUID().toString().replace("-", "").repeat(2), now, now, now.plusSeconds(900));
+        Jwt jwt = new Jwt("test-token", now, now.plusSeconds(900), Map.of("alg", "none"), Map.of(
+                "sub", userId.toString(), "sid", sessionId.toString(), "mid", membershipId.toString(),
+                "bid", businessId.toString(), "role", "OWNER", "username", username));
+        return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                .jwt(jwt)
+                .authorities(new SimpleGrantedAuthority("ROLE_OWNER"));
+    }
+
     private CatalogItemView update(Long id, UpdateMenuItemRequest request) throws Exception {
-        String response = mockMvc.perform(put(BASE_PATH + "/{id}", id)
+        String response = mockMvc.perform(put(BASE_PATH + "/{id}", id).with(ownerJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -282,7 +329,7 @@ class MenuCatalogControllerIntegrationTest {
     }
 
     private CatalogItemView fetch(Long id) throws Exception {
-        String response = mockMvc.perform(get(BASE_PATH + "/{id}", id))
+        String response = mockMvc.perform(get(BASE_PATH + "/{id}", id).with(ownerJwt))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()

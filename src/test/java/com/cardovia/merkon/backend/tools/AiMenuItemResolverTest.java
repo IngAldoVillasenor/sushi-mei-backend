@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.tools;
 import com.cardovia.merkon.backend.catalog.MenuCatalogRepository;
 import com.cardovia.merkon.backend.catalog.MenuItem;
 import com.cardovia.merkon.backend.catalog.MenuItemPricingMode;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -17,7 +18,8 @@ import static org.mockito.Mockito.when;
 class AiMenuItemResolverTest {
 
     private final MenuCatalogRepository menuCatalogRepository = mock(MenuCatalogRepository.class);
-    private final AiMenuItemResolver resolver = new AiMenuItemResolver(menuCatalogRepository);
+    private final LegacyBusinessResolver legacyBusinessResolver = mock(LegacyBusinessResolver.class);
+    private final AiMenuItemResolver resolver = new AiMenuItemResolver(menuCatalogRepository, legacyBusinessResolver);
 
     @Test
     void resolvesCanonicalNameAndPriceFromTheOperationalCatalog() {
@@ -27,25 +29,27 @@ class AiMenuItemResolverTest {
         when(item.getPriceAmount()).thenReturn(new BigDecimal("99.00"));
         when(item.getPricingMode()).thenReturn(MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS);
         when(menuCatalogRepository
-                .findByNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
-                        "empanizado ebi"))
+                .findByBusinessIdAndNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
+                        3L, "empanizado ebi"))
                 .thenReturn(List.of(item));
+        when(legacyBusinessResolver.requireLegacyBusinessId()).thenReturn(3L);
 
         ResolvedMenuItem resolved = resolver.resolveExact(" empanizado ebi ");
 
         assertThat(resolved.name()).isEqualTo("Empanizado ebi");
         assertThat(resolved.unitPrice()).isEqualByComparingTo("99.00");
         verify(menuCatalogRepository)
-                .findByNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
-                        "empanizado ebi");
+                .findByBusinessIdAndNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
+                        3L, "empanizado ebi");
     }
 
     @Test
     void rejectsNamesThatDoNotResolveToOneOrderableCatalogItem() {
         when(menuCatalogRepository
-                .findByNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
-                        "Producto inventado"))
+                .findByBusinessIdAndNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
+                        3L, "Producto inventado"))
                 .thenReturn(List.of());
+        when(legacyBusinessResolver.requireLegacyBusinessId()).thenReturn(3L);
 
         assertThatThrownBy(() -> resolver.resolveExact("Producto inventado"))
                 .isInstanceOf(AiMenuItemResolutionException.class);

@@ -6,6 +6,7 @@ import com.cardovia.merkon.backend.entity.OrderSource;
 import com.cardovia.merkon.backend.order.OrderLifecycleStatus;
 import com.cardovia.merkon.backend.orderread.OperationalOrderDetailResponse;
 import com.cardovia.merkon.backend.orderread.OperationalOrderReadService;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import com.cardovia.merkon.backend.repository.VendisOrderSnapshotRepository;
 import com.cardovia.merkon.backend.repository.VendisPaymentSnapshotRepository;
@@ -320,11 +321,13 @@ class VendisHistoryImportServiceIntegrationTest {
     void wrapsNonRacePersistenceFailureWithInputDiagnostics() throws Exception {
         OrderRepository repository = mock(OrderRepository.class);
         VendisHistoryImportTransaction transaction = mock(VendisHistoryImportTransaction.class);
-        when(repository.findByOrderSourceAndExternalOrderId(eq(OrderSource.VENDIS_IMPORT), any()))
+        LegacyBusinessResolver legacyBusinessResolver = mock(LegacyBusinessResolver.class);
+        when(legacyBusinessResolver.requireLegacyBusinessId()).thenReturn(3L);
+        when(repository.findByBusinessIdAndOrderSourceAndExternalOrderId(eq(3L), eq(OrderSource.VENDIS_IMPORT), any()))
                 .thenReturn(Optional.empty());
-        when(transaction.importOne(any())).thenThrow(new DataIntegrityViolationException("database constraint"));
+        when(transaction.importOne(eq(3L), any())).thenThrow(new DataIntegrityViolationException("database constraint"));
         VendisHistoryImportService isolatedService = new VendisHistoryImportService(
-                new com.fasterxml.jackson.databind.ObjectMapper(), saleMapper, transaction, repository);
+                new com.fasterxml.jackson.databind.ObjectMapper(), saleMapper, transaction, repository, legacyBusinessResolver);
 
         assertThatThrownBy(() -> isolatedService.importFile(resourcePath("vendis/audited-sales.ndjson"), false))
                 .isInstanceOf(VendisImportException.class)
@@ -347,8 +350,9 @@ class VendisHistoryImportServiceIntegrationTest {
     private Long insertSourceOrder(OrderSource source, String externalOrderId) {
         jdbcTemplate.update("""
                 insert into public.orders (
-                    order_source, external_order_id, total_amount, total_amount_amount, status, created_at
-                ) values (?, ?, 10.00, 10.00, 'COMPLETED', current_timestamp)
+                    business_id, order_source, external_order_id, total_amount, total_amount_amount, status, created_at
+                ) values ((select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'), ?, ?, 10.00, 10.00,
+                    'COMPLETED', current_timestamp)
                 """, source.name(), externalOrderId);
         return jdbcTemplate.queryForObject("""
                 select id from public.orders where order_source = ? and external_order_id is not distinct from ?

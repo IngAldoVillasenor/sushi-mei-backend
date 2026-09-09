@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.promotion;
 
+import com.cardovia.merkon.backend.business.Business;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -10,6 +11,8 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -29,6 +32,10 @@ public class Promotion {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
 
     @Column(nullable = false, length = 160)
     private String name;
@@ -173,6 +180,7 @@ public class Promotion {
     }
 
     public Long getId() { return id; }
+    public Business getBusiness() { return business; }
     public String getName() { return name; }
     public boolean isActive() { return active; }
     public int getPriority() { return priority; }
@@ -188,4 +196,12 @@ public class Promotion {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }
+
+    public void assignBusiness(Business business) {
+        Business required = Objects.requireNonNull(business, "business must not be null");
+        if (this.business != null && !this.business.getId().equals(required.getId())) {
+            throw new IllegalStateException("Promotion business cannot change");
+        }
+        this.business = required;
+    }
 }

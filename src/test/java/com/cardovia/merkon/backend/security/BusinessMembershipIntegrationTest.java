@@ -48,8 +48,10 @@ class BusinessMembershipIntegrationTest {
         jdbcTemplate.update("delete from public.auth_sessions");
         memberships.deleteAll();
         users.deleteAll();
-        businesses.deleteAll();
-        legacyBusiness = businesses.saveAndFlush(Business.create("Sushi Mei", clock.instant()));
+        businesses.findAll().stream()
+                .filter(business -> business.getLegacyKey() == null)
+                .forEach(businesses::delete);
+        legacyBusiness = businesses.findByLegacyKey("SUSHIMEI_LEGACY").orElseThrow();
     }
 
     @Test
@@ -84,10 +86,11 @@ class BusinessMembershipIntegrationTest {
     @Test
     void membershipInBusinessAIsNeverAutoCreatedForTheOnlyActiveBusinessB() {
         AppUser user = createUser("a-only", ApplicationRole.CASHIER);
-        memberships.saveAndFlush(BusinessMembership.create(user, legacyBusiness, ApplicationRole.CASHIER, clock.instant()));
+        Business businessA = businesses.saveAndFlush(Business.create("Business A", clock.instant()));
+        memberships.saveAndFlush(BusinessMembership.create(user, businessA, ApplicationRole.CASHIER, clock.instant()));
         Business businessB = businesses.saveAndFlush(Business.create("Business B", clock.instant()));
-        legacyBusiness.deactivate(clock.instant());
-        businesses.saveAndFlush(legacyBusiness);
+        businessA.deactivate(clock.instant());
+        businesses.saveAndFlush(businessA);
 
         assertThatThrownBy(() -> authService.login(new LoginRequest(
                 "a-only", "una frase larga segura 123", "business-b-device", null, null), "127.0.0.1"))

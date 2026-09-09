@@ -8,6 +8,7 @@ import com.cardovia.merkon.backend.entity.OrderPaymentTiming;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.entity.OrderSource;
 import com.cardovia.merkon.backend.repository.OrderRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -31,6 +32,9 @@ class OrderLifecycleServiceTest {
     @Mock
     private BusinessDayService businessDayService;
 
+    @Mock
+    private LegacyBusinessResolver legacyBusinessResolver;
+
     @Test
     void persistedPickupPayOnDeliveryCanBeCollectedAtReady() {
         OrderRecord order = new OrderRecord();
@@ -41,13 +45,13 @@ class OrderLifecycleServiceTest {
         order.setStatus(OrderLifecycleStatus.READY.persistedValue());
         order.setCreatedAt(LocalDateTime.of(2026, 8, 12, 18, 0));
 
-        when(orderRepository.findPaymentCollectionReferenceById(order.getId()))
+        when(orderRepository.findPaymentCollectionReferenceByIdAndBusinessId(order.getId(), 3L))
                 .thenReturn(Optional.of(new OrderPaymentCollectionReference(order.getId(), order.getCreatedAt())));
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
-        OrderLifecycleService service = new OrderLifecycleService(orderRepository, businessDayService,
+        when(orderRepository.findByIdAndBusinessIdForUpdate(order.getId(), 3L)).thenReturn(Optional.of(order));
+        OrderLifecycleService service = new OrderLifecycleService(orderRepository, legacyBusinessResolver, businessDayService,
                 new CheckoutMoney(), Clock.systemUTC());
 
-        OrderPaymentCollectionResponse response = service.collectPayment(order.getId(), 7L,
+        OrderPaymentCollectionResponse response = service.collectPayment(3L, order.getId(), 7L,
                 new OrderPaymentCollectionRequest(OrderPaymentMethod.CARD, null));
 
         assertThat(response.currentStatus()).isEqualTo(OrderLifecycleStatus.COMPLETED);
@@ -56,7 +60,7 @@ class OrderLifecycleServiceTest {
         assertThat(order.getCashDenomination()).isNull();
         assertThat(order.getPaymentCollectedAt()).isNotNull();
         assertThat(order.getPaymentCollectedByUserId()).isEqualTo(7L);
-        verify(orderRepository).findByIdForUpdate(order.getId());
+        verify(orderRepository).findByIdAndBusinessIdForUpdate(order.getId(), 3L);
         verify(orderRepository).flush();
     }
 }

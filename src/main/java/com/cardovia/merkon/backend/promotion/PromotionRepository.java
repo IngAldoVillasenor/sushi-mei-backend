@@ -9,6 +9,15 @@ import java.util.Optional;
 public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
     @EntityGraph(attributePaths = {"isoWeekdays", "targets", "targets.targetMenuItem", "targets.targetTag"})
+    List<Promotion> findByBusinessIdAndActiveTrueOrderByPriorityDescIdAsc(Long businessId);
+
+    @EntityGraph(attributePaths = {"isoWeekdays", "targets", "targets.targetMenuItem", "targets.targetTag"})
+    List<Promotion> findByBusinessIdOrderByPriorityDescIdAsc(Long businessId);
+
+    @EntityGraph(attributePaths = {"isoWeekdays", "targets", "targets.targetMenuItem", "targets.targetTag"})
+    Optional<Promotion> findByIdAndBusinessId(Long id, Long businessId);
+
+    @EntityGraph(attributePaths = {"isoWeekdays", "targets", "targets.targetMenuItem", "targets.targetTag"})
     List<Promotion> findByActiveTrueOrderByPriorityDescIdAsc();
 
     @EntityGraph(attributePaths = {"isoWeekdays", "targets", "targets.targetMenuItem", "targets.targetTag"})

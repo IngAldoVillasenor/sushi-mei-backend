@@ -2,7 +2,6 @@ package com.cardovia.merkon.backend.security;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -16,6 +15,7 @@ import com.cardovia.merkon.backend.business.Business;
 import com.cardovia.merkon.backend.business.BusinessMembership;
 import com.cardovia.merkon.backend.business.BusinessMembershipRepository;
 import com.cardovia.merkon.backend.business.BusinessRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -86,6 +86,9 @@ class SecurityIntegrationTest {
 
     @Autowired
     private RefreshTokenService refreshTokens;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @BeforeEach
     void cleanSecurityFixtures() {
@@ -294,17 +297,17 @@ class SecurityIntegrationTest {
     @Test
     void authorizationMatrixAndPublicRoutesRemainNarrow() throws Exception {
         mockMvc.perform(get("/api/v1/menu/items")).andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/v1/menu/items").with(user("cashier").roles("CASHIER"))).andExpect(status().isOk());
-        mockMvc.perform(post("/api/v1/menu/items").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/v1/menu/items").with(user("manager").roles("MANAGER"))).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/menu/items").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/menu/items").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/menu/items").with(businessJwt(ApplicationRole.MANAGER))).andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/v1/promotions/active")).andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/v1/promotions/active").with(user("owner").roles("OWNER"))).andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/promotions/active").with(user("manager").roles("MANAGER"))).andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/promotions/active").with(user("cashier").roles("CASHIER"))).andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/promotions/active").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/v1/promotions").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/v1/promotions/quote").with(user("cashier").roles("CASHIER"))).andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/v1/promotions").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/promotions/active").with(businessJwt(ApplicationRole.OWNER))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/promotions/active").with(businessJwt(ApplicationRole.MANAGER))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/promotions/active").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/promotions/active").with(businessJwt(ApplicationRole.KITCHEN))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/promotions").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/promotions/quote").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/promotions").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isForbidden());
         createUser("manual-cashier", "una frase larga segura 123", ApplicationRole.CASHIER);
         createUser("manual-manager", "una frase larga segura 123", ApplicationRole.MANAGER);
         createUser("manual-owner", "una frase larga segura 123", ApplicationRole.OWNER);
@@ -321,7 +324,7 @@ class SecurityIntegrationTest {
                 """;
         mockMvc.perform(post("/api/v1/orders").contentType(MediaType.APPLICATION_JSON).content(manualOrder))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/v1/orders").with(user("kitchen").roles("KITCHEN"))
+        mockMvc.perform(post("/api/v1/orders").with(businessJwt(ApplicationRole.KITCHEN))
                         .contentType(MediaType.APPLICATION_JSON).content(manualOrder))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/orders").header("Authorization", "Bearer " + cashierToken)
@@ -339,7 +342,7 @@ class SecurityIntegrationTest {
                 """;
         mockMvc.perform(post("/api/v1/open-sales").contentType(MediaType.APPLICATION_JSON).content(openSale))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/v1/open-sales").with(user("kitchen").roles("KITCHEN"))
+        mockMvc.perform(post("/api/v1/open-sales").with(businessJwt(ApplicationRole.KITCHEN))
                         .contentType(MediaType.APPLICATION_JSON).content(openSale))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/open-sales").header("Authorization", "Bearer " + cashierToken)
@@ -351,18 +354,18 @@ class SecurityIntegrationTest {
         mockMvc.perform(post("/api/v1/open-sales").header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content(openSale))
                 .andExpect(status().isConflict());
-        mockMvc.perform(get("/api/orders/active").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isOk());
-        mockMvc.perform(put("/api/orders/1/prepare").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isNotFound());
-        mockMvc.perform(put("/api/orders/1/validate-payment").with(user("kitchen").roles("KITCHEN"))).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/v1/security/users").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/orders/active").with(businessJwt(ApplicationRole.KITCHEN))).andExpect(status().isOk());
+        mockMvc.perform(put("/api/orders/1/prepare").with(businessJwt(ApplicationRole.KITCHEN))).andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/orders/1/validate-payment").with(businessJwt(ApplicationRole.KITCHEN))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/security/users").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isForbidden());
         mockMvc.perform(get("/api/whatsapp/webhook")).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/whatsapp/webhook").content("{}"))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/uploads/receipt.png")).andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/internal/dev/ai/chat").with(user("cashier").roles("CASHIER"))).andExpect(status().isForbidden());
+        mockMvc.perform(post("/internal/dev/ai/chat").with(businessJwt(ApplicationRole.CASHIER))).andExpect(status().isForbidden());
     }
 
-        private String customToken(String issuer, String audience, String type, Instant issuedAt, Instant expiresAt) {
+    private String customToken(String issuer, String audience, String type, Instant issuedAt, Instant expiresAt) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .audience(java.util.List.of(audience))
@@ -380,6 +383,11 @@ class SecurityIntegrationTest {
                 .keyId(securityProperties.jwt().keyId())
                 .build();
         return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+    }
+
+    private org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
+    businessJwt(ApplicationRole role) {
+        return TestBusinessAuthentication.authenticated(jdbcTemplate, legacyBusinessResolver, role);
     }
 private AppUser createUser(String username, String password, ApplicationRole role) {
         AppUser user = userRepository.saveAndFlush(AppUser.create(

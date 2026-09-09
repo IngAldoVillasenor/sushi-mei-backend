@@ -52,7 +52,7 @@ class V26SessionRefreshContinuityIntegrationTest {
                 .load()
                 .migrate();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(DATA_SOURCE);
-        Instant now = Instant.parse("2026-09-08T12:00:00Z");
+        Instant now = Instant.now().minusSeconds(60);
         jdbcTemplate.update("""
                 insert into public.app_users (username, display_name, password_hash, role, active,
                     failed_login_attempts, password_changed_at, created_at, updated_at, version)

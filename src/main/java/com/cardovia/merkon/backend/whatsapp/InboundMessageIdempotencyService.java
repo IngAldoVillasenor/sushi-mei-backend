@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.whatsapp;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,22 +24,27 @@ public class InboundMessageIdempotencyService {
 
     private static final String POSTGRES_CLAIM_SQL = """
             INSERT INTO public.whatsapp_inbound_messages
-                (message_id, phone_number, message_type, processing_status, received_at)
-            VALUES (?, ?, ?, ?, ?)
+                (business_id, message_id, phone_number, message_type, processing_status, received_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (message_id) DO NOTHING
             """;
 
     private static final String H2_CLAIM_SQL = """
             INSERT INTO public.whatsapp_inbound_messages
-                (message_id, phone_number, message_type, processing_status, received_at)
-            VALUES (?, ?, ?, ?, ?)
+                (business_id, message_id, phone_number, message_type, processing_status, received_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final LegacyBusinessResolver legacyBusinessResolver;
     private final Clock clock;
 
-    public InboundMessageIdempotencyService(JdbcTemplate jdbcTemplate, Clock clock) {
+    public InboundMessageIdempotencyService(JdbcTemplate jdbcTemplate,
+                                            LegacyBusinessResolver legacyBusinessResolver,
+                                            Clock clock) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
     }
 
@@ -48,10 +54,12 @@ public class InboundMessageIdempotencyService {
         String validatedPhoneNumber = requireNonBlank(phoneNumber, "phoneNumber");
         String validatedMessageType = requireNonBlank(messageType, "messageType");
         Timestamp receivedAt = Timestamp.from(clock.instant());
+        Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
 
         if (isPostgreSql()) {
             int inserted = jdbcTemplate.update(
                     POSTGRES_CLAIM_SQL,
+                    businessId,
                     validatedMessageId,
                     validatedPhoneNumber,
                     validatedMessageType,
@@ -64,6 +72,7 @@ public class InboundMessageIdempotencyService {
         try {
             jdbcTemplate.update(
                     H2_CLAIM_SQL,
+                    businessId,
                     validatedMessageId,
                     validatedPhoneNumber,
                     validatedMessageType,
@@ -89,12 +98,13 @@ public class InboundMessageIdempotencyService {
         jdbcTemplate.update("""
                         UPDATE public.whatsapp_inbound_messages
                         SET processing_status = ?, failed_at = ?, failure_stage = ?, failure_type = ?
-                        WHERE message_id = ? AND processing_status = ?
+                        WHERE business_id = ? AND message_id = ? AND processing_status = ?
                         """,
                 InboundMessageProcessingStatus.FAILED.name(),
                 Timestamp.from(clock.instant()),
                 failureStage.name(),
                 failure.getClass().getSimpleName(),
+                legacyBusinessResolver.requireLegacyBusinessId(),
                 validatedMessageId,
                 InboundMessageProcessingStatus.PROCESSING.name());
     }
@@ -105,10 +115,11 @@ public class InboundMessageIdempotencyService {
         jdbcTemplate.update("""
                         UPDATE public.whatsapp_inbound_messages
                         SET processing_status = ?, %s = ?
-                        WHERE message_id = ? AND processing_status = ?
+                        WHERE business_id = ? AND message_id = ? AND processing_status = ?
                         """.formatted(timestampColumn),
                 outcome.name(),
                 Timestamp.from(now),
+                legacyBusinessResolver.requireLegacyBusinessId(),
                 messageId,
                 InboundMessageProcessingStatus.PROCESSING.name());
     }

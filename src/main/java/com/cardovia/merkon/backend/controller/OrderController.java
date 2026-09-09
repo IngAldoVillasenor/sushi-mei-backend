@@ -11,7 +11,9 @@ import com.cardovia.merkon.backend.order.OrderPaymentCollectionResponse;
 import com.cardovia.merkon.backend.order.OrderVoidRequest;
 import com.cardovia.merkon.backend.order.OrderVoidResponse;
 import com.cardovia.merkon.backend.service.CartService;
+import com.cardovia.merkon.backend.security.AuthenticatedLegacyBusinessGuard;
 import com.cardovia.merkon.backend.service.WhatsAppService;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -35,25 +37,31 @@ public class OrderController {
     private final Optional<WhatsAppService> whatsAppService;
     private final CartService cartService;
     private final OrderLifecycleService orderLifecycleService;
+    private final TrustedBusinessContext trustedBusinessContext;
+    private final AuthenticatedLegacyBusinessGuard authenticatedLegacyBusinessGuard;
 
     public OrderController(Optional<AiConversationService> aiConversationService,
                            Optional<WhatsAppService> whatsAppService,
                            CartService cartService,
-                           OrderLifecycleService orderLifecycleService) {
+                           OrderLifecycleService orderLifecycleService,
+                           TrustedBusinessContext trustedBusinessContext,
+                           AuthenticatedLegacyBusinessGuard authenticatedLegacyBusinessGuard) {
         this.aiConversationService = aiConversationService;
         this.whatsAppService = whatsAppService;
         this.cartService = cartService;
         this.orderLifecycleService = orderLifecycleService;
+        this.trustedBusinessContext = trustedBusinessContext;
+        this.authenticatedLegacyBusinessGuard = authenticatedLegacyBusinessGuard;
     }
 
     @GetMapping("/active")
-    public ResponseEntity<List<ActiveOrderResponse>> getActiveOrders() {
-        return ResponseEntity.ok(orderLifecycleService.activeOrders());
+    public ResponseEntity<List<ActiveOrderResponse>> getActiveOrders(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(orderLifecycleService.activeOrders(businessId(jwt)));
     }
 
     @PutMapping("/{id}/complete")
-    public ResponseEntity<String> completeOrder(@PathVariable Long id) {
-        orderLifecycleService.complete(id);
+    public ResponseEntity<String> completeOrder(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        orderLifecycleService.complete(businessId(jwt), id);
         return ResponseEntity.ok("Orden #" + id + " despachada exitosamente.");
     }
 
@@ -61,7 +69,7 @@ public class OrderController {
     public ResponseEntity<OrderPaymentCollectionResponse> collectPayment(@PathVariable Long id,
                                                                           @AuthenticationPrincipal Jwt jwt,
                                                                           @RequestBody OrderPaymentCollectionRequest request) {
-        return ResponseEntity.ok(orderLifecycleService.collectPayment(id, userId(jwt), request));
+        return ResponseEntity.ok(orderLifecycleService.collectPayment(businessId(jwt), id, userId(jwt), request));
     }
 
     /**
@@ -69,7 +77,10 @@ public class OrderController {
      * which remains deliberately non-atomic and is not a POS rejection workflow.
      */
     @PostMapping("/{id}/reject")
-    public ResponseEntity<String> rejectOrder(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<String> rejectOrder(@PathVariable Long id,
+                                              @AuthenticationPrincipal Jwt jwt,
+                                              @RequestBody Map<String, String> body) {
+        authenticatedLegacyBusinessGuard.requireLegacyBusiness(jwt);
         if (aiConversationService.isEmpty() || whatsAppService.isEmpty()) {
             return ResponseEntity.status(409).body("El flujo heredado de rechazo no está habilitado en este runtime.");
         }
@@ -98,14 +109,14 @@ public class OrderController {
     }
 
     @PutMapping("/{id}/prepare")
-    public ResponseEntity<String> prepareOrder(@PathVariable Long id) {
-        orderLifecycleService.prepare(id);
+    public ResponseEntity<String> prepareOrder(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        orderLifecycleService.prepare(businessId(jwt), id);
         return ResponseEntity.ok("Orden #" + id + " enviada a cocina.");
     }
 
     @PutMapping("/{id}/ready")
-    public ResponseEntity<String> readyOrder(@PathVariable Long id) {
-        orderLifecycleService.ready(id);
+    public ResponseEntity<String> readyOrder(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        orderLifecycleService.ready(businessId(jwt), id);
         return ResponseEntity.ok("Orden #" + id + " lista para entrega.");
     }
 
@@ -113,16 +124,20 @@ public class OrderController {
     public ResponseEntity<OrderVoidResponse> voidOrder(@PathVariable Long id,
                                                         @AuthenticationPrincipal Jwt jwt,
                                                         @Valid @RequestBody OrderVoidRequest request) {
-        return ResponseEntity.ok(orderLifecycleService.voidOrder(id, userId(jwt), request));
+        return ResponseEntity.ok(orderLifecycleService.voidOrder(businessId(jwt), id, userId(jwt), request));
     }
 
     @PutMapping("/{id}/validate-payment")
-    public ResponseEntity<String> validatePayment(@PathVariable Long id) {
-        orderLifecycleService.validatePayment(id);
+    public ResponseEntity<String> validatePayment(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        orderLifecycleService.validatePayment(businessId(jwt), id);
         return ResponseEntity.ok("Pago validado para la orden #" + id);
     }
 
     private static Long userId(Jwt jwt) {
         return Long.valueOf(jwt.getSubject());
+    }
+
+    private Long businessId(Jwt jwt) {
+        return trustedBusinessContext.requireBusinessId(jwt);
     }
 }

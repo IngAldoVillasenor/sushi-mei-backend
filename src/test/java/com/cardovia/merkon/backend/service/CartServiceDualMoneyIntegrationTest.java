@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.service;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
 import com.cardovia.merkon.backend.checkout.MonetaryCompatibilityException;
 import com.cardovia.merkon.backend.entity.Cart;
@@ -47,6 +48,9 @@ class CartServiceDualMoneyIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @AfterEach
     void cleanDatabase() {
@@ -260,6 +264,7 @@ class CartServiceDualMoneyIntegrationTest {
 
     private Cart persistCart(String phoneNumber, String status, CartItem... items) {
         Cart cart = new Cart();
+        cart.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         cart.setPhoneNumber(phoneNumber);
         cart.setStatus(status);
         for (CartItem item : items) {

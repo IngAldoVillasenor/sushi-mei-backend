@@ -2,6 +2,7 @@ package com.cardovia.merkon.backend.controller;
 
 import com.cardovia.merkon.backend.security.ApplicationRole;
 import com.cardovia.merkon.backend.security.SecurityTestKeyConfiguration;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.OrderPaymentMethod;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.entity.OrderSource;
@@ -54,6 +55,9 @@ class BusinessDayControllerIntegrationTest {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @BeforeEach
     void clean() {
@@ -166,9 +170,9 @@ class BusinessDayControllerIntegrationTest {
         AuthenticatedUser owner = insertUser("business-owner-older-open", ApplicationRole.OWNER);
         jdbcTemplate.update("""
                 insert into public.business_days (business_date, status, opening_cash_amount, opened_at,
-                    opened_by_user_id, open_guard, version)
-                values ('2026-08-11', 'OPEN', 100.00, ?, ?, 1, 0)
-                """, NOW, owner.id());
+                    opened_by_user_id, business_id, open_guard, version)
+                values ('2026-08-11', 'OPEN', 100.00, ?, ?, ?, 1, 0)
+                """, NOW, owner.id(), owner.businessId());
 
         mockMvc.perform(get("/api/v1/business-days/current").with(owner.jwt()))
                 .andExpect(status().isOk())
@@ -247,6 +251,7 @@ class BusinessDayControllerIntegrationTest {
 
     private void activeOrder() {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("5214770000000");
         order.setOrderSource(OrderSource.ANDROID_MANUAL);
         order.setPaymentMethod(OrderPaymentMethod.CASH);
@@ -280,14 +285,17 @@ class BusinessDayControllerIntegrationTest {
                 values (?, ?, ?, ?, ?, ?, ?, ?)
                 """, sessionId, id, membershipId, "business-device-" + username, String.format("%064d", id), NOW, NOW,
                 NOW.plusSeconds(900));
-        return new AuthenticatedUser(id, sessionId, role, username);
+        return new AuthenticatedUser(id, sessionId, membershipId, businessId, role, username);
     }
 
-    private record AuthenticatedUser(Long id, UUID sessionId, ApplicationRole role, String username) {
+    private record AuthenticatedUser(Long id, UUID sessionId, Long membershipId, Long businessId,
+                                     ApplicationRole role, String username) {
         JwtRequestPostProcessor jwt() {
             return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
                     .jwt(token -> token.subject(id.toString())
                             .claim("sid", sessionId.toString())
+                            .claim("mid", membershipId.toString())
+                            .claim("bid", businessId.toString())
                             .claim("role", role.name())
                             .claim("username", username))
                     .authorities(new SimpleGrantedAuthority("ROLE_" + role.name()));
