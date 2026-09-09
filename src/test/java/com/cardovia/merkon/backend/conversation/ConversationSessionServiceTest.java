@@ -4,6 +4,7 @@ import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,9 @@ class ConversationSessionServiceTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
+
     @Test
     void getOrCreateSessionReturnsTheSamePersistentSessionForTheSamePhoneNumber() {
         ConversationSession first = conversationSessionService.getOrCreateSession("  " + PHONE_NUMBER + "  ");
@@ -82,7 +86,7 @@ class ConversationSessionServiceTest {
 
     @Test
     void resetPreservesCreationTimeAndClearsCheckoutFields() {
-        ConversationSession session = ConversationSession.create(PHONE_NUMBER, CREATED_AT);
+        ConversationSession session = ConversationSession.create(legacyBusinessResolver.requireLegacyBusiness(), PHONE_NUMBER, CREATED_AT);
         Instant checkoutTime = CREATED_AT.plusSeconds(60);
         session.selectDelivery(checkoutTime);
         session.captureDeliveryAddress("Calle 1", checkoutTime);
@@ -119,7 +123,8 @@ class ConversationSessionServiceTest {
     }
 
     private void persistSessionCreatedAt(Instant createdAt) {
-        conversationSessionRepository.saveAndFlush(ConversationSession.create(PHONE_NUMBER, createdAt));
+        conversationSessionRepository.saveAndFlush(ConversationSession.create(
+                legacyBusinessResolver.requireLegacyBusiness(), PHONE_NUMBER, createdAt));
         entityManager.clear();
     }
 

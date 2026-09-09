@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import com.cardovia.merkon.backend.businessday.BusinessDayService;
 import com.cardovia.merkon.backend.businessday.CloseBusinessDayRequest;
 import com.cardovia.merkon.backend.businessday.OpenBusinessDayRequest;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.OrderLineKind;
 import com.cardovia.merkon.backend.entity.OrderLineRecord;
 import com.cardovia.merkon.backend.entity.OrderPaymentMethod;
@@ -49,6 +50,7 @@ class OpenSaleServiceIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private OrderRepository orderRepository;
     @Autowired private OpenSaleFingerprint openSaleFingerprint;
+    @Autowired private LegacyBusinessResolver legacyBusinessResolver;
 
     private Long ownerId;
 
@@ -131,6 +133,7 @@ class OpenSaleServiceIntegrationTest {
         BigDecimal denomination = new BigDecimal("50.00");
         String description = "Legacy open sale";
         OrderRecord legacy = new OrderRecord();
+        legacy.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         legacy.setClientRequestId(requestId);
         legacy.setCreatedByUserId(ownerId);
         legacy.setRequestFingerprint(openSaleFingerprint.fingerprint(description, amount, OrderPaymentMethod.CASH, denomination));

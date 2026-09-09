@@ -1,6 +1,7 @@
 package com.cardovia.merkon.backend.businessday;
 
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.BusinessDay;
 import com.cardovia.merkon.backend.entity.BusinessDayCashExpense;
 import com.cardovia.merkon.backend.repository.BusinessDayCashExpenseRepository;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CashExpenseService {
 
     private final CashExpenseFingerprint fingerprint;
+    private final LegacyBusinessResolver legacyBusiness;
     private final CashExpenseCreationTransaction creationTransaction;
     private final BusinessDayCashExpenseRepository cashExpenseRepository;
     private final BusinessDayRepository businessDayRepository;
@@ -29,6 +31,7 @@ public class CashExpenseService {
     private final ZoneId businessZone;
 
     public CashExpenseService(CashExpenseFingerprint fingerprint,
+                              LegacyBusinessResolver legacyBusiness,
                               CashExpenseCreationTransaction creationTransaction,
                               BusinessDayCashExpenseRepository cashExpenseRepository,
                               BusinessDayRepository businessDayRepository,
@@ -36,6 +39,7 @@ public class CashExpenseService {
                               Clock clock,
                               @Value("${merkon.business-zone:America/Mexico_City}") String businessZone) {
         this.fingerprint = Objects.requireNonNull(fingerprint, "fingerprint must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.creationTransaction = Objects.requireNonNull(creationTransaction, "creationTransaction must not be null");
         this.cashExpenseRepository = Objects.requireNonNull(cashExpenseRepository,
                 "cashExpenseRepository must not be null");
@@ -46,6 +50,10 @@ public class CashExpenseService {
     }
 
     public CashExpenseCreateResponse create(Long authenticatedUserId, CashExpenseRequest request) {
+        return create(legacyBusiness.requireLegacyBusinessId(), authenticatedUserId, request);
+    }
+
+    public CashExpenseCreateResponse create(Long businessId, Long authenticatedUserId, CashExpenseRequest request) {
         requireActor(authenticatedUserId);
         if (request == null || request.requestId() == null) {
             throw failure(BusinessDayError.BUSINESS_DAY_INVALID);
@@ -57,14 +65,14 @@ public class CashExpenseService {
         NormalizedCashExpense normalized = new NormalizedCashExpense(request.requestId(), amount, description, note,
                 requestFingerprint);
 
-        BusinessDayCashExpense existing = cashExpenseRepository.findByClientRequestId(request.requestId()).orElse(null);
+        BusinessDayCashExpense existing = cashExpenseRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).orElse(null);
         if (existing != null) {
             return CashExpenseCreationTransaction.existing(existing, authenticatedUserId, requestFingerprint);
         }
         try {
-            return creationTransaction.create(authenticatedUserId, normalized, clock.instant());
+            return creationTransaction.create(businessId, authenticatedUserId, normalized, clock.instant());
         } catch (DataIntegrityViolationException exception) {
-            BusinessDayCashExpense raced = cashExpenseRepository.findByClientRequestId(request.requestId()).orElse(null);
+            BusinessDayCashExpense raced = cashExpenseRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).orElse(null);
             if (raced != null) {
                 return CashExpenseCreationTransaction.existing(raced, authenticatedUserId, requestFingerprint);
             }
@@ -74,9 +82,14 @@ public class CashExpenseService {
 
     @Transactional(readOnly = true)
     public List<CashExpenseResponse> listCurrent() {
-        BusinessDay businessDay = businessDayRepository.findByStatus(BusinessDayStatus.OPEN).orElseGet(() -> {
+        return listCurrent(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<CashExpenseResponse> listCurrent(Long businessId) {
+        BusinessDay businessDay = businessDayRepository.findByBusinessIdAndStatus(businessId, BusinessDayStatus.OPEN).orElseGet(() -> {
             LocalDate today = clock.instant().atZone(businessZone).toLocalDate();
-            return businessDayRepository.findByBusinessDate(today).orElse(null);
+            return businessDayRepository.findByBusinessIdAndBusinessDate(businessId, today).orElse(null);
         });
         if (businessDay == null) {
             return List.of();

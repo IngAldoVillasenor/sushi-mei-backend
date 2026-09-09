@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.checkout;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.CartItem;
 import com.cardovia.merkon.backend.repository.CartRepository;
@@ -21,21 +22,25 @@ public class CartSnapshotService {
     private final CartRepository cartRepository;
     private final CheckoutMoney checkoutMoney;
     private final ParallelMoneyResolver parallelMoneyResolver;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     public CartSnapshotService(CartRepository cartRepository,
                                CheckoutMoney checkoutMoney,
-                               ParallelMoneyResolver parallelMoneyResolver) {
+                               ParallelMoneyResolver parallelMoneyResolver,
+                               LegacyBusinessResolver legacyBusinessResolver) {
         this.cartRepository = Objects.requireNonNull(cartRepository, "cartRepository must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.parallelMoneyResolver = Objects.requireNonNull(parallelMoneyResolver,
                 "parallelMoneyResolver must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
     }
 
     @Transactional(readOnly = true)
     public CartSnapshot readActiveCart(String phoneNumber) {
         String normalizedPhoneNumber = requirePhoneNumber(phoneNumber);
-        List<Cart> activeCarts = cartRepository.findAllByPhoneNumberAndStatusOrderByIdAsc(
-                normalizedPhoneNumber, OPEN_CART_STATUS);
+        List<Cart> activeCarts = cartRepository.findAllByBusinessIdAndPhoneNumberAndStatusOrderByIdAsc(
+                legacyBusinessResolver.requireLegacyBusinessId(), normalizedPhoneNumber, OPEN_CART_STATUS);
 
         if (activeCarts.isEmpty()) {
             throw new ActiveCartNotFoundException();

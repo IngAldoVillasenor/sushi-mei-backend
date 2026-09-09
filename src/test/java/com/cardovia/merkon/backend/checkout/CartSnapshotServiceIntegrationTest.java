@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.checkout;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.CartItem;
 import com.cardovia.merkon.backend.repository.CartRepository;
@@ -38,6 +39,9 @@ class CartSnapshotServiceIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @Test
     void rejectsMissingActiveCartWithoutCreatingOne() {
@@ -207,6 +211,7 @@ class CartSnapshotServiceIntegrationTest {
 
     private Cart persistCart(String phoneNumber, CartItem... items) {
         Cart cart = new Cart();
+        cart.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         cart.setPhoneNumber(phoneNumber);
         cart.setStatus("OPEN");
         for (CartItem item : items) {

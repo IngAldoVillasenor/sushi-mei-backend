@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.entity;
 
+import com.cardovia.merkon.backend.business.Business;
 import jakarta.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,6 +11,10 @@ public class Cart {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
 
     // NUEVO: Asociar el carrito a un número de WhatsApp
     private String phoneNumber;
@@ -23,6 +28,9 @@ public class Cart {
     // GETTERS Y SETTERS
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+
+    public Business getBusiness() { return business; }
+    public void setBusiness(Business business) { this.business = business; }
 
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }

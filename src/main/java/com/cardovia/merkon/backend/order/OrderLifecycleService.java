@@ -9,6 +9,7 @@ import com.cardovia.merkon.backend.entity.OrderPaymentTiming;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.entity.OrderSource;
 import com.cardovia.merkon.backend.repository.OrderRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -25,15 +26,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderLifecycleService {
 
     private final OrderRepository orderRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final BusinessDayService businessDayService;
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
 
     public OrderLifecycleService(OrderRepository orderRepository,
+                                 LegacyBusinessResolver legacyBusiness,
                                  BusinessDayService businessDayService,
                                  CheckoutMoney checkoutMoney,
                                  Clock clock) {
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.businessDayService = Objects.requireNonNull(businessDayService, "businessDayService must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -41,7 +45,12 @@ public class OrderLifecycleService {
 
     @Transactional(readOnly = true)
     public List<ActiveOrderResponse> activeOrders() {
-        return orderRepository.findByStatusInOrderByCreatedAtAscIdAsc(OrderLifecycleStatus.activePersistedValues())
+        return activeOrders(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ActiveOrderResponse> activeOrders(Long businessId) {
+        return orderRepository.findByBusinessIdAndStatusInOrderByCreatedAtAscIdAsc(businessId, OrderLifecycleStatus.activePersistedValues())
                 .stream()
                 .map(ActiveOrderResponse::from)
                 .toList();
@@ -49,7 +58,12 @@ public class OrderLifecycleService {
 
     @Transactional
     public OrderLifecycleTransitionResult validatePayment(Long orderId) {
-        OrderRecord order = lockRequired(orderId);
+        return validatePayment(legacyBusiness.requireLegacyBusinessId(), orderId);
+    }
+
+    @Transactional
+    public OrderLifecycleTransitionResult validatePayment(Long businessId, Long orderId) {
+        OrderRecord order = lockRequired(businessId, orderId);
         OrderLifecycleStatus current = requiredStatus(order);
         if (order.getPaymentMethod() != OrderPaymentMethod.TRANSFER) {
             throw failure(OrderLifecycleError.ORDER_PAYMENT_NOT_VALIDATABLE);
@@ -59,13 +73,23 @@ public class OrderLifecycleService {
 
     @Transactional
     public OrderLifecycleTransitionResult prepare(Long orderId) {
-        OrderRecord order = lockRequired(orderId);
+        return prepare(legacyBusiness.requireLegacyBusinessId(), orderId);
+    }
+
+    @Transactional
+    public OrderLifecycleTransitionResult prepare(Long businessId, Long orderId) {
+        OrderRecord order = lockRequired(businessId, orderId);
         return transition(order, requiredStatus(order), OrderLifecycleStatus.PENDING, OrderLifecycleStatus.PREPARING);
     }
 
     @Transactional
     public OrderLifecycleTransitionResult complete(Long orderId) {
-        OrderRecord order = lockRequired(orderId);
+        return complete(legacyBusiness.requireLegacyBusinessId(), orderId);
+    }
+
+    @Transactional
+    public OrderLifecycleTransitionResult complete(Long businessId, Long orderId) {
+        OrderRecord order = lockRequired(businessId, orderId);
         OrderLifecycleStatus current = requiredStatus(order);
         if (current == OrderLifecycleStatus.READY && order.requiresPaymentCollection()) {
             throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_REQUIRED);
@@ -77,13 +101,19 @@ public class OrderLifecycleService {
     @Transactional
     public OrderPaymentCollectionResponse collectPayment(Long orderId, Long actorUserId,
                                                           OrderPaymentCollectionRequest request) {
+        return collectPayment(legacyBusiness.requireLegacyBusinessId(), orderId, actorUserId, request);
+    }
+
+    @Transactional
+    public OrderPaymentCollectionResponse collectPayment(Long businessId, Long orderId, Long actorUserId,
+                                                          OrderPaymentCollectionRequest request) {
         if (actorUserId == null || actorUserId <= 0) {
             throw failure(OrderLifecycleError.ORDER_INVALID_PAYMENT_COLLECTION_REQUEST);
         }
-        OrderPaymentCollectionReference reference = requiredPaymentCollectionReference(orderId);
-        assertBusinessDayOpen(reference);
+        OrderPaymentCollectionReference reference = requiredPaymentCollectionReference(businessId, orderId);
+        assertBusinessDayOpen(businessId, reference);
 
-        OrderRecord order = lockRequired(orderId);
+        OrderRecord order = lockRequired(businessId, orderId);
         requirePaymentCollectionSupported(order);
         OrderLifecycleStatus current = requireReadyPendingPaymentCollection(order);
 
@@ -102,7 +132,12 @@ public class OrderLifecycleService {
 
     @Transactional
     public OrderLifecycleTransitionResult ready(Long orderId) {
-        OrderRecord order = lockRequired(orderId);
+        return ready(legacyBusiness.requireLegacyBusinessId(), orderId);
+    }
+
+    @Transactional
+    public OrderLifecycleTransitionResult ready(Long businessId, Long orderId) {
+        OrderRecord order = lockRequired(businessId, orderId);
         return transition(order, requiredStatus(order), OrderLifecycleStatus.PREPARING, OrderLifecycleStatus.READY);
     }
 
@@ -112,12 +147,17 @@ public class OrderLifecycleService {
      */
     @Transactional
     public OrderVoidResponse voidOrder(Long orderId, Long actorUserId, OrderVoidRequest request) {
+        return voidOrder(legacyBusiness.requireLegacyBusinessId(), orderId, actorUserId, request);
+    }
+
+    @Transactional
+    public OrderVoidResponse voidOrder(Long businessId, Long orderId, Long actorUserId, OrderVoidRequest request) {
         String reason = normalizedVoidReason(request);
         if (actorUserId == null || actorUserId <= 0) {
             throw failure(OrderLifecycleError.ORDER_INVALID_VOID_REQUEST);
         }
 
-        OrderRecord order = lockRequired(orderId);
+        OrderRecord order = lockRequired(businessId, orderId);
         if (!isPhysicalPosSource(order.getOrderSource())) {
             throw failure(OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED);
         }
@@ -146,7 +186,7 @@ public class OrderLifecycleService {
      */
     @Transactional
     public LegacyOrderRejectionResult rejectForLegacyClarification(Long orderId) {
-        OrderRecord order = lockRequired(orderId);
+        OrderRecord order = lockRequired(legacyBusiness.requireLegacyBusinessId(), orderId);
         if (order.getOrderSource() == OrderSource.ANDROID_MANUAL) {
             throw failure(OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED);
         }
@@ -173,28 +213,28 @@ public class OrderLifecycleService {
         return new OrderLifecycleTransitionResult(order.getId(), current, target);
     }
 
-    private OrderRecord lockRequired(Long orderId) {
+    private OrderRecord lockRequired(Long businessId, Long orderId) {
         if (orderId == null || orderId <= 0) {
             throw failure(OrderLifecycleError.ORDER_NOT_FOUND);
         }
-        return orderRepository.findByIdForUpdate(orderId)
+        return orderRepository.findByIdAndBusinessIdForUpdate(orderId, businessId)
                 .orElseThrow(() -> failure(OrderLifecycleError.ORDER_NOT_FOUND));
     }
 
-    private OrderPaymentCollectionReference requiredPaymentCollectionReference(Long orderId) {
+    private OrderPaymentCollectionReference requiredPaymentCollectionReference(Long businessId, Long orderId) {
         if (orderId == null || orderId <= 0) {
             throw failure(OrderLifecycleError.ORDER_NOT_FOUND);
         }
-        return orderRepository.findPaymentCollectionReferenceById(orderId)
+        return orderRepository.findPaymentCollectionReferenceByIdAndBusinessId(orderId, businessId)
                 .orElseThrow(() -> failure(OrderLifecycleError.ORDER_NOT_FOUND));
     }
 
-    private void assertBusinessDayOpen(OrderPaymentCollectionReference reference) {
+    private void assertBusinessDayOpen(Long businessId, OrderPaymentCollectionReference reference) {
         try {
             if (reference.createdAt() == null) {
                 throw failure(OrderLifecycleError.ORDER_PAYMENT_COLLECTION_BUSINESS_DAY_NOT_OPEN);
             }
-            businessDayService.assertOpenBusinessDayForOperationalSettlement(
+            businessDayService.assertOpenBusinessDayForOperationalSettlement(businessId,
                     reference.createdAt().toInstant(java.time.ZoneOffset.UTC));
         } catch (BusinessDayException exception) {
             if (exception.getError() == BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED) {

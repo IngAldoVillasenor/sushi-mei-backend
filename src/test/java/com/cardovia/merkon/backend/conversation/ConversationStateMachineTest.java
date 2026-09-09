@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.conversation;
 
+import com.cardovia.merkon.backend.business.Business;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -330,7 +331,7 @@ class ConversationStateMachineTest {
     }
 
     private ConversationSession newSession() {
-        return ConversationSession.create(PHONE_NUMBER, CREATED_AT);
+        return ConversationSession.create(Business.create("Test", CREATED_AT), PHONE_NUMBER, CREATED_AT);
     }
 
     private ConversationSession waitingForCartConfirmation() {

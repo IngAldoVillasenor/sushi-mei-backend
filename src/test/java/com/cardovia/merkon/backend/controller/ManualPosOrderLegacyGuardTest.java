@@ -6,10 +6,13 @@ import com.cardovia.merkon.backend.order.OrderLifecycleException;
 import com.cardovia.merkon.backend.order.OrderLifecycleService;
 import com.cardovia.merkon.backend.service.CartService;
 import com.cardovia.merkon.backend.service.WhatsAppService;
+import com.cardovia.merkon.backend.security.AuthenticatedLegacyBusinessGuard;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -26,9 +29,10 @@ class ManualPosOrderLegacyGuardTest {
         OrderLifecycleService lifecycle = mock(OrderLifecycleService.class);
         when(lifecycle.rejectForLegacyClarification(10L))
                 .thenThrow(new OrderLifecycleException(OrderLifecycleError.ORDER_OPERATION_NOT_SUPPORTED));
-        OrderController controller = new OrderController(Optional.of(ai), Optional.of(whatsApp), carts, lifecycle);
+        OrderController controller = new OrderController(Optional.of(ai), Optional.of(whatsApp), carts, lifecycle,
+                mock(TrustedBusinessContext.class), mock(AuthenticatedLegacyBusinessGuard.class));
 
-        var response = controller.rejectOrder(10L, Map.of("reason", "test"));
+        var response = controller.rejectOrder(10L, mock(Jwt.class), Map.of("reason", "test"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         verifyNoInteractions(ai, whatsApp, carts);
@@ -38,9 +42,10 @@ class ManualPosOrderLegacyGuardTest {
     void disabledLegacyOrchestrationDoesNotTransitionOrReopenAnything() {
         CartService carts = mock(CartService.class);
         OrderLifecycleService lifecycle = mock(OrderLifecycleService.class);
-        OrderController controller = new OrderController(Optional.empty(), Optional.empty(), carts, lifecycle);
+        OrderController controller = new OrderController(Optional.empty(), Optional.empty(), carts, lifecycle,
+                mock(TrustedBusinessContext.class), mock(AuthenticatedLegacyBusinessGuard.class));
 
-        var response = controller.rejectOrder(10L, Map.of("reason", "test"));
+        var response = controller.rejectOrder(10L, mock(Jwt.class), Map.of("reason", "test"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         verifyNoInteractions(carts, lifecycle);

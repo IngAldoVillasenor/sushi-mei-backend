@@ -1,6 +1,8 @@
 package com.cardovia.merkon.backend.pos;
 
 import com.cardovia.merkon.backend.businessday.BusinessDayService;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.BusinessRepository;
 import com.cardovia.merkon.backend.checkout.ParallelMoney;
 import com.cardovia.merkon.backend.checkout.ParallelMoneyResolver;
 import com.cardovia.merkon.backend.entity.OrderLineRecord;
@@ -21,30 +23,36 @@ import org.springframework.stereotype.Service;
 class OpenSaleCreationTransaction {
     private final OrderRepository orderRepository;
     private final AppUserRepository appUserRepository;
+    private final BusinessRepository businessRepository;
     private final BusinessDayService businessDayService;
     private final ParallelMoneyResolver parallelMoneyResolver;
 
     OpenSaleCreationTransaction(OrderRepository orderRepository,
                                 AppUserRepository appUserRepository,
+                                BusinessRepository businessRepository,
                                 BusinessDayService businessDayService,
                                 ParallelMoneyResolver parallelMoneyResolver) {
         this.orderRepository = orderRepository;
         this.appUserRepository = appUserRepository;
+        this.businessRepository = businessRepository;
         this.businessDayService = businessDayService;
         this.parallelMoneyResolver = parallelMoneyResolver;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.REPEATABLE_READ)
-    OpenSaleResponse create(Long userId, NormalizedOpenSale request, Instant now) {
-        OrderRecord existing = orderRepository.findByClientRequestIdWithOrderLines(request.requestId()).orElse(null);
+    OpenSaleResponse create(Long businessId, Long userId, NormalizedOpenSale request, Instant now) {
+        OrderRecord existing = orderRepository.findByBusinessIdAndClientRequestIdWithOrderLines(businessId, request.requestId()).orElse(null);
         if (existing != null) {
             return existing(existing, userId, request.fingerprint());
         }
         appUserRepository.findById(userId).orElseThrow(() -> new OpenSaleException(OpenSaleError.OPEN_SALE_INVALID));
-        businessDayService.assertOpenBusinessDayForOpenSale(now);
+        Business business = businessRepository.findByIdAndActiveTrue(businessId)
+                .orElseThrow(() -> new OpenSaleException(OpenSaleError.OPEN_SALE_INVALID));
+        businessDayService.assertOpenBusinessDayForOpenSale(businessId, now);
         ParallelMoney money = parallelMoneyResolver.forWriteFromExact(request.amount());
 
         OrderRecord order = new OrderRecord();
+        order.setBusiness(business);
         order.setClientRequestId(request.requestId());
         order.setCreatedByUserId(userId);
         order.setRequestFingerprint(request.fingerprint());

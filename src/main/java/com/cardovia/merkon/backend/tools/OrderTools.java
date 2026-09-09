@@ -10,6 +10,7 @@ import com.cardovia.merkon.backend.checkout.InvalidCartItemException;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import com.cardovia.merkon.backend.service.CartService;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import org.slf4j.Logger;
@@ -32,16 +33,19 @@ public class OrderTools {
     private final CartService cartService;
     private final AiToolSafetyGuard toolSafetyGuard;
     private final AiMenuItemResolver menuItemResolver;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     @Autowired
     public OrderTools(OrderRepository orderRepository,
                       CartService cartService,
                       AiToolSafetyGuard toolSafetyGuard,
-                      AiMenuItemResolver menuItemResolver) {
+                      AiMenuItemResolver menuItemResolver,
+                      LegacyBusinessResolver legacyBusinessResolver) {
         this.orderRepository = orderRepository;
         this.cartService = cartService;
         this.toolSafetyGuard = toolSafetyGuard;
         this.menuItemResolver = menuItemResolver;
+        this.legacyBusinessResolver = legacyBusinessResolver;
     }
 
     @Tool("Agrega un platillo al carrito solo cuando el cliente pida claramente agregar ese producto. "
@@ -197,6 +201,7 @@ public class OrderTools {
 
         // 1. Crear el registro oficial
         OrderRecord newOrder = new OrderRecord();
+        newOrder.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         newOrder.setPhoneNumber(phoneNumber);
         newOrder.setDeliveryType(deliveryType); // Guardamos el tipo de logística
         newOrder.setDeliveryAddress(deliveryType.equalsIgnoreCase("SUCURSAL") ? "Recoge en Sucursal" : deliveryAddress);

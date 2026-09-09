@@ -2,6 +2,7 @@ package com.cardovia.merkon.backend.pos;
 
 import com.cardovia.merkon.backend.businessday.BusinessDayError;
 import com.cardovia.merkon.backend.businessday.BusinessDayException;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -17,20 +18,27 @@ public class OpenSaleService {
     private final OrderRepository orderRepository;
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     public OpenSaleService(OpenSaleFingerprint fingerprint,
                            OpenSaleCreationTransaction creationTransaction,
                            OrderRepository orderRepository,
                            CheckoutMoney checkoutMoney,
-                           Clock clock) {
+                           Clock clock,
+                           LegacyBusinessResolver legacyBusinessResolver) {
         this.fingerprint = fingerprint;
         this.creationTransaction = creationTransaction;
         this.orderRepository = orderRepository;
         this.checkoutMoney = checkoutMoney;
         this.clock = clock;
+        this.legacyBusinessResolver = legacyBusinessResolver;
     }
 
     public OpenSaleResponse create(Long authenticatedUserId, OpenSaleRequest request) {
+        return create(legacyBusinessResolver.requireLegacyBusinessId(), authenticatedUserId, request);
+    }
+
+    public OpenSaleResponse create(Long businessId, Long authenticatedUserId, OpenSaleRequest request) {
         if (authenticatedUserId == null || authenticatedUserId <= 0 || request == null || request.requestId() == null
                 || request.paymentMethod() == null) {
             throw invalid();
@@ -41,14 +49,14 @@ public class OpenSaleService {
         String requestFingerprint = fingerprint.fingerprint(description, amount, request.paymentMethod(), cashDenomination);
         NormalizedOpenSale normalized = new NormalizedOpenSale(request.requestId(), description, amount,
                 request.paymentMethod(), cashDenomination, requestFingerprint);
-        if (orderRepository.findByClientRequestId(request.requestId()).isPresent()) {
-            return existing(normalized, authenticatedUserId);
+        if (orderRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).isPresent()) {
+            return existing(businessId, normalized, authenticatedUserId);
         }
         try {
-            return creationTransaction.create(authenticatedUserId, normalized, clock.instant());
+            return creationTransaction.create(businessId, authenticatedUserId, normalized, clock.instant());
         } catch (DataIntegrityViolationException exception) {
-            if (orderRepository.findByClientRequestId(request.requestId()).isPresent()) {
-                return existing(normalized, authenticatedUserId);
+            if (orderRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).isPresent()) {
+                return existing(businessId, normalized, authenticatedUserId);
             }
             throw new OpenSaleException(OpenSaleError.OPEN_SALE_INVALID, exception);
         } catch (BusinessDayException exception) {
@@ -59,8 +67,8 @@ public class OpenSaleService {
         }
     }
 
-    private OpenSaleResponse existing(NormalizedOpenSale request, Long userId) {
-        return OpenSaleCreationTransaction.existing(orderRepository.findByClientRequestIdWithOrderLines(request.requestId())
+    private OpenSaleResponse existing(Long businessId, NormalizedOpenSale request, Long userId) {
+        return OpenSaleCreationTransaction.existing(orderRepository.findByBusinessIdAndClientRequestIdWithOrderLines(businessId, request.requestId())
                 .orElseThrow(() -> new OpenSaleException(OpenSaleError.OPEN_SALE_IDEMPOTENCY_CONFLICT)), userId,
                 request.fingerprint());
     }

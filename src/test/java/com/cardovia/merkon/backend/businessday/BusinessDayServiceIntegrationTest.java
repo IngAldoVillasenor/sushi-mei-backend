@@ -15,6 +15,7 @@ import com.cardovia.merkon.backend.repository.BusinessDayClosureRepository;
 import com.cardovia.merkon.backend.repository.BusinessDayCashExpenseRepository;
 import com.cardovia.merkon.backend.repository.BusinessDayRepository;
 import com.cardovia.merkon.backend.repository.OrderRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -86,6 +87,9 @@ class BusinessDayServiceIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     private Long userId;
 
@@ -671,6 +675,7 @@ class BusinessDayServiceIntegrationTest {
 
     private OrderRecord order(String status, OrderPaymentMethod paymentMethod, String total, LocalDateTime createdAt) {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("5214770000000");
         order.setPaymentMethod(paymentMethod);
         order.setOrderSource(OrderSource.ANDROID_MANUAL);

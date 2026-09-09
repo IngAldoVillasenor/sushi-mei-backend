@@ -3,6 +3,8 @@ package com.cardovia.merkon.backend.checkout;
 import com.cardovia.merkon.backend.conversation.ConversationSessionRepository;
 import com.cardovia.merkon.backend.conversation.ConversationStateMachine;
 import com.cardovia.merkon.backend.businessday.BusinessDayService;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.OrderSource;
 import com.cardovia.merkon.backend.repository.CartRepository;
@@ -46,6 +48,8 @@ class OrderServiceTest {
     private Clock clock;
     @Mock
     private BusinessDayService businessDayService;
+    @Mock
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @InjectMocks
     private OrderService orderService;
@@ -61,21 +65,25 @@ class OrderServiceTest {
         InvalidCartItemException invalidMoney = new InvalidCartItemException(
                 InvalidCartItemReason.INVALID_NUMERIC_UNIT_PRICE);
 
-        when(orderRepository.findBySourceCartId(10L)).thenReturn(Optional.empty());
-        when(cartRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(cart));
+        Business business = org.mockito.Mockito.mock(Business.class);
+        when(business.getId()).thenReturn(3L);
+        when(legacyBusinessResolver.requireLegacyBusiness()).thenReturn(business);
+        when(orderRepository.findByBusinessIdAndSourceCartId(3L, 10L)).thenReturn(Optional.empty());
+        when(cartRepository.findByIdAndBusinessIdForUpdate(10L, 3L)).thenReturn(Optional.of(cart));
         when(cartSnapshotService.snapshotOf(cart)).thenThrow(invalidMoney);
 
         assertThatThrownBy(() -> orderService.completeCheckout(command)).isSameAs(invalidMoney);
 
-        verify(cartRepository).findByIdForUpdate(10L);
+        verify(cartRepository).findByIdAndBusinessIdForUpdate(10L, 3L);
         verify(orderRepository, never()).save(org.mockito.ArgumentMatchers.any());
-        verify(conversationSessionRepository, never()).findById(org.mockito.ArgumentMatchers.anyString());
+        verify(conversationSessionRepository, never()).findByPhoneNumberAndBusinessId(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong());
         assertThat(cart.getStatus()).isEqualTo("OPEN");
     }
 
     @Test
     void exactCartLookupIsDeclaredAsAPessimisticWriteLock() throws NoSuchMethodException {
-        Method method = CartRepository.class.getMethod("findByIdForUpdate", Long.class);
+        Method method = CartRepository.class.getMethod("findByIdAndBusinessIdForUpdate", Long.class, Long.class);
         Lock lock = method.getAnnotation(Lock.class);
 
         assertThat(lock).isNotNull();

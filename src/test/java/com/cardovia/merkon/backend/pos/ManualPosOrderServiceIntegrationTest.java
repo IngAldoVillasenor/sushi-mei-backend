@@ -648,9 +648,10 @@ class ManualPosOrderServiceIntegrationTest {
                 PromotionBenefitType.FIXED_UNIT_PRICE, new BigDecimal("69.00"), null, null, null, null, null,
                 Set.of(1), List.of(new PromotionTargetRequest(PromotionTargetType.ITEM, california.id()))));
         jdbcTemplate.update("""
-                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                insert into public.promotions (business_id, name, active, priority, benefit_type, fixed_unit_price_amount,
                     created_at, updated_at, version)
-                values ('Dos', true, 10, 'FIXED_UNIT_PRICE', 68.00, current_timestamp, current_timestamp, 0)
+                values ((select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'),
+                    'Dos', true, 10, 'FIXED_UNIT_PRICE', 68.00, current_timestamp, current_timestamp, 0)
                 """);
         Long conflictingPromotionId = jdbcTemplate.queryForObject(
                 "select id from public.promotions where name = 'Dos'", Long.class);

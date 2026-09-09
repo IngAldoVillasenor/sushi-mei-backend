@@ -2,6 +2,8 @@ package com.cardovia.merkon.backend.vendis;
 
 import com.cardovia.merkon.backend.checkout.ParallelMoney;
 import com.cardovia.merkon.backend.checkout.ParallelMoneyResolver;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.BusinessRepository;
 import com.cardovia.merkon.backend.entity.OrderLineRecord;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.entity.OrderSource;
@@ -24,26 +26,33 @@ class VendisHistoryImportTransaction {
     private final VendisOrderSnapshotRepository orderSnapshots;
     private final VendisPaymentSnapshotRepository paymentSnapshots;
     private final ParallelMoneyResolver parallelMoneyResolver;
+    private final BusinessRepository businessRepository;
 
     VendisHistoryImportTransaction(OrderRepository orderRepository,
                                    VendisOrderSnapshotRepository orderSnapshots,
                                    VendisPaymentSnapshotRepository paymentSnapshots,
-                                   ParallelMoneyResolver parallelMoneyResolver) {
+                                   ParallelMoneyResolver parallelMoneyResolver,
+                                   BusinessRepository businessRepository) {
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
         this.orderSnapshots = Objects.requireNonNull(orderSnapshots, "orderSnapshots must not be null");
         this.paymentSnapshots = Objects.requireNonNull(paymentSnapshots, "paymentSnapshots must not be null");
         this.parallelMoneyResolver = Objects.requireNonNull(parallelMoneyResolver,
                 "parallelMoneyResolver must not be null");
+        this.businessRepository = Objects.requireNonNull(businessRepository, "businessRepository must not be null");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    ImportWriteResult importOne(MappedVendisSale sale) {
-        if (orderRepository.findByOrderSourceAndExternalOrderId(OrderSource.VENDIS_IMPORT, sale.transactionId()).isPresent()) {
+    ImportWriteResult importOne(Long businessId, MappedVendisSale sale) {
+        if (orderRepository.findByBusinessIdAndOrderSourceAndExternalOrderId(
+                businessId, OrderSource.VENDIS_IMPORT, sale.transactionId()).isPresent()) {
             return ImportWriteResult.ALREADY_EXISTS;
         }
 
         ParallelMoney total = parallelMoneyResolver.forWriteFromExternalHistorical(sale.projectedFinalTotal());
         OrderRecord order = new OrderRecord();
+        Business business = businessRepository.findByIdAndActiveTrue(businessId)
+                .orElseThrow(() -> new IllegalStateException("Legacy Vendis business is unavailable"));
+        order.setBusiness(business);
         order.setOrderSource(OrderSource.VENDIS_IMPORT);
         order.setExternalOrderId(sale.transactionId());
         order.setExternalReference(sale.invoiceNumber());

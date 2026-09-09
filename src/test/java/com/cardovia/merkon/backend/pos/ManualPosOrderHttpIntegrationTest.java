@@ -85,7 +85,7 @@ class ManualPosOrderHttpIntegrationTest {
         MenuItemResponse california = menuCatalogService.create(new CreateMenuItemRequest(
                 "California", null, "Rollos", new BigDecimal("79.00"), true, true, 0));
         Long userId = insertCashier();
-        UUID sessionId = insertActiveSession(userId);
+        SessionContext session = insertActiveSession(userId);
         UUID requestId = UUID.randomUUID();
         String request = """
                 {"requestId":"%s","fulfillmentType":"PICKUP","paymentMethod":"CASH",
@@ -96,7 +96,9 @@ class ManualPosOrderHttpIntegrationTest {
         mockMvc.perform(post("/api/v1/orders")
                         .with(jwt().jwt(token -> token
                                         .subject(userId.toString())
-                                        .claim("sid", sessionId.toString())
+                                        .claim("sid", session.id().toString())
+                                        .claim("mid", session.membershipId().toString())
+                                        .claim("bid", session.businessId().toString())
                                         .claim("role", "CASHIER")
                                         .claim("username", USERNAME))
                                 .authorities(new SimpleGrantedAuthority("ROLE_CASHIER")))
@@ -112,7 +114,7 @@ class ManualPosOrderHttpIntegrationTest {
         MenuItemResponse california = menuCatalogService.create(new CreateMenuItemRequest(
                 "California", null, "Rollos", new BigDecimal("79.00"), true, true, 0));
         Long userId = insertCashier();
-        UUID sessionId = insertActiveSession(userId);
+        SessionContext session = insertActiveSession(userId);
         String request = """
                 {"requestId":"%s","fulfillmentType":"DELIVERY","paymentTiming":"ON_DELIVERY",
                 "deliveryAddress":"Calle Principal 123","lines":[{"lineKey":"line-1","menuItemId":%d,
@@ -120,7 +122,9 @@ class ManualPosOrderHttpIntegrationTest {
                 """.formatted(UUID.randomUUID(), california.id());
 
         mockMvc.perform(post("/api/v1/orders")
-                        .with(jwt().jwt(token -> token.subject(userId.toString()).claim("sid", sessionId.toString())
+                        .with(jwt().jwt(token -> token.subject(userId.toString()).claim("sid", session.id().toString())
+                                        .claim("mid", session.membershipId().toString())
+                                        .claim("bid", session.businessId().toString())
                                         .claim("role", "CASHIER").claim("username", USERNAME))
                                 .authorities(new SimpleGrantedAuthority("ROLE_CASHIER")))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -138,7 +142,7 @@ class ManualPosOrderHttpIntegrationTest {
         MenuItemResponse california = menuCatalogService.create(new CreateMenuItemRequest(
                 "California", null, "Rollos", new BigDecimal("79.00"), true, true, 0));
         Long userId = insertCashier();
-        UUID sessionId = insertActiveSession(userId);
+        SessionContext session = insertActiveSession(userId);
         businessDayService.open(userId, new OpenBusinessDayRequest(new BigDecimal("100.00")));
         businessDayService.close(userId, new CloseBusinessDayRequest(new BigDecimal("100.00")));
         String request = """
@@ -150,7 +154,9 @@ class ManualPosOrderHttpIntegrationTest {
         mockMvc.perform(post("/api/v1/orders")
                         .with(jwt().jwt(token -> token
                                         .subject(userId.toString())
-                                        .claim("sid", sessionId.toString())
+                                        .claim("sid", session.id().toString())
+                                        .claim("mid", session.membershipId().toString())
+                                        .claim("bid", session.businessId().toString())
                                         .claim("role", "CASHIER")
                                         .claim("username", USERNAME))
                                 .authorities(new SimpleGrantedAuthority("ROLE_CASHIER")))
@@ -175,8 +181,9 @@ class ManualPosOrderHttpIntegrationTest {
         return jdbcTemplate.queryForObject("select id from public.app_users where username = ?", Long.class, USERNAME);
     }
 
-    private UUID insertActiveSession(Long userId) {
-        Long businessId = jdbcTemplate.queryForObject("select id from public.businesses where name = 'Sushi Mei'", Long.class);
+    private SessionContext insertActiveSession(Long userId) {
+        Long businessId = jdbcTemplate.queryForObject(
+                "select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'", Long.class);
         jdbcTemplate.update("""
                 insert into public.business_memberships (user_id, business_id, role, created_at, updated_at, version)
                 values (?, ?, 'CASHIER', ?, ?, 0)
@@ -192,7 +199,10 @@ class ManualPosOrderHttpIntegrationTest {
                 values (?, ?, ?, 'http-device', ?, ?, ?, ?)
                 """, sessionId, userId, membershipId, "a".repeat(64), TestInfrastructureConfiguration.ORDER_TIME,
                 TestInfrastructureConfiguration.ORDER_TIME, TestInfrastructureConfiguration.ORDER_TIME.plusSeconds(900));
-        return sessionId;
+        return new SessionContext(sessionId, membershipId, businessId);
+    }
+
+    private record SessionContext(UUID id, Long membershipId, Long businessId) {
     }
 
     @TestConfiguration(proxyBeanMethods = false)

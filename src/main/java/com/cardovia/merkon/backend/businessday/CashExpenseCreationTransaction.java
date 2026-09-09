@@ -6,6 +6,7 @@ import com.cardovia.merkon.backend.repository.BusinessDayCashExpenseRepository;
 import com.cardovia.merkon.backend.repository.BusinessDayOperationLockRepository;
 import com.cardovia.merkon.backend.repository.BusinessDayRepository;
 import com.cardovia.merkon.backend.security.AppUserRepository;
+import com.cardovia.merkon.backend.business.BusinessRepository;
 import java.time.Instant;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
@@ -20,33 +21,36 @@ class CashExpenseCreationTransaction {
     private final BusinessDayRepository businessDayRepository;
     private final BusinessDayOperationLockRepository businessDayOperationLockRepository;
     private final AppUserRepository appUserRepository;
+    private final BusinessRepository businessRepository;
 
     CashExpenseCreationTransaction(BusinessDayCashExpenseRepository cashExpenseRepository,
                                    BusinessDayRepository businessDayRepository,
                                    BusinessDayOperationLockRepository businessDayOperationLockRepository,
-                                   AppUserRepository appUserRepository) {
+                                   AppUserRepository appUserRepository,
+                                   BusinessRepository businessRepository) {
         this.cashExpenseRepository = Objects.requireNonNull(cashExpenseRepository, "cashExpenseRepository must not be null");
         this.businessDayRepository = Objects.requireNonNull(businessDayRepository, "businessDayRepository must not be null");
         this.businessDayOperationLockRepository = Objects.requireNonNull(businessDayOperationLockRepository,
                 "businessDayOperationLockRepository must not be null");
         this.appUserRepository = Objects.requireNonNull(appUserRepository, "appUserRepository must not be null");
+        this.businessRepository = Objects.requireNonNull(businessRepository, "businessRepository must not be null");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    CashExpenseCreateResponse create(Long userId, NormalizedCashExpense request, Instant createdAt) {
-        businessDayOperationLockRepository.findSingletonForUpdate()
+    CashExpenseCreateResponse create(Long businessId, Long userId, NormalizedCashExpense request, Instant createdAt) {
+        businessDayOperationLockRepository.findByBusinessIdForUpdate(businessId)
                 .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_INVALID));
 
-        BusinessDayCashExpense existing = cashExpenseRepository.findByClientRequestId(request.requestId()).orElse(null);
+        BusinessDayCashExpense existing = cashExpenseRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).orElse(null);
         if (existing != null) {
             return existing(existing, userId, request.fingerprint());
         }
 
         appUserRepository.findById(userId).orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_INVALID));
-        BusinessDay businessDay = businessDayRepository.findOpenForUpdate()
+        BusinessDay businessDay = businessDayRepository.findOpenForUpdate(businessId)
                 .orElseThrow(() -> failure(BusinessDayError.BUSINESS_DAY_OPEN_REQUIRED));
         BusinessDayCashExpense saved = cashExpenseRepository.saveAndFlush(BusinessDayCashExpense.create(
-                businessDay.getId(), request.requestId(), request.fingerprint(), request.amount(), request.description(),
+                businessRepository.getReferenceById(businessId), businessDay.getId(), request.requestId(), request.fingerprint(), request.amount(), request.description(),
                 request.note(), createdAt, userId));
         return new CashExpenseCreateResponse(CashExpenseResponse.from(saved), CashExpenseResult.CREATED);
     }

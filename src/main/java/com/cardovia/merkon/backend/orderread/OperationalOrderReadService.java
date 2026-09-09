@@ -12,6 +12,7 @@ import com.cardovia.merkon.backend.repository.OrderLineSelectionSnapshotReposito
 import com.cardovia.merkon.backend.repository.OrderLineComponentOmissionSnapshotRepository;
 import com.cardovia.merkon.backend.repository.OrderLineSelectionComponentOmissionSnapshotRepository;
 import com.cardovia.merkon.backend.repository.OrderRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -49,17 +50,20 @@ public class OperationalOrderReadService {
             .thenComparing(OrderLineRecord::getId);
 
     private final OrderRepository orderRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final OrderLineSelectionSnapshotRepository selectionSnapshotRepository;
     private final OrderLineComponentOmissionSnapshotRepository omissionSnapshotRepository;
     private final OrderLineSelectionComponentOmissionSnapshotRepository selectionOmissionSnapshotRepository;
     private final ParallelMoneyResolver parallelMoneyResolver;
 
     public OperationalOrderReadService(OrderRepository orderRepository,
+                                       LegacyBusinessResolver legacyBusiness,
                                        OrderLineSelectionSnapshotRepository selectionSnapshotRepository,
                                        OrderLineComponentOmissionSnapshotRepository omissionSnapshotRepository,
                                        OrderLineSelectionComponentOmissionSnapshotRepository selectionOmissionSnapshotRepository,
                                        ParallelMoneyResolver parallelMoneyResolver) {
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.selectionSnapshotRepository = Objects.requireNonNull(selectionSnapshotRepository,
                 "selectionSnapshotRepository must not be null");
         this.omissionSnapshotRepository = Objects.requireNonNull(omissionSnapshotRepository,
@@ -72,7 +76,12 @@ public class OperationalOrderReadService {
 
     @Transactional(readOnly = true)
     public List<OperationalOrderSummaryResponse> activeOrders() {
-        List<OrderRecord> orders = orderRepository.findByStatusInOrderByCreatedAtAscIdAsc(
+        return activeOrders(legacyBusiness.requireLegacyBusinessId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<OperationalOrderSummaryResponse> activeOrders(Long businessId) {
+        List<OrderRecord> orders = orderRepository.findByBusinessIdAndStatusInOrderByCreatedAtAscIdAsc(businessId,
                 OrderLifecycleStatus.activePersistedValues());
         if (orders.isEmpty()) {
             return List.of();
@@ -88,6 +97,11 @@ public class OperationalOrderReadService {
 
     @Transactional(readOnly = true)
     public HistoricalAnalyticsResponse historicalAnalytics(Instant from, Instant to) {
+        return historicalAnalytics(legacyBusiness.requireLegacyBusinessId(), from, to);
+    }
+
+    @Transactional(readOnly = true)
+    public HistoricalAnalyticsResponse historicalAnalytics(Long businessId, Instant from, Instant to) {
         if (from != null && to != null && (from.isAfter(to) || from.equals(to))) {
             throw new InvalidDateRangeException("Invalid date range: from must be strictly before to");
         }
@@ -95,21 +109,21 @@ public class OperationalOrderReadService {
         LocalDateTime fromLdt = from != null ? LocalDateTime.ofInstant(from, ZoneOffset.UTC) : null;
         LocalDateTime toLdt = to != null ? LocalDateTime.ofInstant(to, ZoneOffset.UTC) : null;
 
-        long completedOrderCount = orderRepository.countCompletedOrders(fromLdt, toLdt);
-        long voidedOrderCount = orderRepository.countVoidedOrders(fromLdt, toLdt);
+        long completedOrderCount = orderRepository.countCompletedOrdersForBusiness(businessId, fromLdt, toLdt);
+        long voidedOrderCount = orderRepository.countVoidedOrdersForBusiness(businessId, fromLdt, toLdt);
 
         java.math.BigDecimal completedRevenue = java.math.BigDecimal.ZERO;
         java.math.BigDecimal averageCompletedTicket = java.math.BigDecimal.ZERO;
 
         if (completedOrderCount > 0) {
-            java.math.BigDecimal sum = orderRepository.sumCompletedRevenue(fromLdt, toLdt);
+            java.math.BigDecimal sum = orderRepository.sumCompletedRevenueForBusiness(businessId, fromLdt, toLdt);
             if (sum != null) {
                 completedRevenue = sum;
             }
             averageCompletedTicket = completedRevenue.divide(new java.math.BigDecimal(completedOrderCount), 2, java.math.RoundingMode.HALF_UP);
         }
 
-        java.util.List<SalesBySourceResponse> salesBySource = orderRepository.aggregateCompletedSalesBySource(fromLdt, toLdt);
+        java.util.List<SalesBySourceResponse> salesBySource = orderRepository.aggregateCompletedSalesBySourceForBusiness(businessId, fromLdt, toLdt);
 
         return new HistoricalAnalyticsResponse(
                 from,
@@ -124,6 +138,11 @@ public class OperationalOrderReadService {
 
     @Transactional(readOnly = true)
     public Page<HistoricalOrderSummaryResponse> historicalOrders(Instant from, Instant to, OrderSource source, String status, int page, int size) {
+        return historicalOrders(legacyBusiness.requireLegacyBusinessId(), from, to, source, status, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<HistoricalOrderSummaryResponse> historicalOrders(Long businessId, Instant from, Instant to, OrderSource source, String status, int page, int size) {
         if (page < 0) page = 0;
         if (size > 100) size = 100;
         if (size < 1) size = 50;
@@ -134,6 +153,7 @@ public class OperationalOrderReadService {
 
                 Specification<OrderRecord> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("business").get("id"), businessId));
             if (fromLdt != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromLdt));
             }
@@ -172,10 +192,15 @@ public class OperationalOrderReadService {
     }
 
     public OperationalOrderDetailResponse order(Long orderId) {
+        return order(legacyBusiness.requireLegacyBusinessId(), orderId);
+    }
+
+    @Transactional(readOnly = true)
+    public OperationalOrderDetailResponse order(Long businessId, Long orderId) {
         if (orderId == null || orderId <= 0) {
             throw new OperationalOrderReadException();
         }
-        OrderRecord order = orderRepository.findOperationalDetailById(orderId)
+        OrderRecord order = orderRepository.findOperationalDetailByIdAndBusinessId(orderId, businessId)
                 .orElseThrow(OperationalOrderReadException::new);
         Map<Long, List<OrderLineSelectionSnapshot>> snapshotsByLine = snapshotsByLine(order.getId());
         Map<Long, List<OrderLineComponentOmissionSnapshot>> omissionsByLine = omissionsByLine(order.getId());

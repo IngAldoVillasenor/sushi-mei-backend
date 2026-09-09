@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.tools;
 import com.cardovia.merkon.backend.agent.AiToolSafetyGuard;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import com.cardovia.merkon.backend.service.CartService;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,7 +22,8 @@ class OrderToolsAiToolSafetyTest {
         OrderRepository orderRepository = mock(OrderRepository.class);
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
         AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
-        OrderTools orderTools = new OrderTools(orderRepository, cartService, guard, menuItemResolver);
+        OrderTools orderTools = new OrderTools(orderRepository, cartService, guard, menuItemResolver,
+                mock(LegacyBusinessResolver.class));
 
         String greetingAdd = guard.withinTextTurn("Hola", () -> orderTools.addDishToCart("5214770000001", "Ramen Tonkotsu", 1, 100.0));
         String menuCheck = guard.withinTextTurn("¿Qué venden?", () -> orderTools.checkCart("5214770000001"));
@@ -44,7 +46,8 @@ class OrderToolsAiToolSafetyTest {
         OrderRepository orderRepository = mock(OrderRepository.class);
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
         AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
-        OrderTools orderTools = new OrderTools(orderRepository, cartService, guard, menuItemResolver);
+        OrderTools orderTools = new OrderTools(orderRepository, cartService, guard, menuItemResolver,
+                mock(LegacyBusinessResolver.class));
         when(menuItemResolver.resolveExact("California Roll"))
                 .thenReturn(new ResolvedMenuItem("California roll", new java.math.BigDecimal("79.00")));
         when(cartService.getCartContents("5214770000001")).thenReturn("Carrito");
@@ -76,7 +79,8 @@ class OrderToolsAiToolSafetyTest {
         OrderRepository orderRepository = mock(OrderRepository.class);
         AiToolSafetyGuard guard = new AiToolSafetyGuard();
         AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
-        OrderTools orderTools = new OrderTools(orderRepository, cartService, guard, menuItemResolver);
+        OrderTools orderTools = new OrderTools(orderRepository, cartService, guard, menuItemResolver,
+                mock(LegacyBusinessResolver.class));
         when(menuItemResolver.resolveExact("Empanizado ebi"))
                 .thenReturn(new ResolvedMenuItem("Empanizado ebi", new java.math.BigDecimal("99.00")));
         when(menuItemResolver.resolveExact("California roll"))

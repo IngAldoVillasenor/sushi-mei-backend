@@ -15,8 +15,11 @@ import com.cardovia.merkon.backend.catalog.MenuSelectionGroupResponse;
 import com.cardovia.merkon.backend.catalog.ReplaceMenuItemTagsRequest;
 import com.cardovia.merkon.backend.catalog.UpdateMenuItemRequest;
 import com.cardovia.merkon.backend.catalog.UpdateMenuSelectionGroupRequest;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -42,54 +45,59 @@ public class MenuCatalogController {
     private final MenuCatalogService menuCatalogService;
     private final CatalogConfigurationService catalogConfigurationService;
     private final MenuItemComponentService menuItemComponentService;
+    private final TrustedBusinessContext trustedBusinessContext;
 
     public MenuCatalogController(MenuCatalogService menuCatalogService,
                                  CatalogConfigurationService catalogConfigurationService,
-                                 MenuItemComponentService menuItemComponentService) {
+                                 MenuItemComponentService menuItemComponentService,
+                                 TrustedBusinessContext trustedBusinessContext) {
         this.menuCatalogService = Objects.requireNonNull(menuCatalogService,
                 "menuCatalogService must not be null");
         this.catalogConfigurationService = Objects.requireNonNull(catalogConfigurationService,
                 "catalogConfigurationService must not be null");
         this.menuItemComponentService = Objects.requireNonNull(menuItemComponentService,
                 "menuItemComponentService must not be null");
+        this.trustedBusinessContext = Objects.requireNonNull(trustedBusinessContext,
+                "trustedBusinessContext must not be null");
     }
 
     @GetMapping
     public List<MenuItemResponse> list(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "false") boolean includeInactive,
             @RequestParam(defaultValue = "false") boolean standaloneOnly) {
-        return menuCatalogService.list(includeInactive, standaloneOnly);
+        return menuCatalogService.list(businessId(jwt), includeInactive, standaloneOnly);
     }
 
     @GetMapping("/{id}")
-    public MenuItemResponse get(@PathVariable Long id) {
-        return menuCatalogService.get(id);
+    public MenuItemResponse get(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        return menuCatalogService.get(businessId(jwt), id);
     }
 
     @GetMapping("/{id}/configuration")
-    public MenuItemConfigurationResponse configuration(@PathVariable Long id) {
-        return catalogConfigurationService.operationalConfiguration(id);
+    public MenuItemConfigurationResponse configuration(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        return catalogConfigurationService.operationalConfiguration(businessId(jwt), id);
     }
 
     @GetMapping("/{id}/components")
-    public List<DefaultComponentResponse> components(@PathVariable Long id) {
-        return menuItemComponentService.activeComponents(id);
+    public List<DefaultComponentResponse> components(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        return menuItemComponentService.activeComponents(businessId(jwt), id);
     }
 
     @GetMapping("/{id}/configuration-definition")
-    public MenuItemConfigurationDefinitionResponse configurationDefinition(@PathVariable Long id) {
-        return catalogConfigurationService.configurationDefinition(id);
+    public MenuItemConfigurationDefinitionResponse configurationDefinition(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        return catalogConfigurationService.configurationDefinition(businessId(jwt), id);
     }
 
     @PostMapping("/{id}/quote")
-    public MenuItemQuoteResponse quote(@PathVariable Long id,
+    public MenuItemQuoteResponse quote(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
                                        @Valid @RequestBody MenuItemQuoteRequest request) {
-        return catalogConfigurationService.quote(id, request);
+        return catalogConfigurationService.quote(businessId(jwt), id, request);
     }
 
     @PostMapping
-    public ResponseEntity<MenuItemResponse> create(@Valid @RequestBody CreateMenuItemRequest request) {
-        MenuItemResponse created = menuCatalogService.create(request);
+    public ResponseEntity<MenuItemResponse> create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CreateMenuItemRequest request) {
+        MenuItemResponse created = menuCatalogService.create(businessId(jwt), request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(created.id())
@@ -98,36 +106,36 @@ public class MenuCatalogController {
     }
 
     @PutMapping("/{id}")
-    public MenuItemResponse update(@PathVariable Long id,
+    public MenuItemResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
                                    @Valid @RequestBody UpdateMenuItemRequest request) {
-        return menuCatalogService.update(id, request);
+        return menuCatalogService.update(businessId(jwt), id, request);
     }
 
     @PutMapping("/{id}/tags")
-    public MenuItemResponse replaceTags(@PathVariable Long id,
+    public MenuItemResponse replaceTags(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
                                         @Valid @RequestBody ReplaceMenuItemTagsRequest request) {
-        return catalogConfigurationService.replaceItemTags(id, request);
+        return catalogConfigurationService.replaceItemTags(businessId(jwt), id, request);
     }
 
     @PostMapping("/{itemId}/selection-groups")
-    public ResponseEntity<MenuSelectionGroupResponse> createGroup(@PathVariable Long itemId,
+    public ResponseEntity<MenuSelectionGroupResponse> createGroup(@AuthenticationPrincipal Jwt jwt, @PathVariable Long itemId,
                                                                     @Valid @RequestBody CreateMenuSelectionGroupRequest request) {
-        MenuSelectionGroupResponse created = catalogConfigurationService.createGroup(itemId, request);
+        MenuSelectionGroupResponse created = catalogConfigurationService.createGroup(businessId(jwt), itemId, request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{groupId}")
                 .buildAndExpand(created.id()).toUri();
         return ResponseEntity.created(location).body(created);
     }
 
     @PutMapping("/{itemId}/selection-groups/{groupId}")
-    public MenuSelectionGroupResponse updateGroup(@PathVariable Long itemId,
+    public MenuSelectionGroupResponse updateGroup(@AuthenticationPrincipal Jwt jwt, @PathVariable Long itemId,
                                                    @PathVariable Long groupId,
                                                    @Valid @RequestBody UpdateMenuSelectionGroupRequest request) {
-        return catalogConfigurationService.updateGroup(itemId, groupId, request);
+        return catalogConfigurationService.updateGroup(businessId(jwt), itemId, groupId, request);
     }
 
     @DeleteMapping("/{itemId}/selection-groups/{groupId}")
-    public ResponseEntity<Void> archiveGroup(@PathVariable Long itemId, @PathVariable Long groupId) {
-        catalogConfigurationService.archiveGroup(itemId, groupId);
+    public ResponseEntity<Void> archiveGroup(@AuthenticationPrincipal Jwt jwt, @PathVariable Long itemId, @PathVariable Long groupId) {
+        catalogConfigurationService.archiveGroup(businessId(jwt), itemId, groupId);
         return ResponseEntity.noContent().build();
     }
 
@@ -138,8 +146,12 @@ public class MenuCatalogController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> archive(@PathVariable Long id) {
-        menuCatalogService.archive(id);
+    public ResponseEntity<Void> archive(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        menuCatalogService.archive(businessId(jwt), id);
         return ResponseEntity.noContent().build();
+    }
+
+    private Long businessId(Jwt jwt) {
+        return trustedBusinessContext.requireBusinessId(jwt);
     }
 }

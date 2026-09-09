@@ -1,7 +1,9 @@
 package com.cardovia.merkon.backend.controller;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.businessday.BusinessDayService;
 import com.cardovia.merkon.backend.businessday.OpenBusinessDayRequest;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.OrderFulfillmentType;
 import com.cardovia.merkon.backend.entity.OrderPaymentMethod;
 import com.cardovia.merkon.backend.entity.OrderPaymentTiming;
@@ -34,10 +36,10 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -70,6 +72,9 @@ class OrderLifecycleControllerIntegrationTest {
     @Autowired
     private BusinessDayService businessDayService;
 
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
+
     @BeforeEach
     void clearOrders() {
         jdbcTemplate.update("delete from public.business_day_cash_expenses");
@@ -85,13 +90,13 @@ class OrderLifecycleControllerIntegrationTest {
     void missingAndInvalidLifecycleCommandsReturnStableErrors() throws Exception {
         OrderRecord pending = order("PENDING", OrderPaymentMethod.CASH, 1);
 
-        mockMvc.perform(put("/api/orders/{id}/prepare", 999999L).with(user("manager").roles("MANAGER")))
+        mockMvc.perform(put("/api/orders/{id}/prepare", 999999L).with(legacyJwt("manager", "MANAGER")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
-        mockMvc.perform(put("/api/orders/{id}/complete", pending.getId()).with(user("manager").roles("MANAGER")))
+        mockMvc.perform(put("/api/orders/{id}/complete", pending.getId()).with(legacyJwt("manager", "MANAGER")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ORDER_INVALID_TRANSITION"));
-        mockMvc.perform(put("/api/orders/{id}/ready", pending.getId()).with(user("manager").roles("MANAGER")))
+        mockMvc.perform(put("/api/orders/{id}/ready", pending.getId()).with(legacyJwt("manager", "MANAGER")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ORDER_INVALID_TRANSITION"));
     }
@@ -103,7 +108,7 @@ class OrderLifecycleControllerIntegrationTest {
         OrderRecord newer = order("PREPARING", OrderPaymentMethod.CASH, 3);
         OrderRecord ready = order("READY", OrderPaymentMethod.CASH, 4);
 
-        mockMvc.perform(get("/api/orders/active").with(user("kitchen").roles("KITCHEN")))
+        mockMvc.perform(get("/api/orders/active").with(legacyJwt("kitchen", "KITCHEN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(older.getId()))
                 .andExpect(jsonPath("$[1].id").value(newer.getId()))
@@ -131,52 +136,40 @@ class OrderLifecycleControllerIntegrationTest {
         mockMvc.perform(put("/api/orders/{id}/prepare", cashierForbidden.getId()))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(put("/api/orders/{id}/prepare", cashierForbidden.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("cashier")
-                                .roles("CASHIER")))
+                        .with(legacyJwt("cashier", "CASHIER")))
                 .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/orders/{id}/prepare", ownerPending.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("owner")
-                                .roles("OWNER")))
+                        .with(legacyJwt("owner", "OWNER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/prepare", managerPending.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("manager")
-                                .roles("MANAGER")))
+                        .with(legacyJwt("manager", "MANAGER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/prepare", kitchenPending.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("kitchen")
-                                .roles("KITCHEN")))
+                        .with(legacyJwt("kitchen", "KITCHEN")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/ready", cashierPreparing.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("cashier")
-                                .roles("CASHIER")))
+                        .with(legacyJwt("cashier", "CASHIER")))
                 .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/orders/{id}/ready", ownerPreparing.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("owner")
-                                .roles("OWNER")))
+                        .with(legacyJwt("owner", "OWNER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/ready", managerPreparing.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("manager")
-                                .roles("MANAGER")))
+                        .with(legacyJwt("manager", "MANAGER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/ready", kitchenPreparing.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("kitchen")
-                                .roles("KITCHEN")))
+                        .with(legacyJwt("kitchen", "KITCHEN")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/validate-payment", kitchenForbiddenTransfer.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("kitchen")
-                                .roles("KITCHEN")))
+                        .with(legacyJwt("kitchen", "KITCHEN")))
                 .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/orders/{id}/validate-payment", ownerTransfer.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("owner")
-                                .roles("OWNER")))
+                        .with(legacyJwt("owner", "OWNER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/validate-payment", managerTransfer.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("manager")
-                                .roles("MANAGER")))
+                        .with(legacyJwt("manager", "MANAGER")))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/validate-payment", cashierTransfer.getId())
-                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("cashier")
-                                .roles("CASHIER")))
+                        .with(legacyJwt("cashier", "CASHIER")))
                 .andExpect(status().isOk());
     }
 
@@ -226,7 +219,7 @@ class OrderLifecycleControllerIntegrationTest {
                         .content("{\"reason\":\"Cliente canceló\"}"))
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/orders/{id}/void", kitchenOrder.getId())
-                        .with(user("kitchen").roles("KITCHEN")).contentType(MediaType.APPLICATION_JSON)
+                        .with(legacyJwt("kitchen", "KITCHEN")).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"Cliente canceló\"}"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/orders/{id}/void", kitchenOrder.getId())
@@ -283,7 +276,7 @@ class OrderLifecycleControllerIntegrationTest {
         assertThat(orderRepository.findById(pendingCollection.getId()).orElseThrow().getStatus()).isEqualTo("COMPLETED");
 
         mockMvc.perform(put("/api/orders/{id}/collect-payment", kitchenOrder.getId())
-                        .with(user("kitchen").roles("KITCHEN"))
+                        .with(legacyJwt("kitchen", "KITCHEN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"paymentMethod\":\"CARD\"}"))
                 .andExpect(status().isForbidden());
@@ -298,7 +291,7 @@ class OrderLifecycleControllerIntegrationTest {
         OrderRecord order = order("PENDING", OrderPaymentMethod.CASH, 1);
 
         mockMvc.perform(post("/api/orders/{id}/reject", order.getId())
-                        .with(user("kitchen").roles("KITCHEN"))
+                        .with(legacyJwt("kitchen", "KITCHEN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":"))
                 .andExpect(status().isBadRequest())
@@ -308,6 +301,7 @@ class OrderLifecycleControllerIntegrationTest {
 
     private OrderRecord order(String status, OrderPaymentMethod paymentMethod, int minute) {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("521477100" + minute);
         order.setPaymentMethod(paymentMethod);
         order.setTotalAmount(10.00d);
@@ -349,6 +343,14 @@ class OrderLifecycleControllerIntegrationTest {
         AuthResponse response = authService.login(new LoginRequest(username, password, "void-test-" + UUID.randomUUID(), null, null),
                 "127.0.0.1");
         return new TestActor(userId, response.accessToken());
+    }
+
+    private RequestPostProcessor legacyJwt(String subject, String role) {
+        String accessToken = insertActor(role).accessToken();
+        return request -> {
+            request.addHeader("Authorization", "Bearer " + accessToken);
+            return request;
+        };
     }
 
     private record TestActor(Long id, String accessToken) {

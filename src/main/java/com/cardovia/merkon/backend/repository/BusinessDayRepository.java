@@ -11,6 +11,20 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface BusinessDayRepository extends JpaRepository<BusinessDay, Long> {
 
+    Optional<BusinessDay> findByBusinessIdAndBusinessDate(Long businessId, LocalDate businessDate);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select businessDay from BusinessDay businessDay where businessDay.business.id = :businessId and businessDay.businessDate = :businessDate")
+    Optional<BusinessDay> findByBusinessIdAndBusinessDateForUpdate(
+            @org.springframework.data.repository.query.Param("businessId") Long businessId,
+            @org.springframework.data.repository.query.Param("businessDate") LocalDate businessDate);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select businessDay from BusinessDay businessDay where businessDay.business.id = :businessId and businessDay.status = com.cardovia.merkon.backend.businessday.BusinessDayStatus.OPEN")
+    Optional<BusinessDay> findOpenForUpdate(Long businessId);
+
+    Optional<BusinessDay> findByBusinessIdAndStatus(Long businessId, BusinessDayStatus status);
+
     Optional<BusinessDay> findByBusinessDate(LocalDate businessDate);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

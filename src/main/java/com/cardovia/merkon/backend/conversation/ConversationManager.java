@@ -1,6 +1,7 @@
 package com.cardovia.merkon.backend.conversation;
 
 import com.cardovia.merkon.backend.agent.AiConversationService;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import org.slf4j.Logger;
@@ -35,15 +36,18 @@ public class ConversationManager {
     private final WhatsAppCheckoutFlowService whatsAppCheckoutFlowService;
     private final ConversationSessionService conversationSessionService;
     private final OrderRepository orderRepository;
+    private final LegacyBusinessResolver legacyBusiness;
 
     public ConversationManager(AiConversationService aiConversationService,
                                WhatsAppCheckoutFlowService whatsAppCheckoutFlowService,
                                ConversationSessionService conversationSessionService,
-                               OrderRepository orderRepository) {
+                               OrderRepository orderRepository,
+                               LegacyBusinessResolver legacyBusiness) {
         this.aiConversationService = aiConversationService;
         this.whatsAppCheckoutFlowService = whatsAppCheckoutFlowService;
         this.conversationSessionService = conversationSessionService;
         this.orderRepository = orderRepository;
+        this.legacyBusiness = legacyBusiness;
     }
 
     /**
@@ -107,7 +111,10 @@ public class ConversationManager {
 
     private void associateReceiptWithPendingOrder(String phoneNumber, String receiptPath) {
         OrderRecord pendingOrder = orderRepository
-                .findFirstByPhoneNumberAndStatusOrderByCreatedAtDesc(phoneNumber, "PENDING_VALIDATION");
+                .findFirstByBusinessIdAndPhoneNumberAndStatusOrderByCreatedAtDesc(
+                        legacyBusiness.requireLegacyBusinessId(),
+                        phoneNumber,
+                        "PENDING_VALIDATION");
 
         if (pendingOrder != null) {
             pendingOrder.setTransferReceiptPath(receiptPath);

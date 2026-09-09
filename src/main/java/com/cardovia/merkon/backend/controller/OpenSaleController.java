@@ -4,6 +4,7 @@ import com.cardovia.merkon.backend.pos.OpenSaleRequest;
 import com.cardovia.merkon.backend.pos.OpenSaleResponse;
 import com.cardovia.merkon.backend.pos.OpenSaleResult;
 import com.cardovia.merkon.backend.pos.OpenSaleService;
+import com.cardovia.merkon.backend.security.TrustedBusinessContext;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,15 +20,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/open-sales")
 public class OpenSaleController {
     private final OpenSaleService openSaleService;
+    private final TrustedBusinessContext trustedBusinessContext;
 
-    public OpenSaleController(OpenSaleService openSaleService) {
+    public OpenSaleController(OpenSaleService openSaleService, TrustedBusinessContext trustedBusinessContext) {
         this.openSaleService = openSaleService;
+        this.trustedBusinessContext = trustedBusinessContext;
     }
 
     @PostMapping
     public ResponseEntity<OpenSaleResponse> create(@AuthenticationPrincipal Jwt jwt,
                                                    @Valid @RequestBody OpenSaleRequest request) {
-        OpenSaleResponse response = openSaleService.create(Long.valueOf(jwt.getSubject()), request);
+        OpenSaleResponse response = openSaleService.create(trustedBusinessContext.requireBusinessId(jwt),
+                Long.valueOf(jwt.getSubject()), request);
         return response.result() == OpenSaleResult.ALREADY_CREATED
                 ? ResponseEntity.ok(response)
                 : ResponseEntity.status(HttpStatus.CREATED).body(response);

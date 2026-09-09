@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.agent;
 import com.cardovia.merkon.backend.catalog.MenuCatalogRepository;
 import com.cardovia.merkon.backend.catalog.MenuItem;
 import com.cardovia.merkon.backend.catalog.MenuItemPricingMode;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.tools.OrderTools;
 import com.cardovia.merkon.backend.tools.ResolvedMenuItem;
 import org.slf4j.Logger;
@@ -38,10 +39,14 @@ public class DeterministicCartAddRouter {
 
     private final MenuCatalogRepository menuCatalogRepository;
     private final OrderTools orderTools;
+    private final LegacyBusinessResolver legacyBusiness;
 
-    public DeterministicCartAddRouter(MenuCatalogRepository menuCatalogRepository, OrderTools orderTools) {
+    public DeterministicCartAddRouter(MenuCatalogRepository menuCatalogRepository,
+                                     OrderTools orderTools,
+                                     LegacyBusinessResolver legacyBusiness) {
         this.menuCatalogRepository = menuCatalogRepository;
         this.orderTools = orderTools;
+        this.legacyBusiness = legacyBusiness;
     }
 
     public Optional<String> tryAdd(String phoneNumber, String message) {
@@ -55,7 +60,8 @@ public class DeterministicCartAddRouter {
 
         List<SourceToken> messageTokens = identityTokens(message);
         List<Match> candidates = menuCatalogRepository
-                .findByActiveTrueAndStandaloneOrderableTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc().stream()
+                .findByBusinessIdAndActiveTrueAndStandaloneOrderableTrueOrderByCategoryAscDisplayOrderAscNameAscIdAsc(
+                        legacyBusiness.requireLegacyBusinessId()).stream()
                 .filter(MenuItem::isAvailable)
                 .filter(item -> item.getPricingMode() == MenuItemPricingMode.BASE_PLUS_ADJUSTMENTS)
                 .filter(item -> item.getPriceAmount().signum() > 0)

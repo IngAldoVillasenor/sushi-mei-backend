@@ -7,6 +7,7 @@ import com.cardovia.merkon.backend.promotion.PromotionService;
 import com.cardovia.merkon.backend.promotion.PromotionTargetRequest;
 import com.cardovia.merkon.backend.promotion.PromotionTargetType;
 import com.cardovia.merkon.backend.promotion.UpdatePromotionRequest;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -61,32 +62,37 @@ class AuthoritativePromotionRulesService {
     private final PromotionService promotionService;
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     AuthoritativePromotionRulesService(MenuCatalogRepository menuItems,
                                        CatalogTagRepository catalogTags,
                                        PromotionService promotionService,
                                        JdbcTemplate jdbcTemplate,
-                                       Clock clock) {
+                                       Clock clock,
+                                       LegacyBusinessResolver legacyBusinessResolver) {
         this.menuItems = Objects.requireNonNull(menuItems, "menuItems must not be null");
         this.catalogTags = Objects.requireNonNull(catalogTags, "catalogTags must not be null");
         this.promotionService = Objects.requireNonNull(promotionService, "promotionService must not be null");
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
     }
 
     @Transactional
     public void synchronize() {
+        Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
         if (!isRuleSetAppliedWithLock(RULE_SET_ID)) {
             Instant now = clock.instant();
-            archiveLegacyMondayItem(now);
-            createMondayPromotion();
-            createThursdayPromotion();
+            archiveLegacyMondayItem(businessId, now);
+            createMondayPromotion(businessId);
+            createThursdayPromotion(businessId);
             menuItems.flush();
             markRuleSetApplied(RULE_SET_ID, now);
         }
 
         if (!isRuleSetAppliedWithLock(CLASSIC_ROLL_TAG_RULE_SET_ID)) {
-            normalizeClassicRollPromotionTargets();
+            normalizeClassicRollPromotionTargets(businessId);
             markRuleSetApplied(CLASSIC_ROLL_TAG_RULE_SET_ID, clock.instant());
         }
     }
@@ -120,8 +126,8 @@ class AuthoritativePromotionRulesService {
         }
     }
 
-    private void archiveLegacyMondayItem(Instant now) {
-        MenuItem legacyMondayItem = menuItems.findById(65L).orElseThrow(() ->
+    private void archiveLegacyMondayItem(Long businessId, Instant now) {
+        MenuItem legacyMondayItem = menuItems.findByIdAndBusinessId(65L, businessId).orElseThrow(() ->
                 new IllegalStateException("Missing legacy Lunes $69 menu item"));
         if (!LEGACY_MONDAY_ITEM_NAME.equals(legacyMondayItem.getName())
                 || !LEGACY_MONDAY_ITEM_CATEGORY.equals(legacyMondayItem.getCategory())) {
@@ -130,8 +136,8 @@ class AuthoritativePromotionRulesService {
         legacyMondayItem.archiveAsDiscontinued(now);
     }
 
-    private void createMondayPromotion() {
-        promotionService.create(new CreatePromotionRequest(
+    private void createMondayPromotion(Long businessId) {
+        promotionService.create(businessId, new CreatePromotionRequest(
                 "Lunes $69",
                 true,
                 PRIORITY,
@@ -143,11 +149,11 @@ class AuthoritativePromotionRulesService {
                 null,
                 null,
                 Set.of(1),
-                classicRollTagTarget()));
+                classicRollTagTarget(businessId)));
     }
 
-    private void createThursdayPromotion() {
-        promotionService.create(new CreatePromotionRequest(
+    private void createThursdayPromotion(Long businessId) {
+        promotionService.create(businessId, new CreatePromotionRequest(
                 "Jueves 2x1",
                 true,
                 PRIORITY,
@@ -159,13 +165,13 @@ class AuthoritativePromotionRulesService {
                 null,
                 null,
                 Set.of(4),
-                classicRollTagTarget()));
+                classicRollTagTarget(businessId)));
     }
 
-    private void normalizeClassicRollPromotionTargets() {
-        List<PromotionTargetRequest> target = classicRollTagTarget();
+    private void normalizeClassicRollPromotionTargets(Long businessId) {
+        List<PromotionTargetRequest> target = classicRollTagTarget(businessId);
         Long targetId = target.get(0).targetId();
-        List<PromotionResponse> promotions = promotionService.list(true);
+        List<PromotionResponse> promotions = promotionService.list(businessId, true);
         for (String name : AUTHORITATIVE_PROMOTION_NAMES) {
             PromotionResponse promotion = promotions.stream()
                     .filter(candidate -> name.equals(candidate.name()))
@@ -175,7 +181,7 @@ class AuthoritativePromotionRulesService {
                     && promotion.targets().get(0).targetType() == PromotionTargetType.TAG
                     && targetId.equals(promotion.targets().get(0).targetId());
             if (!alreadyTargetsClassicRollTag) {
-                promotionService.update(promotion.id(), new UpdatePromotionRequest(
+                promotionService.update(businessId, promotion.id(), new UpdatePromotionRequest(
                         promotion.name(), promotion.active(), promotion.priority(), promotion.benefitType(),
                         promotion.fixedUnitPrice(), promotion.buyQuantity(), promotion.rewardQuantity(), promotion.repeat(),
                         promotion.validFrom(), promotion.validUntil(), promotion.daysOfWeek(), target, promotion.version()));
@@ -183,8 +189,8 @@ class AuthoritativePromotionRulesService {
         }
     }
 
-    private List<PromotionTargetRequest> classicRollTagTarget() {
-        CatalogTag classicRollTag = catalogTags.findByCode(CLASSIC_ROLL_TAG_CODE)
+    private List<PromotionTargetRequest> classicRollTagTarget(Long businessId) {
+        CatalogTag classicRollTag = catalogTags.findByBusinessIdAndCode(businessId, CLASSIC_ROLL_TAG_CODE)
                 .filter(CatalogTag::isActive)
                 .orElseThrow(() -> new IllegalStateException("Missing active ROLLO_CLASICO catalog tag"));
         return List.of(new PromotionTargetRequest(PromotionTargetType.TAG, classicRollTag.getId()));

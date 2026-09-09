@@ -51,6 +51,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V25_SCRIPT = "V25__add_pay_on_delivery_payment_timing.sql";
     private static final String V26_SCRIPT = "V26__allow_pickup_pay_on_delivery.sql";
     private static final String V27_SCRIPT = "V27__add_business_membership_foundation.sql";
+    private static final String V28_SCRIPT = "V28__scope_operational_data_to_business.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -116,7 +117,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 26)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 27)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("27");
+        assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 28)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -213,7 +216,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 26)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 27)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("27");
+        assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 28)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))
@@ -354,7 +359,19 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     }
 
     private Long insertCart(JdbcTemplate jdbcTemplate) {
-        jdbcTemplate.update("insert into public.cart (phone_number, status) values (?, ?)", "525512345678", "OPEN");
+        boolean tenantScoped = jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = 'CART' and column_name = 'BUSINESS_ID'
+                """, Integer.class) > 0;
+        if (tenantScoped) {
+            Long legacyBusinessId = jdbcTemplate.queryForObject("""
+                    select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'
+                    """, Long.class);
+            jdbcTemplate.update("insert into public.cart (business_id, phone_number, status) values (?, ?, ?)",
+                    legacyBusinessId, "525512345678", "OPEN");
+        } else {
+            jdbcTemplate.update("insert into public.cart (phone_number, status) values (?, ?)", "525512345678", "OPEN");
+        }
         return jdbcTemplate.queryForObject("select id from public.cart where phone_number = ?", Long.class, "525512345678");
     }
 
@@ -364,8 +381,24 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     }
 
     private void insertOrder(JdbcTemplate jdbcTemplate, Double legacyAmount, BigDecimal numericAmount) {
-        jdbcTemplate.update("insert into public.orders (phone_number, total_amount, total_amount_amount, status, created_at) values (?, ?, ?, ?, current_timestamp)",
-                "525512345678", legacyAmount, numericAmount, "PENDING");
+        boolean tenantScoped = jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                where table_schema = 'PUBLIC' and table_name = 'ORDERS' and column_name = 'BUSINESS_ID'
+                """, Integer.class) > 0;
+        if (tenantScoped) {
+            Long legacyBusinessId = jdbcTemplate.queryForObject("""
+                    select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'
+                    """, Long.class);
+            jdbcTemplate.update("""
+                    insert into public.orders (business_id, phone_number, total_amount, total_amount_amount, status, created_at)
+                    values (?, ?, ?, ?, ?, current_timestamp)
+                    """, legacyBusinessId, "525512345678", legacyAmount, numericAmount, "PENDING");
+        } else {
+            jdbcTemplate.update("""
+                    insert into public.orders (phone_number, total_amount, total_amount_amount, status, created_at)
+                    values (?, ?, ?, ?, current_timestamp)
+                    """, "525512345678", legacyAmount, numericAmount, "PENDING");
+        }
     }
 
     private void assertSqlMigration(JdbcTemplate jdbcTemplate, int version, String type, String script) {

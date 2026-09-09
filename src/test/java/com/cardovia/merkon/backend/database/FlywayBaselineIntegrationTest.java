@@ -66,6 +66,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V25_SCRIPT = "V25__add_pay_on_delivery_payment_timing.sql";
     private static final String V26_SCRIPT = "V26__allow_pickup_pay_on_delivery.sql";
     private static final String V27_SCRIPT = "V27__add_business_membership_foundation.sql";
+    private static final String V28_SCRIPT = "V28__scope_operational_data_to_business.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -116,7 +117,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 25, "SQL", V25_SCRIPT);
         assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("27");
+        assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("28");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -198,7 +200,7 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV27AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV28AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -231,7 +233,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 25, "SQL", V25_SCRIPT);
         assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("27");
+        assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -269,9 +272,9 @@ class FlywayBaselineIntegrationTest {
                 where rule_set_id = 'PHASE_6G_P0_C_CLASSIC_ROLL_TAG_PROMOTIONS' and applied_at is null
                 """, Integer.class)).isEqualTo(1);
         jdbcTemplate.update("""
-                insert into public.menu_items (name, category, price_amount, pricing_mode, active, available,
+                insert into public.menu_items (business_id, name, category, price_amount, pricing_mode, active, available,
                     standalone_orderable, display_order, created_at, updated_at, version)
-                values ('Identity reservation probe', 'Migration test', 1.00, 'BASE_PLUS_ADJUSTMENTS', true, true,
+                values ((select id from businesses where legacy_key = 'SUSHIMEI_LEGACY'), 'Identity reservation probe', 'Migration test', 1.00, 'BASE_PLUS_ADJUSTMENTS', true, true,
                     true, 0, current_timestamp, current_timestamp, 0)
                 """);
         assertThat(jdbcTemplate.queryForObject(
@@ -446,9 +449,9 @@ class FlywayBaselineIntegrationTest {
                 "current_timestamp", "dateadd('SECOND', -1, current_timestamp)"))
                 .isInstanceOf(DataIntegrityViolationException.class);
         jdbcTemplate.update("""
-                insert into public.menu_items (name, category, price_amount, pricing_mode, active, available,
+                insert into public.menu_items (business_id, name, category, price_amount, pricing_mode, active, available,
                     standalone_orderable, display_order, created_at, updated_at, version)
-                values ('Arma tu Charola', 'Charolas/Sushi Box', 0.00, 'SELECTION_SUM', true, true, true, 0,
+                values ((select id from businesses where legacy_key = 'SUSHIMEI_LEGACY'), 'Arma tu Charola', 'Charolas/Sushi Box', 0.00, 'SELECTION_SUM', true, true, true, 0,
                     current_timestamp, current_timestamp, 0)
                 """);
         assertThatThrownBy(() -> jdbcTemplate.update("""
@@ -538,8 +541,9 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 26)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
-        assertThat(historyCount(jdbcTemplate, 27)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("27");
+        assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 28)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
         assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 28);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
@@ -607,8 +611,8 @@ class FlywayBaselineIntegrationTest {
                                 String updatedAtExpression) {
         jdbcTemplate.update("""
                 insert into public.menu_items (
-                    name, category, price_amount, pricing_mode, active, available, standalone_orderable, display_order, created_at, updated_at, version
-                ) values (?, ?, ?, 'BASE_PLUS_ADJUSTMENTS', true, true, true, ?, %s, %s, ?)
+                    business_id, name, category, price_amount, pricing_mode, active, available, standalone_orderable, display_order, created_at, updated_at, version
+                ) values ((select id from businesses where legacy_key = 'SUSHIMEI_LEGACY'), ?, ?, ?, 'BASE_PLUS_ADJUSTMENTS', true, true, true, ?, %s, %s, ?)
                 """.formatted(createdAtExpression, updatedAtExpression),
                 name, category, new BigDecimal(price), displayOrder, version);
     }
@@ -807,7 +811,7 @@ class FlywayBaselineIntegrationTest {
                 from information_schema.columns
                 where table_schema = 'PUBLIC' and table_name = 'MENU_ITEMS' and column_name = 'STANDALONE_ORDERABLE'
                 """, String.class)).isEqualTo("NO");
-        assertThat(namedConstraintExists(jdbcTemplate, "CATALOG_TAGS", "CATALOG_TAGS_CODE_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "CATALOG_TAGS", "CATALOG_TAGS_BUSINESS_CODE_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "MENU_ITEM_TAGS", "MENU_ITEM_TAGS_PKEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "MENU_SELECTION_RULES", "MENU_SELECTION_RULES_TARGET_XOR_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "MENU_SELECTION_RULES",
@@ -944,7 +948,7 @@ class FlywayBaselineIntegrationTest {
         assertColumnPresent(jdbcTemplate, "ORDER_LINES", "SOURCE_PAID_LINE_ID");
         assertTableExists(jdbcTemplate, "ORDER_LINE_SELECTION_SNAPSHOTS");
         assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_CLIENT_REQUEST_ID_KEY")).isFalse();
-        assertThat(namedConstraintExists(jdbcTemplate, "ORDERS", "ORDERS_CLIENT_REQUEST_ID_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ORDERS", "ORDERS_BUSINESS_CLIENT_REQUEST_ID_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_LINE_KIND_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_MONEY_BY_KIND_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "ORDER_LINES", "ORDER_LINES_PROVENANCE_CHECK")).isTrue();
@@ -1032,12 +1036,13 @@ class FlywayBaselineIntegrationTest {
         assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "REOPENED_AT");
         assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "REOPENED_BY_USER_ID");
         assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "REOPEN_COUNT");
+        assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "BUSINESS_ID");
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAYS", "BUSINESS_DAYS_BUSINESS_DATE_KEY")).isTrue();
-        assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAYS", "BUSINESS_DAYS_OPEN_GUARD_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAYS", "BUSINESS_DAYS_BUSINESS_OPEN_GUARD_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAYS", "BUSINESS_DAYS_STATUS_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAYS", "BUSINESS_DAYS_CLOSE_SNAPSHOT_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_OPERATION_LOCKS",
-                "BUSINESS_DAY_OPERATION_LOCKS_KEY_CHECK")).isTrue();
+                "BUSINESS_DAY_OPERATION_LOCKS_BUSINESS_ID_FKEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAYS",
                 "BUSINESS_DAYS_REOPEN_METADATA_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CLOSURES",
@@ -1052,8 +1057,9 @@ class FlywayBaselineIntegrationTest {
         assertColumnPresent(jdbcTemplate, "BUSINESS_DAYS", "CASH_EXPENSE_COUNT");
         assertColumnPresent(jdbcTemplate, "BUSINESS_DAY_CLOSURES", "CASH_EXPENSE_AMOUNT");
         assertColumnPresent(jdbcTemplate, "BUSINESS_DAY_CLOSURES", "CASH_EXPENSE_COUNT");
+        assertColumnPresent(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES", "BUSINESS_ID");
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES",
-                "BUSINESS_DAY_CASH_EXPENSES_CLIENT_REQUEST_ID_KEY")).isTrue();
+                "BUSINESS_DAY_CASH_EXPENSES_BUSINESS_CLIENT_REQUEST_ID_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES",
                 "BUSINESS_DAY_CASH_EXPENSES_AMOUNT_POSITIVE_CHECK")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESS_DAY_CLOSURES",
@@ -1112,6 +1118,66 @@ class FlywayBaselineIntegrationTest {
                 """);
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.businesses where name = 'Sushi Mei'", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void v28BackfillsAllOperationalRootRecordsToTheExplicitLegacyBusiness() {
+        JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
+        newFlyway(isolatedDataSource, MigrationVersion.fromVersion("27")).migrate();
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active,
+                    failed_login_attempts, password_changed_at, created_at, updated_at, version)
+                values ('v28-owner', 'V28 owner', '{bcrypt}hash', 'OWNER', true,
+                    0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """);
+        Long userId = jdbcTemplate.queryForObject("select id from public.app_users where username = 'v28-owner'", Long.class);
+        jdbcTemplate.update("""
+                insert into public.menu_items (name, category, price_amount, pricing_mode, active, available,
+                    standalone_orderable, display_order, created_at, updated_at, version)
+                values ('V28 item', 'Migration', 10.00, 'BASE_PLUS_ADJUSTMENTS', true, true, true, 0,
+                    current_timestamp, current_timestamp, 0)
+                """);
+        jdbcTemplate.update("""
+                insert into public.catalog_tags (code, name, active, display_order, created_at, updated_at, version)
+                values ('V28_TAG', 'V28 tag', true, 0, current_timestamp, current_timestamp, 0)
+                """);
+        jdbcTemplate.update("""
+                insert into public.promotions (name, active, priority, benefit_type, fixed_unit_price_amount,
+                    created_at, updated_at, version)
+                values ('V28 promotion', true, 10, 'FIXED_UNIT_PRICE', 5.00,
+                    current_timestamp, current_timestamp, 0)
+                """);
+        jdbcTemplate.update("""
+                insert into public.orders (phone_number, total_amount, total_amount_amount, status, created_at)
+                values ('525500000001', 10.00, 10.00, 'COMPLETED', current_timestamp)
+                """);
+        jdbcTemplate.update("insert into public.cart (phone_number, status) values ('525500000002', 'OPEN')");
+        jdbcTemplate.update("""
+                insert into public.business_days (business_date, status, opening_cash_amount, opened_at,
+                    opened_by_user_id, open_guard, version)
+                values ('2026-09-08', 'OPEN', 100.00, current_timestamp, ?, 1, 0)
+                """, userId);
+        Long businessDayId = jdbcTemplate.queryForObject("select id from public.business_days", Long.class);
+        jdbcTemplate.update("""
+                insert into public.business_day_cash_expenses (business_day_id, client_request_id, request_fingerprint,
+                    amount, description, created_at, created_by_user_id)
+                values (?, ?, ?, 5.00, 'V28 expense', current_timestamp, ?)
+                """, businessDayId, UUID.randomUUID(), "a".repeat(64), userId);
+
+        newFlyway(isolatedDataSource).migrate();
+
+        assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
+        Long legacyBusinessId = jdbcTemplate.queryForObject("""
+                select id from public.businesses where legacy_key = 'SUSHIMEI_LEGACY'
+                """, Long.class);
+        for (String table : List.of("menu_items", "catalog_tags", "promotions", "orders", "cart", "business_days",
+                "business_day_cash_expenses")) {
+            assertThat(jdbcTemplate.queryForObject("select count(*) from public." + table + " where business_id = ?",
+                    Integer.class, legacyBusinessId)).isEqualTo(1);
+        }
+        assertThat(jdbcTemplate.queryForObject("select business_id from public.business_day_operation_locks", Long.class))
+                .isEqualTo(legacyBusinessId);
     }
 
     private void assertBusinessMembershipSchema(JdbcTemplate jdbcTemplate) {

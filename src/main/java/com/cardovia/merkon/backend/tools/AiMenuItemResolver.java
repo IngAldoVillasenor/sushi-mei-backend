@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.tools;
 import com.cardovia.merkon.backend.catalog.MenuCatalogRepository;
 import com.cardovia.merkon.backend.catalog.MenuItem;
 import com.cardovia.merkon.backend.catalog.MenuItemPricingMode;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,10 +21,14 @@ public class AiMenuItemResolver {
     private static final Logger log = LoggerFactory.getLogger(AiMenuItemResolver.class);
 
     private final MenuCatalogRepository menuCatalogRepository;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
-    public AiMenuItemResolver(MenuCatalogRepository menuCatalogRepository) {
+    public AiMenuItemResolver(MenuCatalogRepository menuCatalogRepository,
+                              LegacyBusinessResolver legacyBusinessResolver) {
         this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository,
                 "menuCatalogRepository must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
     }
 
     @Transactional(readOnly = true)
@@ -32,8 +37,8 @@ public class AiMenuItemResolver {
             throw new AiMenuItemResolutionException();
         }
         List<MenuItem> matches = menuCatalogRepository
-                .findByNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
-                        requestedName.trim());
+                .findByBusinessIdAndNameIgnoreCaseAndActiveTrueAndAvailableTrueAndStandaloneOrderableTrueOrderByIdAsc(
+                        legacyBusinessResolver.requireLegacyBusinessId(), requestedName.trim());
         if (matches.size() != 1) {
             log.warn("AI menu resolution outcome=REJECTED reason=NO_UNIQUE_ORDERABLE_MATCH");
             throw new AiMenuItemResolutionException();

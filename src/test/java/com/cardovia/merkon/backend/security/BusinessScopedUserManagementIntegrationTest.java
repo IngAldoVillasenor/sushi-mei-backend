@@ -67,7 +67,9 @@ class BusinessScopedUserManagementIntegrationTest {
         jdbcTemplate.update("delete from public.auth_sessions");
         memberships.deleteAll();
         users.deleteAll();
-        businesses.deleteAll();
+        businesses.findAll().stream()
+                .filter(business -> business.getLegacyKey() == null)
+                .forEach(businesses::delete);
         businessA = businesses.saveAndFlush(Business.create("Business A", clock.instant()));
         businessB = businesses.saveAndFlush(Business.create("Business B", clock.instant()));
         ownerA = user("owner-a", ApplicationRole.OWNER);

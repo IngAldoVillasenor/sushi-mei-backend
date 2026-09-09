@@ -4,6 +4,9 @@ import com.cardovia.merkon.backend.catalog.CatalogTag;
 import com.cardovia.merkon.backend.catalog.CatalogTagRepository;
 import com.cardovia.merkon.backend.catalog.MenuCatalogRepository;
 import com.cardovia.merkon.backend.catalog.MenuItem;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.BusinessRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.checkout.CheckoutMoney;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,17 +32,23 @@ public class PromotionService {
     private static final Logger LOGGER = LoggerFactory.getLogger(PromotionService.class);
 
     private final PromotionRepository promotionRepository;
+    private final BusinessRepository businessRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final MenuCatalogRepository menuCatalogRepository;
     private final CatalogTagRepository catalogTagRepository;
     private final CheckoutMoney checkoutMoney;
     private final Clock clock;
 
     public PromotionService(PromotionRepository promotionRepository,
+                            BusinessRepository businessRepository,
+                            LegacyBusinessResolver legacyBusiness,
                             MenuCatalogRepository menuCatalogRepository,
                             CatalogTagRepository catalogTagRepository,
                             CheckoutMoney checkoutMoney,
                             Clock clock) {
         this.promotionRepository = Objects.requireNonNull(promotionRepository, "promotionRepository must not be null");
+        this.businessRepository = Objects.requireNonNull(businessRepository, "businessRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
         this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository, "menuCatalogRepository must not be null");
         this.catalogTagRepository = Objects.requireNonNull(catalogTagRepository, "catalogTagRepository must not be null");
         this.checkoutMoney = Objects.requireNonNull(checkoutMoney, "checkoutMoney must not be null");
@@ -48,46 +57,68 @@ public class PromotionService {
 
     @Transactional(readOnly = true)
     public List<PromotionResponse> list(boolean includeInactive) {
+        return list(legacyBusiness.requireLegacyBusinessId(), includeInactive);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PromotionResponse> list(Long businessId, boolean includeInactive) {
         List<Promotion> promotions = includeInactive
-                ? promotionRepository.findAllByOrderByPriorityDescIdAsc()
-                : promotionRepository.findByActiveTrueOrderByPriorityDescIdAsc();
+                ? promotionRepository.findByBusinessIdOrderByPriorityDescIdAsc(businessId)
+                : promotionRepository.findByBusinessIdAndActiveTrueOrderByPriorityDescIdAsc(businessId);
         return promotions.stream().map(PromotionResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public PromotionResponse get(Long id) {
-        return PromotionResponse.from(findPromotion(id));
+        return get(legacyBusiness.requireLegacyBusinessId(), id);
+    }
+
+    @Transactional(readOnly = true)
+    public PromotionResponse get(Long businessId, Long id) {
+        return PromotionResponse.from(findPromotion(businessId, id));
     }
 
     @Transactional
     public PromotionResponse create(CreatePromotionRequest request) {
+        return create(legacyBusiness.requireLegacyBusinessId(), request);
+    }
+
+    @Transactional
+    public PromotionResponse create(Long businessId, CreatePromotionRequest request) {
         if (request == null) {
             throw invalid();
         }
-        NormalizedPromotion normalized = normalize(request.name(), request.active() == null || request.active(), request.priority(),
+        Business business = requireBusiness(businessId);
+        NormalizedPromotion normalized = normalize(businessId, request.name(), request.active() == null || request.active(), request.priority(),
                 request.benefitType(), request.fixedUnitPrice(), request.buyQuantity(), request.rewardQuantity(), request.repeat(),
                 request.validFrom(), request.validUntil(), request.daysOfWeek(), request.targets());
-        validateNoScheduleConflict(null, normalized);
+        validateNoScheduleConflict(businessId, null, normalized);
         Instant now = clock.instant();
         Promotion promotion = Promotion.create(normalized.name(), normalized.active(), normalized.priority(), normalized.benefitType(),
                 normalized.fixedUnitPrice(), normalized.buyQuantity(), normalized.rewardQuantity(), normalized.repeat(),
                 normalized.validFrom(), normalized.validUntil(), normalized.daysOfWeek(), normalized.targets(), now);
+        promotion.assignBusiness(business);
         return PromotionResponse.from(promotionRepository.saveAndFlush(promotion));
     }
 
     @Transactional
     public PromotionResponse update(Long id, UpdatePromotionRequest request) {
+        return update(legacyBusiness.requireLegacyBusinessId(), id, request);
+    }
+
+    @Transactional
+    public PromotionResponse update(Long businessId, Long id, UpdatePromotionRequest request) {
         if (request == null || request.version() == null) {
             throw invalid();
         }
-        Promotion promotion = findPromotion(id);
+        Promotion promotion = findPromotion(businessId, id);
         if (promotion.getVersion() != request.version()) {
             throw new PromotionException(PromotionError.PROMOTION_VERSION_CONFLICT);
         }
-        NormalizedPromotion normalized = normalize(request.name(), requireBoolean(request.active()), request.priority(), request.benefitType(),
+        NormalizedPromotion normalized = normalize(businessId, request.name(), requireBoolean(request.active()), request.priority(), request.benefitType(),
                 request.fixedUnitPrice(), request.buyQuantity(), request.rewardQuantity(), request.repeat(), request.validFrom(),
                 request.validUntil(), request.daysOfWeek(), request.targets());
-        validateNoScheduleConflict(promotion.getId(), normalized);
+        validateNoScheduleConflict(businessId, promotion.getId(), normalized);
         promotion.update(normalized.name(), normalized.active(), normalized.priority(), normalized.benefitType(),
                 normalized.fixedUnitPrice(), normalized.buyQuantity(), normalized.rewardQuantity(), normalized.repeat(),
                 normalized.validFrom(), normalized.validUntil(), normalized.daysOfWeek(), normalized.targets(), clock.instant());
@@ -97,10 +128,15 @@ public class PromotionService {
 
     @Transactional
     public void archive(Long id) {
-        findPromotion(id).archive(clock.instant());
+        archive(legacyBusiness.requireLegacyBusinessId(), id);
     }
 
-    private NormalizedPromotion normalize(String name,
+    @Transactional
+    public void archive(Long businessId, Long id) {
+        findPromotion(businessId, id).archive(clock.instant());
+    }
+
+    private NormalizedPromotion normalize(Long businessId, String name,
                                           boolean active,
                                           Integer priority,
                                           PromotionBenefitType benefitType,
@@ -126,7 +162,7 @@ public class PromotionService {
         RuleParameters parameters = normalizeParameters(benefitType, fixedUnitPrice, buyQuantity, rewardQuantity, repeat);
         return new NormalizedPromotion(normalizedName, active, priority, benefitType, parameters.fixedUnitPrice(),
                 parameters.buyQuantity(), parameters.rewardQuantity(), parameters.repeat(), validFrom, validUntil,
-                normalizedWeekdays, resolveTargets(targets));
+                normalizedWeekdays, resolveTargets(businessId, targets));
     }
 
     private RuleParameters normalizeParameters(PromotionBenefitType benefitType,
@@ -151,7 +187,7 @@ public class PromotionService {
         throw invalid();
     }
 
-    private List<PromotionTargetDraft> resolveTargets(List<PromotionTargetRequest> requests) {
+    private List<PromotionTargetDraft> resolveTargets(Long businessId, List<PromotionTargetRequest> requests) {
         List<PromotionTargetDraft> targets = new ArrayList<>();
         Set<String> distinctTargets = new LinkedHashSet<>();
         for (PromotionTargetRequest request : requests) {
@@ -163,10 +199,10 @@ public class PromotionService {
                 throw invalid();
             }
             if (request.targetType() == PromotionTargetType.ITEM) {
-                MenuItem item = menuCatalogRepository.findById(request.targetId()).orElseThrow(this::invalid);
+                MenuItem item = menuCatalogRepository.findByIdAndBusinessId(request.targetId(), businessId).orElseThrow(this::invalid);
                 targets.add(new PromotionTargetDraft(item, null));
             } else if (request.targetType() == PromotionTargetType.TAG) {
-                CatalogTag tag = catalogTagRepository.findById(request.targetId()).filter(CatalogTag::isActive)
+                CatalogTag tag = catalogTagRepository.findByIdAndBusinessId(request.targetId(), businessId).filter(CatalogTag::isActive)
                         .orElseThrow(this::invalid);
                 targets.add(new PromotionTargetDraft(null, tag));
             } else {
@@ -176,13 +212,13 @@ public class PromotionService {
         return targets;
     }
 
-    private void validateNoScheduleConflict(Long promotionId, NormalizedPromotion candidate) {
+    private void validateNoScheduleConflict(Long businessId, Long promotionId, NormalizedPromotion candidate) {
         if (!candidate.active()) {
             return;
         }
-        List<MenuItem> catalogItems = menuCatalogRepository.findAllByOrderByCategoryAscDisplayOrderAscNameAscIdAsc();
+        List<MenuItem> catalogItems = menuCatalogRepository.findByBusinessIdOrderByCategoryAscDisplayOrderAscNameAscIdAsc(businessId);
         Set<Long> candidateItemIds = targetedItemIds(candidate.targets(), catalogItems);
-        Promotion conflict = promotionRepository.findByActiveTrueOrderByPriorityDescIdAsc().stream()
+        Promotion conflict = promotionRepository.findByBusinessIdAndActiveTrueOrderByPriorityDescIdAsc(businessId).stream()
                 .filter(existing -> !Objects.equals(existing.getId(), promotionId))
                 .filter(existing -> existing.getPriority() == candidate.priority())
                 .filter(existing -> weekdaysOverlap(existing.getIsoWeekdays(), candidate.daysOfWeek()))
@@ -252,11 +288,16 @@ public class PromotionService {
                 && (rightUntil == null || leftFrom == null || !rightUntil.isBefore(leftFrom));
     }
 
-    private Promotion findPromotion(Long id) {
+    private Promotion findPromotion(Long businessId, Long id) {
         if (id == null || id <= 0) {
             throw new PromotionException(PromotionError.PROMOTION_NOT_FOUND);
         }
-        return promotionRepository.findById(id).orElseThrow(() -> new PromotionException(PromotionError.PROMOTION_NOT_FOUND));
+        return promotionRepository.findByIdAndBusinessId(id, businessId)
+                .orElseThrow(() -> new PromotionException(PromotionError.PROMOTION_NOT_FOUND));
+    }
+
+    private Business requireBusiness(Long businessId) {
+        return businessRepository.findById(businessId).filter(Business::isActive).orElseThrow(this::invalid);
     }
 
     private String normalizeName(String name) {

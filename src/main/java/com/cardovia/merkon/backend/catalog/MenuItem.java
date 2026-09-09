@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.catalog;
 
+import com.cardovia.merkon.backend.business.Business;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
@@ -31,6 +33,10 @@ public class MenuItem {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "business_id", nullable = false, updatable = false)
+    private Business business;
 
     @Column(nullable = false, length = 160)
     private String name;
@@ -103,6 +109,14 @@ public class MenuItem {
         item.createdAt = Objects.requireNonNull(now, "now must not be null");
         item.updatedAt = now;
         return item;
+    }
+
+    public void assignBusiness(Business business) {
+        Business required = Objects.requireNonNull(business, "business must not be null");
+        if (this.business != null && !this.business.getId().equals(required.getId())) {
+            throw new IllegalStateException("Menu item business cannot change");
+        }
+        this.business = required;
     }
 
     void update(String name,
@@ -186,6 +200,8 @@ public class MenuItem {
     public Long getId() {
         return id;
     }
+
+    public Business getBusiness() { return business; }
 
     public String getName() {
         return name;

@@ -3,6 +3,7 @@ package com.cardovia.merkon.backend.vendis;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cardovia.merkon.backend.entity.OrderSource;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -30,15 +31,19 @@ public class VendisHistoryImportService {
     private final VendisSaleMapper saleMapper;
     private final VendisHistoryImportTransaction importTransaction;
     private final OrderRepository orderRepository;
+    private final LegacyBusinessResolver legacyBusinessResolver;
 
     public VendisHistoryImportService(ObjectMapper objectMapper,
                                       VendisSaleMapper saleMapper,
                                       VendisHistoryImportTransaction importTransaction,
-                                      OrderRepository orderRepository) {
+                                      OrderRepository orderRepository,
+                                      LegacyBusinessResolver legacyBusinessResolver) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.saleMapper = Objects.requireNonNull(saleMapper, "saleMapper must not be null");
         this.importTransaction = Objects.requireNonNull(importTransaction, "importTransaction must not be null");
         this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
+        this.legacyBusinessResolver = Objects.requireNonNull(legacyBusinessResolver,
+                "legacyBusinessResolver must not be null");
     }
 
     public VendisImportReport importFile(Path file, boolean dryRun) {
@@ -69,10 +74,11 @@ public class VendisHistoryImportService {
             VendisSaleInput input = objectMapper.readValue(raw, VendisSaleInput.class);
             transactionId = input.vendisTransactionId();
             MappedVendisSale sale = saleMapper.map(input);
+            Long businessId = legacyBusinessResolver.requireLegacyBusinessId();
             report.recordValid(sale);
 
-            boolean alreadyExists = orderRepository.findByOrderSourceAndExternalOrderId(
-                    OrderSource.VENDIS_IMPORT, sale.transactionId()).isPresent();
+            boolean alreadyExists = orderRepository.findByBusinessIdAndOrderSourceAndExternalOrderId(
+                    businessId, OrderSource.VENDIS_IMPORT, sale.transactionId()).isPresent();
             if (dryRun || alreadyExists) {
                 if (alreadyExists) {
                     report.alreadyExisting++;
@@ -81,7 +87,7 @@ public class VendisHistoryImportService {
             }
 
             try {
-                VendisHistoryImportTransaction.ImportWriteResult result = importTransaction.importOne(sale);
+                VendisHistoryImportTransaction.ImportWriteResult result = importTransaction.importOne(businessId, sale);
                 if (result == VendisHistoryImportTransaction.ImportWriteResult.IMPORTED) {
                     report.imported++;
                 } else {
@@ -89,7 +95,8 @@ public class VendisHistoryImportService {
                 }
             } catch (DataIntegrityViolationException exception) {
                 // A concurrent import may win the unique source-identity race.
-                if (orderRepository.findByOrderSourceAndExternalOrderId(OrderSource.VENDIS_IMPORT, sale.transactionId()).isPresent()) {
+                if (orderRepository.findByBusinessIdAndOrderSourceAndExternalOrderId(
+                        businessId, OrderSource.VENDIS_IMPORT, sale.transactionId()).isPresent()) {
                     report.alreadyExisting++;
                 } else {
                     throw persistenceFailure(lineNumber, transactionId, exception);

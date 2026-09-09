@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.order;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.businessday.BusinessDayError;
 import com.cardovia.merkon.backend.businessday.BusinessDayException;
 import com.cardovia.merkon.backend.businessday.BusinessDayService;
@@ -56,6 +57,9 @@ class OrderLifecycleServiceIntegrationTest {
 
     @Autowired
     private BusinessDayService businessDayService;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     private Long voidActorUserId;
 
@@ -533,6 +537,7 @@ class OrderLifecycleServiceIntegrationTest {
 
     private OrderRecord order(String status, OrderPaymentMethod paymentMethod, int minute) {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("521477000" + minute);
         order.setPaymentMethod(paymentMethod);
         order.setTotalAmount(10.00d);
@@ -563,6 +568,7 @@ class OrderLifecycleServiceIntegrationTest {
         LocalDateTime createdAt = businessDate.atTime(12, sequence).atZone(ZoneId.of("America/Mexico_City"))
                 .toInstant().atOffset(ZoneOffset.UTC).toLocalDateTime();
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("521477200" + sequence);
         order.setOrderSource(OrderSource.ANDROID_MANUAL);
         order.setFulfillmentType(fulfillmentType);

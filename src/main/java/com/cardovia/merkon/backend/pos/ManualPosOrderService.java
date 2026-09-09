@@ -7,6 +7,7 @@ import com.cardovia.merkon.backend.entity.OrderPaymentTiming;
 import com.cardovia.merkon.backend.promotion.PromotionQuoteLineRequest;
 import com.cardovia.merkon.backend.promotion.PromotionRewardConfigurationRequest;
 import com.cardovia.merkon.backend.repository.OrderRepository;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.List;
@@ -16,17 +17,20 @@ import org.springframework.stereotype.Service;
 @Service
 public class ManualPosOrderService {
     private final OrderRepository orderRepository;
+    private final LegacyBusinessResolver legacyBusiness;
     private final ManualPosOrderFingerprint fingerprint;
     private final ManualPosOrderCreationTransaction creationTransaction;
     private final ManualPosOrderReadService readService;
     private final CheckoutMoney checkoutMoney;
 
     public ManualPosOrderService(OrderRepository orderRepository,
+                                 LegacyBusinessResolver legacyBusiness,
                                  ManualPosOrderFingerprint fingerprint,
                                  ManualPosOrderCreationTransaction creationTransaction,
                                  ManualPosOrderReadService readService,
                                  CheckoutMoney checkoutMoney) {
         this.orderRepository = orderRepository;
+        this.legacyBusiness = legacyBusiness;
         this.fingerprint = fingerprint;
         this.creationTransaction = creationTransaction;
         this.readService = readService;
@@ -34,6 +38,10 @@ public class ManualPosOrderService {
     }
 
     public ManualPosOrderResponse create(Long authenticatedUserId, ManualPosOrderRequest request) {
+        return create(legacyBusiness.requireLegacyBusinessId(), authenticatedUserId, request);
+    }
+
+    public ManualPosOrderResponse create(Long businessId, Long authenticatedUserId, ManualPosOrderRequest request) {
         if (authenticatedUserId == null || authenticatedUserId <= 0 || request == null || request.requestId() == null
                 || request.fulfillmentType() == null
                 || (request.lines().isEmpty() && request.manualLines().isEmpty())) {
@@ -54,15 +62,15 @@ public class ManualPosOrderService {
         NormalizedManualPosOrder normalized = new NormalizedManualPosOrder(request.requestId(), request.fulfillmentType(),
                 request.paymentMethod(), paymentTiming, deliveryAddress, pickupName, cashDenomination, lines, manualLines,
                 canonicalFingerprint);
-        if (orderRepository.findByClientRequestId(request.requestId()).isPresent()) {
-            return readService.existing(request.requestId(), authenticatedUserId, canonicalFingerprint);
+        if (orderRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).isPresent()) {
+            return readService.existing(businessId, request.requestId(), authenticatedUserId, canonicalFingerprint);
         }
         try {
-            return creationTransaction.create(authenticatedUserId, normalized);
+            return creationTransaction.create(businessId, authenticatedUserId, normalized);
         } catch (DataIntegrityViolationException exception) {
             // The REQUIRES_NEW creation transaction has rolled back. A concurrent winner can now be read safely.
-            if (orderRepository.findByClientRequestId(request.requestId()).isPresent()) {
-                return readService.existing(request.requestId(), authenticatedUserId, canonicalFingerprint);
+            if (orderRepository.findByBusinessIdAndClientRequestId(businessId, request.requestId()).isPresent()) {
+                return readService.existing(businessId, request.requestId(), authenticatedUserId, canonicalFingerprint);
             }
             throw new ManualPosOrderException(ManualPosOrderError.ORDER_INVALID, exception);
         }

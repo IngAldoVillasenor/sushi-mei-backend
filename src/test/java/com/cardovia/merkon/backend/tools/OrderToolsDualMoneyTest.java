@@ -9,6 +9,9 @@ import com.cardovia.merkon.backend.entity.OrderRecord;
 import com.cardovia.merkon.backend.agent.AiToolSafetyGuard;
 import com.cardovia.merkon.backend.repository.OrderRepository;
 import com.cardovia.merkon.backend.service.CartService;
+import com.cardovia.merkon.backend.business.Business;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -26,9 +29,16 @@ class OrderToolsDualMoneyTest {
     private final OrderRepository orderRepository = mock(OrderRepository.class);
     private final CartService cartService = mock(CartService.class);
     private final AiMenuItemResolver menuItemResolver = mock(AiMenuItemResolver.class);
+    private final LegacyBusinessResolver legacyBusinessResolver = mock(LegacyBusinessResolver.class);
+    private final Business business = mock(Business.class);
     private final OrderTools orderTools = new OrderTools(
-            orderRepository, cartService, new AiToolSafetyGuard(), menuItemResolver);
+            orderRepository, cartService, new AiToolSafetyGuard(), menuItemResolver, legacyBusinessResolver);
     private final ParallelMoneyResolver moneyResolver = new ParallelMoneyResolver(new CheckoutMoney());
+
+    @BeforeEach
+    void tenant() {
+        when(legacyBusinessResolver.requireLegacyBusiness()).thenReturn(business);
+    }
 
     @Test
     void confirmOrderWritesBothMoneyRepresentationsFromOneValidatedPair() {

@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.conversation;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.entity.Cart;
 import com.cardovia.merkon.backend.entity.CartItem;
 import com.cardovia.merkon.backend.entity.OrderPaymentMethod;
@@ -39,6 +40,7 @@ class WhatsAppCheckoutFlowServiceIntegrationTest {
     @Autowired private OrderRepository orderRepository;
     @Autowired private OperationalOrderReadService operationalOrderReadService;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private LegacyBusinessResolver legacyBusinessResolver;
 
     @BeforeEach
     void clean() {
@@ -165,6 +167,7 @@ class WhatsAppCheckoutFlowServiceIntegrationTest {
 
     private Cart openCart(String phone, CartItem... items) {
         Cart cart = new Cart();
+        cart.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         cart.setPhoneNumber(phone);
         cart.setStatus("OPEN");
         for (CartItem item : items) {

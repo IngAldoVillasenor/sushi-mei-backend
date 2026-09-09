@@ -1,5 +1,6 @@
 package com.cardovia.merkon.backend.orderread;
 
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import com.cardovia.merkon.backend.catalog.CreateMenuItemRequest;
 import com.cardovia.merkon.backend.catalog.MenuCatalogService;
 import com.cardovia.merkon.backend.catalog.MenuItemResponse;
@@ -71,6 +72,9 @@ class OperationalOrderReadServiceIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private LegacyBusinessResolver legacyBusinessResolver;
 
     @BeforeEach
     void clean() {
@@ -339,6 +343,7 @@ class OperationalOrderReadServiceIntegrationTest {
 
     private OrderRecord legacyOrder(String status, int minute) {
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setPhoneNumber("521477000000" + minute);
         order.setTotalAmount(10.50d);
         order.setTotalAmountAmount(new BigDecimal("10.50"));
@@ -352,6 +357,7 @@ class OperationalOrderReadServiceIntegrationTest {
         long menuItemId = sourceMenuItemId == null ? 101L : sourceMenuItemId;
         ensureManualUser();
         OrderRecord order = new OrderRecord();
+        order.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order.setClientRequestId(UUID.randomUUID());
         order.setCreatedByUserId(1L);
         order.setOrderSource(OrderSource.ANDROID_MANUAL);
@@ -423,6 +429,7 @@ class OperationalOrderReadServiceIntegrationTest {
         orderRepository.deleteAll();
 
         com.cardovia.merkon.backend.entity.OrderRecord order1 = new com.cardovia.merkon.backend.entity.OrderRecord();
+        order1.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order1.setStatus("COMPLETED");
         order1.setOrderSource(OrderSource.COUNTER);
         order1.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 0, 0)); // 10:00 UTC
@@ -430,6 +437,7 @@ class OperationalOrderReadServiceIntegrationTest {
         orderRepository.saveAndFlush(order1);
 
         com.cardovia.merkon.backend.entity.OrderRecord order2 = new com.cardovia.merkon.backend.entity.OrderRecord();
+        order2.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order2.setStatus("COMPLETED");
         order2.setOrderSource(OrderSource.COUNTER);
         order2.setCreatedAt(LocalDateTime.of(2026, 8, 20, 12, 0, 0)); // 12:00 UTC
@@ -462,6 +470,7 @@ class OperationalOrderReadServiceIntegrationTest {
         orderRepository.deleteAll();
 
         com.cardovia.merkon.backend.entity.OrderRecord order1 = new com.cardovia.merkon.backend.entity.OrderRecord();
+        order1.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order1.setStatus("COMPLETED");
         order1.setOrderSource(OrderSource.COUNTER);
         order1.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 0, 0));
@@ -469,6 +478,7 @@ class OperationalOrderReadServiceIntegrationTest {
         orderRepository.saveAndFlush(order1);
 
         com.cardovia.merkon.backend.entity.OrderRecord order2 = new com.cardovia.merkon.backend.entity.OrderRecord();
+        order2.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order2.setStatus("COMPLETED");
         order2.setOrderSource(OrderSource.ANDROID_MANUAL);
         order2.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 5, 0));
@@ -476,6 +486,7 @@ class OperationalOrderReadServiceIntegrationTest {
         orderRepository.saveAndFlush(order2);
 
         com.cardovia.merkon.backend.entity.OrderRecord order3 = new com.cardovia.merkon.backend.entity.OrderRecord();
+        order3.setBusiness(legacyBusinessResolver.requireLegacyBusiness());
         order3.setStatus("VOIDED");
         order3.setOrderSource(OrderSource.COUNTER);
         order3.setCreatedAt(LocalDateTime.of(2026, 8, 20, 10, 10, 0));

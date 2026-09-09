@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import com.cardovia.merkon.backend.business.LegacyBusinessResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,14 +15,26 @@ import org.springframework.transaction.annotation.Transactional;
 public class MenuItemComponentService {
 
     private final MenuItemDefaultComponentRepository componentRepository;
+    private final MenuCatalogRepository menuCatalogRepository;
+    private final LegacyBusinessResolver legacyBusiness;
 
-    public MenuItemComponentService(MenuItemDefaultComponentRepository componentRepository) {
+    public MenuItemComponentService(MenuItemDefaultComponentRepository componentRepository,
+                                    MenuCatalogRepository menuCatalogRepository,
+                                    LegacyBusinessResolver legacyBusiness) {
         this.componentRepository = Objects.requireNonNull(componentRepository, "componentRepository must not be null");
+        this.menuCatalogRepository = Objects.requireNonNull(menuCatalogRepository, "menuCatalogRepository must not be null");
+        this.legacyBusiness = Objects.requireNonNull(legacyBusiness, "legacyBusiness must not be null");
     }
 
     @Transactional(readOnly = true)
     public List<DefaultComponentResponse> activeComponents(Long menuItemId) {
+        return activeComponents(legacyBusiness.requireLegacyBusinessId(), menuItemId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DefaultComponentResponse> activeComponents(Long businessId, Long menuItemId) {
         requireMenuItemId(menuItemId);
+        requireOwnedMenuItem(businessId, menuItemId);
         return componentRepository.findByMenuItemIdAndActiveTrueOrderByDisplayOrderAscIdAsc(menuItemId).stream()
                 .map(DefaultComponentResponse::from)
                 .toList();
@@ -30,7 +43,14 @@ public class MenuItemComponentService {
     @Transactional(readOnly = true)
     public List<MenuItemDefaultComponent> resolveActiveOmittedComponents(Long menuItemId,
                                                                            Collection<Long> componentIds) {
+        return resolveActiveOmittedComponents(legacyBusiness.requireLegacyBusinessId(), menuItemId, componentIds);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MenuItemDefaultComponent> resolveActiveOmittedComponents(Long businessId, Long menuItemId,
+                                                                           Collection<Long> componentIds) {
         requireMenuItemId(menuItemId);
+        requireOwnedMenuItem(businessId, menuItemId);
         if (componentIds == null || componentIds.isEmpty()) {
             return List.of();
         }
@@ -53,6 +73,13 @@ public class MenuItemComponentService {
 
     private static void requireMenuItemId(Long menuItemId) {
         if (menuItemId == null || menuItemId <= 0) {
+            throw invalid();
+        }
+    }
+
+    private void requireOwnedMenuItem(Long businessId, Long menuItemId) {
+        if (businessId == null || businessId <= 0
+                || menuCatalogRepository.findByIdAndBusinessId(menuItemId, businessId).isEmpty()) {
             throw invalid();
         }
     }
