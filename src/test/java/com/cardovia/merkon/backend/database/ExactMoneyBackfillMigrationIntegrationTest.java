@@ -52,6 +52,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V26_SCRIPT = "V26__allow_pickup_pay_on_delivery.sql";
     private static final String V27_SCRIPT = "V27__add_business_membership_foundation.sql";
     private static final String V28_SCRIPT = "V28__scope_operational_data_to_business.sql";
+    private static final String V29_SCRIPT = "V29__add_public_registration_foundation.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -119,7 +120,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 27)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 28)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
+        assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 29)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("29");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -218,7 +221,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 27)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 28)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
+        assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 29)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("29");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))

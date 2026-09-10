@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record LoginRequest(
-        @NotBlank @Size(max = 80) String username,
+        @NotBlank @Size(max = 254) String username,
         @NotNull String password,
         @NotBlank @Size(max = 120) String deviceId,
         @Size(max = 160) String deviceName,

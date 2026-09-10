@@ -67,6 +67,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V26_SCRIPT = "V26__allow_pickup_pay_on_delivery.sql";
     private static final String V27_SCRIPT = "V27__add_business_membership_foundation.sql";
     private static final String V28_SCRIPT = "V28__scope_operational_data_to_business.sql";
+    private static final String V29_SCRIPT = "V29__add_public_registration_foundation.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -118,7 +119,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
         assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("28");
+        assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("29");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -150,6 +152,8 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbcTemplate, "BUSINESS_DAY_CASH_EXPENSES");
         assertTableExists(jdbcTemplate, "BUSINESSES");
         assertTableExists(jdbcTemplate, "BUSINESS_MEMBERSHIPS");
+        assertTableExists(jdbcTemplate, "USER_TERMS_ACCEPTANCES");
+        assertTableExists(jdbcTemplate, "REGISTRATION_RATE_LIMIT_BUCKETS");
         assertTableExists(jdbcTemplate, "ORDER_LINE_SELECTION_COMPONENT_OMISSIONS");
         assertTableAbsent(jdbcTemplate, "HIBERNATE_SEQUENCE");
 
@@ -195,12 +199,13 @@ class FlywayBaselineIntegrationTest {
         assertCashExpenseSchema(jdbcTemplate);
         assertPayOnDeliverySchema(jdbcTemplate);
         assertBusinessMembershipSchema(jdbcTemplate);
+        assertPublicRegistrationSchema(jdbcTemplate);
         assertAuthoritativeCatalogBootstrapData(jdbcTemplate);
         assertAuthoritativePromotionBootstrapData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV28AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV29AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -234,7 +239,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 26, "SQL", V26_SCRIPT);
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
         assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
+        assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("29");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -255,6 +261,7 @@ class FlywayBaselineIntegrationTest {
         assertCashExpenseSchema(jdbcTemplate);
         assertPayOnDeliverySchema(jdbcTemplate);
         assertBusinessMembershipSchema(jdbcTemplate);
+        assertPublicRegistrationSchema(jdbcTemplate);
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from public.catalog_bootstrap_rule_sets
                 where rule_set_id = 'PHASE_6F1_AUTHORITATIVE_CATALOG_RULES' and applied_at is null
@@ -543,8 +550,10 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 27, "SQL", V27_SCRIPT);
         assertSqlMigration(jdbcTemplate, 28, "SQL", V28_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 28)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("28");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 28);
+        assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 29)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("29");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 30);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -1180,6 +1189,28 @@ class FlywayBaselineIntegrationTest {
                 .isEqualTo(legacyBusinessId);
     }
 
+    @Test
+    void v29PreservesExistingUsersAndAddsThePublicRegistrationSchema() {
+        JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
+        newFlyway(isolatedDataSource, MigrationVersion.fromVersion("28")).migrate();
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active,
+                    failed_login_attempts, password_changed_at, created_at, updated_at, version)
+                values ('legacy-v29', 'Legacy V29', '{bcrypt}hash', 'MANAGER', true,
+                    0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """);
+
+        newFlyway(isolatedDataSource).migrate();
+
+        assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
+        assertThat(jdbcTemplate.queryForObject(
+                "select username from public.app_users where username = 'legacy-v29'", String.class))
+                .isEqualTo("legacy-v29");
+        assertColumnLength(jdbcTemplate, "APP_USERS", "USERNAME", 254);
+        assertPublicRegistrationSchema(jdbcTemplate);
+    }
+
     private void assertBusinessMembershipSchema(JdbcTemplate jdbcTemplate) {
         assertTableExists(jdbcTemplate, "BUSINESSES");
         assertTableExists(jdbcTemplate, "BUSINESS_MEMBERSHIPS");
@@ -1191,6 +1222,19 @@ class FlywayBaselineIntegrationTest {
         assertThat(namedConstraintExists(jdbcTemplate, "BUSINESSES", "BUSINESSES_NAME_KEY")).isFalse();
         assertThat(namedConstraintExists(jdbcTemplate, "AUTH_SESSIONS",
                 "AUTH_SESSIONS_ACTIVE_MEMBERSHIP_USER_FKEY")).isTrue();
+    }
+
+    private void assertPublicRegistrationSchema(JdbcTemplate jdbcTemplate) {
+        assertColumnLength(jdbcTemplate, "APP_USERS", "USERNAME", 254);
+        assertTableExists(jdbcTemplate, "USER_TERMS_ACCEPTANCES");
+        assertTableExists(jdbcTemplate, "REGISTRATION_RATE_LIMIT_BUCKETS");
+        assertColumnPresent(jdbcTemplate, "REGISTRATION_RATE_LIMIT_BUCKETS", "BUCKET_KEY");
+        assertThat(namedConstraintExists(jdbcTemplate, "USER_TERMS_ACCEPTANCES",
+                "USER_TERMS_ACCEPTANCES_USER_VERSION_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "USER_TERMS_ACCEPTANCES",
+                "USER_TERMS_ACCEPTANCES_USER_ID_FKEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "REGISTRATION_RATE_LIMIT_BUCKETS",
+                "REGISTRATION_RATE_LIMIT_BUCKETS_ATTEMPT_COUNT_POSITIVE_CHECK")).isTrue();
     }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {

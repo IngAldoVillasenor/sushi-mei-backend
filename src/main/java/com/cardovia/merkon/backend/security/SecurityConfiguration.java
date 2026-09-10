@@ -50,8 +50,10 @@ public class SecurityConfiguration {
                         .authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(authorize -> authorize
-                        // The only anonymous application endpoints are login, refresh, and Meta's existing webhook.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                        // The only anonymous application endpoints are login, refresh, public registration,
+                        // and Meta's existing webhook.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh",
+                                "/api/v1/registration").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/whatsapp/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/whatsapp/webhook").permitAll()
                         .requestMatchers("/internal/**").hasRole("OWNER")

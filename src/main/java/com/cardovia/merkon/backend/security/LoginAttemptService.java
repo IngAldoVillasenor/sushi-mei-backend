@@ -37,6 +37,14 @@ public class LoginAttemptService {
         Instant now = clock.instant();
         AppUser user = users.findByUsernameForUpdate(username).orElse(null);
         if (user == null) {
+            String canonicalPublicEmail = PublicRegistrationInput.canonicalPublicEmailOrNull(username);
+            if (canonicalPublicEmail != null && !canonicalPublicEmail.equals(username)) {
+                // Preserve a legacy username verbatim first; only then resolve the
+                // canonical public-email form used by self-service registrations.
+                user = users.findByUsernameForUpdate(canonicalPublicEmail).orElse(null);
+            }
+        }
+        if (user == null) {
             passwords.matches(password, dummyHash);
             audit.record(
                     SecurityAuditEventType.LOGIN_FAILURE,
@@ -52,7 +60,8 @@ public class LoginAttemptService {
 
         boolean locked = user.getLockedUntil() != null && now.isBefore(user.getLockedUntil());
         boolean passwordMatches = passwords.matches(password, user.getPasswordHash());
-        if (locked || !user.isActive() || !passwordMatches) {
+        boolean pendingEmailVerification = user.getRegistrationState() == AccountRegistrationState.PENDING_EMAIL_VERIFICATION;
+        if (locked || !user.isActive() || pendingEmailVerification || !passwordMatches) {
             if (!locked) {
                 user.recordFailure(now);
             }
@@ -64,7 +73,7 @@ public class LoginAttemptService {
                     null,
                     clientIp,
                     SecurityAuditOutcome.FAILURE,
-                    locked ? "LOCKED" : (!user.isActive() ? "INACTIVE" : "INVALID_CREDENTIALS"));
+                    locked ? "LOCKED" : ((!user.isActive() || pendingEmailVerification) ? "INACTIVE" : "INVALID_CREDENTIALS"));
             return LoginEvaluation.failure();
         }
 

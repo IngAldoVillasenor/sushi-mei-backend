@@ -63,13 +63,24 @@ public class UserManagementService {
     @Transactional
     public UserResponse create(CreateUserRequest request, Long actorUserId, Long activeBusinessId, String clientIp) {
         BusinessMembership actorMembership = actorMembership(actorUserId, activeBusinessId);
-        String username = AuthService.normalizeUsername(request.username());
-        if (users.findByUsername(username).isPresent()) {
+        String requestedUsername = AuthService.normalizeUsername(request.username());
+        PublicEmailIdentity usernameIdentity = PublicEmailIdentity.orNull(requestedUsername);
+        String username = usernameIdentity == null ? requestedUsername : usernameIdentity.canonicalAscii();
+        boolean usernameReserved = usernameIdentity == null
+                ? users.findByUsername(username).isPresent()
+                : users.existsByUsernameOrEmailAliasIgnoreCase(usernameIdentity.aliases());
+        if (usernameReserved) {
             throw duplicateUser();
         }
         String email = normalizeEmail(request.email());
-        if (email != null && users.findByEmail(email).isPresent()) {
-            throw duplicateUser();
+        if (email != null) {
+            PublicEmailIdentity emailIdentity = PublicEmailIdentity.orNull(email);
+            boolean reserved = emailIdentity == null
+                    ? users.findByEmail(email).isPresent()
+                    : users.existsByUsernameOrEmailAliasIgnoreCase(emailIdentity.aliases());
+            if (reserved) {
+                throw duplicateUser();
+            }
         }
 
         Instant now = clock.instant();
@@ -273,6 +284,9 @@ public class UserManagementService {
         if (value == null || value.trim().isEmpty()) {
             return null;
         }
-        return value.trim().toLowerCase(Locale.ROOT);
+        PublicEmailIdentity identity = PublicEmailIdentity.orNull(value);
+        // Preserve the existing optional-email behavior for malformed values;
+        // controller validation remains responsible for rejecting those requests.
+        return identity == null ? value.trim().toLowerCase(Locale.ROOT) : identity.canonicalAscii();
     }
 }
