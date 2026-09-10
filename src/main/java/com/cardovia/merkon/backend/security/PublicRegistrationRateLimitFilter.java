@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Counts every public registration POST before MVC validation or body parsing.
+ * Counts every public registration/verification POST before MVC validation or body parsing.
  * It intentionally ignores forwarded headers; see RegistrationClientAddressResolver.
  */
 @Component
@@ -22,6 +22,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
 
     private static final String REGISTRATION_PATH = "/api/v1/registration";
+    private static final String VERIFY_PATH = "/api/v1/registration/email-verification/verify";
+    private static final String RESEND_PATH = "/api/v1/registration/email-verification/resend";
 
     private final RegistrationRateLimitService rateLimit;
     private final RegistrationClientAddressResolver clientAddresses;
@@ -40,7 +42,7 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod()) || !REGISTRATION_PATH.equals(request.getRequestURI());
+        return !"POST".equals(request.getMethod()) || route(request) == PublicRoute.NONE;
     }
 
     @Override
@@ -48,21 +50,31 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String observedConnectionAddress = clientAddresses.resolve(request);
+        PublicRoute route = route(request);
         try {
-            rateLimit.checkTransportAddress(observedConnectionAddress);
+            if (route == PublicRoute.REGISTRATION) {
+                rateLimit.checkTransportAddress(observedConnectionAddress);
+            } else {
+                rateLimit.checkEmailVerificationTransport(observedConnectionAddress);
+            }
         } catch (SecurityApiException exception) {
-            if (!"REGISTRATION_RATE_LIMITED".equals(exception.code())) {
+            if (!isExpectedRateLimit(route, exception.code())) {
                 throw exception;
             }
-            audit.record(
-                    SecurityAuditEventType.REGISTRATION_REJECTED,
-                    null,
-                    null,
-                    null,
-                    null,
-                    observedConnectionAddress,
-                    SecurityAuditOutcome.FAILURE,
-                    "RATE_LIMITED");
+            if (route == PublicRoute.REGISTRATION) {
+                audit.record(
+                        SecurityAuditEventType.REGISTRATION_REJECTED,
+                        null,
+                        null,
+                        null,
+                        null,
+                        observedConnectionAddress,
+                        SecurityAuditOutcome.FAILURE,
+                        "RATE_LIMITED");
+            }
+            // Email-verification coarse transport denials deliberately avoid a
+            // per-request audit row: otherwise a rejected bot can turn the
+            // audit table itself into an unbounded public write target.
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             objectMapper.writeValue(response.getOutputStream(),
@@ -70,5 +82,26 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
             return;
         }
         filterChain.doFilter(request, response);
+    }
+
+    private static PublicRoute route(HttpServletRequest request) {
+        return switch (request.getRequestURI()) {
+            case REGISTRATION_PATH -> PublicRoute.REGISTRATION;
+            case VERIFY_PATH -> PublicRoute.VERIFY;
+            case RESEND_PATH -> PublicRoute.RESEND;
+            default -> PublicRoute.NONE;
+        };
+    }
+
+    private static boolean isExpectedRateLimit(PublicRoute route, String code) {
+        return (route == PublicRoute.REGISTRATION && "REGISTRATION_RATE_LIMITED".equals(code))
+                || (route != PublicRoute.REGISTRATION && "EMAIL_VERIFICATION_TRANSPORT_RATE_LIMITED".equals(code));
+    }
+
+    private enum PublicRoute {
+        REGISTRATION,
+        VERIFY,
+        RESEND,
+        NONE
     }
 }

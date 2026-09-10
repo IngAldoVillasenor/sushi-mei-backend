@@ -15,17 +15,23 @@ public class PublicRegistrationService {
     private final PasswordPolicyService passwords;
     private final RegistrationRateLimitService rateLimit;
     private final PublicRegistrationCreationTransaction creation;
+    private final EmailVerificationTokenGenerator verificationTokens;
+    private final EmailVerificationDeliveryDispatcher verificationDelivery;
     private final SecurityAuditService audit;
 
     PublicRegistrationService(AppUserRepository users,
                               PasswordPolicyService passwords,
                               RegistrationRateLimitService rateLimit,
                               PublicRegistrationCreationTransaction creation,
+                              EmailVerificationTokenGenerator verificationTokens,
+                              EmailVerificationDeliveryDispatcher verificationDelivery,
                               SecurityAuditService audit) {
         this.users = users;
         this.passwords = passwords;
         this.rateLimit = rateLimit;
         this.creation = creation;
+        this.verificationTokens = verificationTokens;
+        this.verificationDelivery = verificationDelivery;
         this.audit = audit;
     }
 
@@ -47,7 +53,14 @@ public class PublicRegistrationService {
             return PublicRegistrationResponse.accepted();
         }
         try {
-            creation.create(input, passwordHash, clientIp);
+            EmailVerificationTokenGenerator.TokenMaterial token = verificationTokens.generate();
+            PublicRegistrationCreationTransaction.RegisteredAccount registered = creation.create(
+                    input, passwordHash, token.hash(), clientIp);
+            // This only queues post-commit, bounded best-effort delivery. The
+            // provider round trip cannot distinguish this public response from
+            // an enumeration-safe duplicate no-op.
+            verificationDelivery.dispatch(
+                    registered.token(), registered.user().getId(), registered.user().getEmail(), token.plaintext(), clientIp);
             return PublicRegistrationResponse.accepted();
         } catch (DataIntegrityViolationException exception) {
             // A concurrent winner may have created the exact public identity

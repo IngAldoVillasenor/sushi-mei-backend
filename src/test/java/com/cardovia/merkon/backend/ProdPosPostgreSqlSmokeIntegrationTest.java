@@ -21,6 +21,8 @@ import com.cardovia.merkon.backend.security.PublicRegistrationRequest;
 import com.cardovia.merkon.backend.security.PublicRegistrationResponse;
 import com.cardovia.merkon.backend.security.PublicRegistrationService;
 import com.cardovia.merkon.backend.security.SecurityApiException;
+import com.cardovia.merkon.backend.security.TransactionalEmail;
+import com.cardovia.merkon.backend.security.TransactionalEmailSender;
 import com.cardovia.merkon.backend.security.UserManagementService;
 import com.cardovia.merkon.backend.security.UserResponse;
 import com.cardovia.merkon.backend.service.WhatsAppService;
@@ -41,6 +43,7 @@ import java.sql.Statement;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,8 +54,12 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -77,6 +84,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("prod-pos")
+@Import(ProdPosPostgreSqlSmokeIntegrationTest.EmailTestConfiguration.class)
 class ProdPosPostgreSqlSmokeIntegrationTest {
 
     private static final String OWNER_USERNAME = "postgres-smoke-owner";
@@ -131,6 +139,9 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
     @Autowired
     private JwtDecoder jwtDecoder;
 
+    @Autowired
+    private CapturingTransactionalEmailSender emailSender;
+
     @DynamicPropertySource
     static void productionLikeProperties(DynamicPropertyRegistry registry) {
         registry.add("DB_URL", POSTGRES::getJdbcUrl);
@@ -161,7 +172,7 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(29);
+                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(30);
         assertThat(jdbcTemplate.queryForList(
                         "select script from public.flyway_schema_history where success order by installed_rank",
                         String.class))
@@ -194,16 +205,23 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 "V26__allow_pickup_pay_on_delivery.sql",
                 "V27__add_business_membership_foundation.sql",
                 "V28__scope_operational_data_to_business.sql",
-                "V29__add_public_registration_foundation.sql");
+                "V29__add_public_registration_foundation.sql",
+                "V30__add_email_verification_tokens.sql");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '27'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '28'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '29'", Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.flyway_schema_history where success and version = '30'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.tables
                 where table_schema = 'public' and table_name = 'user_terms_acceptances'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.tables
+                where table_schema = 'public' and table_name = 'email_verification_tokens'
                 """, Integer.class)).isOne();
 
         assertThat(userRepository.findByUsername(OWNER_USERNAME)).isPresent();
@@ -318,8 +336,107 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 """, Integer.class, userId)).isOne();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.user_terms_acceptances where user_id = ?", Integer.class, userId)).isOne();
-        assertThat(jdbcTemplate.queryForObject(
-                "select max(attempt_count) from public.registration_rate_limit_buckets", Integer.class)).isEqualTo(2);
+        String registrationIdentityBucketKey = sha256("merkon-registration-identity-v2:" + email);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.registration_rate_limit_buckets
+                where bucket_key = ?
+                """, Integer.class, registrationIdentityBucketKey)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select attempt_count from public.registration_rate_limit_buckets
+                where bucket_key = ?
+                """, Integer.class, registrationIdentityBucketKey)).isEqualTo(2);
+    }
+
+    @Test
+    void prodPosPostgreSqlRegistrationVerificationConsumesTheSameTokenOnlyOnceAndThenAllowsLogin() throws Exception {
+        emailSender.clear();
+        String email = "postgres-email-verification@example.com";
+        String password = "una frase larga segura PostgreSQL 2026";
+        registrations.register(new PublicRegistrationRequest(
+                email, "PostgreSQL verified owner", password,
+                "PostgreSQL verified business", true), "198.51.100.81");
+        String token = emailSender.singleToken();
+        Long userId = jdbcTemplate.queryForObject("select id from public.app_users where email = ?", Long.class, email);
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Integer>> results = List.of(
+                    executor.submit(() -> verifyAtBarrier(token, ready, start)),
+                    executor.submit(() -> verifyAtBarrier(token, ready, start)));
+            await(ready, "The concurrent PostgreSQL verification requests did not reach the start barrier");
+            start.countDown();
+            assertThat(results.stream().map(this::verificationStatus).filter(code -> code == 200).count()).isEqualTo(1);
+            assertThat(results.stream().map(this::verificationStatus).filter(code -> code == 400).count()).isEqualTo(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.app_users
+                where id = ? and active = true and registration_state = 'ACTIVE' and email_verified_at is not null
+                """, Integer.class, userId)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.email_verification_tokens
+                where user_id = ? and used_at is not null and revoked_at is null
+                """, Integer.class, userId)).isOne();
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                email, password, "postgres-verified-device", null, null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+    }
+
+    @Test
+    void prodPosPostgreSqlVerifyAndResendSerializeOnUserBeforeVerificationTokens() throws Exception {
+        emailSender.clear();
+        String email = "postgres-verify-resend-race@example.com";
+        registrations.register(new PublicRegistrationRequest(
+                email, "PostgreSQL verify resend owner", "una frase larga segura PostgreSQL 2026",
+                "PostgreSQL verify resend business", true), "198.51.100.82");
+        String oldToken = emailSender.singleToken();
+        Long userId = jdbcTemplate.queryForObject("select id from public.app_users where email = ?", Long.class, email);
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> verify = executor.submit(() -> verifyAtBarrier(oldToken, ready, start));
+            Future<Integer> resend = executor.submit(() -> resendAtBarrier(email, ready, start));
+            await(ready, "The PostgreSQL verify/resend race did not reach the start barrier");
+            start.countDown();
+            int verifyStatus = verificationStatus(verify);
+            assertThat(verifyStatus).isIn(200, 400);
+            assertThat(verificationStatus(resend)).isEqualTo(202);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        String accountState = jdbcTemplate.queryForObject(
+                "select registration_state from public.app_users where id = ?", String.class, userId);
+        int activeTokens = jdbcTemplate.queryForObject("""
+                select count(*) from public.email_verification_tokens
+                where user_id = ? and used_at is null and revoked_at is null
+                """, Integer.class, userId);
+        assertThat(activeTokens).isLessThanOrEqualTo(1);
+        if ("ACTIVE".equals(accountState)) {
+            assertThat(activeTokens).isZero();
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from public.email_verification_tokens
+                    where user_id = ? and token_hash = ? and used_at is not null
+                    """, Integer.class, userId, sha256(oldToken))).isOne();
+        } else {
+            assertThat(accountState).isEqualTo("PENDING_EMAIL_VERIFICATION");
+            assertThat(activeTokens).isOne();
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from public.email_verification_tokens
+                    where user_id = ? and token_hash = ? and revoked_at is not null
+                    """, Integer.class, userId, sha256(oldToken))).isOne();
+        }
     }
 
     @Test
@@ -585,6 +702,50 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         return registrations.register(request, "198.51.100.42");
     }
 
+    private int verifyAtBarrier(String token, CountDownLatch ready, CountDownLatch start) {
+        ready.countDown();
+        await(start, "The concurrent PostgreSQL verification requests did not start");
+        try {
+            return mockMvc.perform(post("/api/v1/registration/email-verification/verify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(java.util.Map.of("token", token))))
+                    .andReturn().getResponse().getStatus();
+        } catch (Exception exception) {
+            throw new AssertionError("Concurrent PostgreSQL verification request failed", exception);
+        }
+    }
+
+    private int resendAtBarrier(String email, CountDownLatch ready, CountDownLatch start) {
+        ready.countDown();
+        await(start, "The concurrent PostgreSQL resend request did not start");
+        try {
+            return mockMvc.perform(post("/api/v1/registration/email-verification/resend")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(java.util.Map.of("email", email))))
+                    .andReturn().getResponse().getStatus();
+        } catch (Exception exception) {
+            throw new AssertionError("Concurrent PostgreSQL resend request failed", exception);
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (GeneralSecurityException exception) {
+            throw new AssertionError("Could not hash test verification token", exception);
+        }
+    }
+
+    private int verificationStatus(Future<Integer> result) {
+        try {
+            return result.get(10, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            throw new AssertionError("Concurrent PostgreSQL verification did not finish", exception);
+        }
+    }
+
     private JsonNode login() throws Exception {
         String response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -626,6 +787,53 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
             return "-----BEGIN " + type + "-----\n"
                     + Base64.getMimeEncoder(64, new byte[] {'\n'}).encodeToString(encoded)
                     + "\n-----END " + type + "-----\n";
+        }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class EmailTestConfiguration {
+        @Bean @Primary CapturingTransactionalEmailSender transactionalEmailSender() {
+            return new CapturingTransactionalEmailSender();
+        }
+    }
+
+    static final class CapturingTransactionalEmailSender implements TransactionalEmailSender {
+        private final List<TransactionalEmail> messages = new CopyOnWriteArrayList<>();
+        private final Object monitor = new Object();
+
+        @Override
+        public void send(TransactionalEmail email) {
+            messages.add(email);
+            synchronized (monitor) {
+                monitor.notifyAll();
+            }
+        }
+
+        void clear() {
+            messages.clear();
+        }
+
+        String singleToken() {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            synchronized (monitor) {
+                while (messages.isEmpty()) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0L) {
+                        throw new AssertionError("PostgreSQL test email was not dispatched");
+                    }
+                    try {
+                        TimeUnit.NANOSECONDS.timedWait(monitor, remaining);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError("PostgreSQL test email dispatch was interrupted", exception);
+                    }
+                }
+            }
+            assertThat(messages).hasSize(1);
+            String url = messages.get(0).textBody().lines()
+                    .filter(line -> line.startsWith("https://")).findFirst().orElseThrow();
+            return org.springframework.web.util.UriComponentsBuilder.fromUriString(url)
+                    .build().getQueryParams().getFirst("token");
         }
     }
 }

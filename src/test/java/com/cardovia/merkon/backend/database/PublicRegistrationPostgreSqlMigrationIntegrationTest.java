@@ -13,7 +13,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/** Exercises the unshipped V29 upgrade on the production database engine. */
+/** Exercises the unshipped V30 upgrade on the production database engine. */
 @Testcontainers(disabledWithoutDocker = true)
 class PublicRegistrationPostgreSqlMigrationIntegrationTest {
 
@@ -24,16 +24,23 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
             .withPassword("merkon_registration_password");
 
     @Test
-    void v28ToV29PreservesLegacyUsersAndEnforcesPublicRegistrationConstraints() {
+    void v29ToV30PreservesExistingUsersAndAddsEmailVerificationTokenConstraints() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-        flyway(dataSource, MigrationVersion.fromVersion("28")).migrate();
+        flyway(dataSource, MigrationVersion.fromVersion("29")).migrate();
         jdbcTemplate.update("""
                 insert into public.app_users (username, display_name, password_hash, role, active,
                     failed_login_attempts, password_changed_at, created_at, updated_at, version)
-                values ('legacy-v29-postgres', 'Legacy V29 PostgreSQL', '{bcrypt}hash', 'MANAGER', true,
+                values ('legacy-v30-postgres', 'Legacy V30 PostgreSQL', '{bcrypt}hash', 'MANAGER', true,
                     0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """);
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, email, registration_state, password_hash, role,
+                    active, failed_login_attempts, password_changed_at, created_at, updated_at, version)
+                values ('pending-v30-postgres@example.com', 'Pending V30 PostgreSQL', 'pending-v30-postgres@example.com',
+                    'PENDING_EMAIL_VERIFICATION', '{bcrypt}hash', 'OWNER', false, 0,
+                    current_timestamp, current_timestamp, current_timestamp, 0)
                 """);
 
         flyway(dataSource, null).migrate();
@@ -42,10 +49,13 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
                 select "version" from public.flyway_schema_history
                 where success and "version" is not null
                 order by installed_rank desc limit 1
-                """, String.class)).isEqualTo("29");
+                """, String.class)).isEqualTo("30");
         assertThat(jdbcTemplate.queryForObject("""
-                select username from public.app_users where username = 'legacy-v29-postgres'
-                """, String.class)).isEqualTo("legacy-v29-postgres");
+                select username from public.app_users where username = 'legacy-v30-postgres'
+                """, String.class)).isEqualTo("legacy-v30-postgres");
+        assertThat(jdbcTemplate.queryForObject("""
+                select registration_state from public.app_users where username = 'pending-v30-postgres@example.com'
+                """, String.class)).isEqualTo("PENDING_EMAIL_VERIFICATION");
         assertThat(jdbcTemplate.queryForObject("""
                 select character_maximum_length from information_schema.columns
                 where table_schema = 'public' and table_name = 'app_users' and column_name = 'username'
@@ -59,6 +69,11 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
                 select count(*) from information_schema.columns
                 where table_schema = 'public' and table_name = 'registration_rate_limit_buckets'
                   and column_name = 'bucket_key'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                where table_schema = 'public' and table_name = 'email_verification_tokens'
+                  and column_name = 'token_hash'
                 """, Integer.class)).isOne();
 
         jdbcTemplate.update("""
