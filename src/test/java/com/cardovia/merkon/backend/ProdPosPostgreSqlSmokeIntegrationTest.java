@@ -12,6 +12,17 @@ import com.cardovia.merkon.backend.businessday.CloseBusinessDayRequest;
 import com.cardovia.merkon.backend.businessday.OpenBusinessDayRequest;
 import com.cardovia.merkon.backend.configuration.WebConfig;
 import com.cardovia.merkon.backend.security.AppUserRepository;
+import com.cardovia.merkon.backend.security.ApplicationRole;
+import com.cardovia.merkon.backend.security.AuthSessionRepository;
+import com.cardovia.merkon.backend.security.AuthSessionService;
+import com.cardovia.merkon.backend.security.CreateUserRequest;
+import com.cardovia.merkon.backend.security.LoginRequest;
+import com.cardovia.merkon.backend.security.PublicRegistrationRequest;
+import com.cardovia.merkon.backend.security.PublicRegistrationResponse;
+import com.cardovia.merkon.backend.security.PublicRegistrationService;
+import com.cardovia.merkon.backend.security.SecurityApiException;
+import com.cardovia.merkon.backend.security.UserManagementService;
+import com.cardovia.merkon.backend.security.UserResponse;
 import com.cardovia.merkon.backend.service.WhatsAppService;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -28,6 +39,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -55,6 +67,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,6 +103,18 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
 
     @Autowired
     private AppUserRepository userRepository;
+
+    @Autowired
+    private PublicRegistrationService registrations;
+
+    @Autowired
+    private UserManagementService userManagement;
+
+    @Autowired
+    private AuthSessionService authSessions;
+
+    @Autowired
+    private AuthSessionRepository sessionRepository;
 
     @Autowired
     private BusinessDayService businessDayService;
@@ -136,7 +161,7 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(28);
+                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(29);
         assertThat(jdbcTemplate.queryForList(
                         "select script from public.flyway_schema_history where success order by installed_rank",
                         String.class))
@@ -168,17 +193,28 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 "V25__add_pay_on_delivery_payment_timing.sql",
                 "V26__allow_pickup_pay_on_delivery.sql",
                 "V27__add_business_membership_foundation.sql",
-                "V28__scope_operational_data_to_business.sql");
+                "V28__scope_operational_data_to_business.sql",
+                "V29__add_public_registration_foundation.sql");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '27'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '28'", Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.flyway_schema_history where success and version = '29'", Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.tables
+                where table_schema = 'public' and table_name = 'user_terms_acceptances'
+                """, Integer.class)).isOne();
 
-        assertThat(userRepository.count()).isOne();
+        assertThat(userRepository.findByUsername(OWNER_USERNAME)).isPresent();
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.app_users where role = 'OWNER'", Integer.class)).isOne();
+                "select count(*) from public.app_users where username = ? and role = 'OWNER'", Integer.class, OWNER_USERNAME)).isOne();
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.business_memberships where role = 'OWNER'", Integer.class)).isOne();
+                """
+                        select count(*) from public.business_memberships membership
+                        join public.app_users user_account on user_account.id = membership.user_id
+                        where user_account.username = ? and membership.role = 'OWNER'
+                        """, Integer.class, OWNER_USERNAME)).isOne();
         String passwordHash = jdbcTemplate.queryForObject(
                 "select password_hash from public.app_users where username = ?", String.class, OWNER_USERNAME);
         assertThat(passwordHash).startsWith("{bcrypt}").isNotEqualTo(OWNER_PASSWORD);
@@ -201,6 +237,237 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(applicationContext.getBeansOfType(WebConfig.class)).isEmpty();
         assertThat(environment.getProperty("storage.receipts-directory")).isEmpty();
         assertThat(environment.getProperty("storage.public-upload-directory")).isEmpty();
+    }
+
+    @Test
+    void prodPosPostgreSqlRegistrationCreatesAnEmptyPendingOwnerBusiness() throws Exception {
+        String registrationEmail = "postgres-registration@example.com";
+        mockMvc.perform(post("/api/v1/registration")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "email", registrationEmail,
+                                "displayName", "PostgreSQL registration",
+                                "password", "una frase larga segura PostgreSQL 2026",
+                                "businessName", "PostgreSQL registration business",
+                                "termsAccepted", true))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("Solicitud de registro aceptada."));
+
+        Long userId = jdbcTemplate.queryForObject(
+                "select id from public.app_users where email = ?", Long.class, registrationEmail);
+        Long businessId = jdbcTemplate.queryForObject("""
+                select membership.business_id
+                from public.business_memberships membership
+                where membership.user_id = ? and membership.role = 'OWNER'
+                """, Long.class, userId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.app_users
+                where id = ? and username = ? and registration_state = 'PENDING_EMAIL_VERIFICATION'
+                  and active = false and email_verified_at is null
+                """, Integer.class, userId, registrationEmail)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.user_terms_acceptances
+                where user_id = ? and terms_version = 'v1'
+                """, Integer.class, userId)).isOne();
+        assertThat(jdbcTemplate.queryForObject("select legacy_key from public.businesses where id = ?", String.class, businessId))
+                .isNull();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.menu_items where business_id = ?", Integer.class,
+                businessId)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.promotions where business_id = ?", Integer.class,
+                businessId)).isZero();
+    }
+
+    @Test
+    void prodPosPostgreSqlConcurrentEquivalentRegistrationsCreateExactlyOneOwnerBusiness() throws Exception {
+        String email = "postgres-concurrent-registration@example.com";
+        PublicRegistrationRequest request = new PublicRegistrationRequest(
+                "  POSTGRES-CONCURRENT-REGISTRATION@EXAMPLE.COM  ",
+                "PostgreSQL concurrent registration",
+                "una frase larga segura PostgreSQL 2026",
+                "PostgreSQL concurrent registration business",
+                true);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<PublicRegistrationResponse>> results = List.of(
+                    executor.submit(() -> registerAtBarrier(request, ready, start)),
+                    executor.submit(() -> registerAtBarrier(request, ready, start)));
+            await(ready, "The concurrent PostgreSQL registrations did not reach the start barrier");
+            start.countDown();
+            for (Future<PublicRegistrationResponse> result : results) {
+                assertThat(result.get(10, TimeUnit.SECONDS).message()).isEqualTo("Solicitud de registro aceptada.");
+            }
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        Long userId = jdbcTemplate.queryForObject(
+                "select id from public.app_users where email = ?", Long.class, email);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.app_users where email = ?", Integer.class, email)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.business_memberships
+                where user_id = ? and role = 'OWNER'
+                """, Integer.class, userId)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.businesses business
+                join public.business_memberships membership on membership.business_id = business.id
+                where membership.user_id = ? and business.legacy_key is null
+                """, Integer.class, userId)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.user_terms_acceptances where user_id = ?", Integer.class, userId)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select max(attempt_count) from public.registration_rate_limit_buckets", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void prodPosPostgreSqlLegacyUnicodeUsernameBlocksEquivalentPunycodePublicRegistration() throws Exception {
+        String legacyUsername = "owner@b\u00fccher.de";
+        String canonicalEmail = "owner@xn--bcher-kva.de";
+        int usersBefore = jdbcTemplate.queryForObject("select count(*) from public.app_users", Integer.class);
+        int businessesBefore = jdbcTemplate.queryForObject(
+                "select count(*) from public.businesses where legacy_key is null", Integer.class);
+        int membershipsBefore = jdbcTemplate.queryForObject("select count(*) from public.business_memberships", Integer.class);
+        int termsBefore = jdbcTemplate.queryForObject("select count(*) from public.user_terms_acceptances", Integer.class);
+        int acceptedAuditsBefore = jdbcTemplate.queryForObject("""
+                select count(*) from public.security_audit_events where event_type = 'REGISTRATION_ACCEPTED'
+                """, Integer.class);
+
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active,
+                    failed_login_attempts, password_changed_at, created_at, updated_at, version)
+                values (?, 'Legacy Unicode Identity', '{bcrypt}not-used', 'MANAGER', true,
+                    0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """, legacyUsername);
+
+        mockMvc.perform(post("/api/v1/registration")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "email", canonicalEmail,
+                                "displayName", "Blocked PostgreSQL owner",
+                                "password", "una frase larga segura PostgreSQL 2026",
+                                "businessName", "Blocked PostgreSQL business",
+                                "termsAccepted", true))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value("Solicitud de registro aceptada."));
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.app_users", Integer.class))
+                .isEqualTo(usersBefore + 1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.app_users where username = ?", Integer.class, legacyUsername)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.app_users where email = ?", Integer.class, canonicalEmail)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.businesses where legacy_key is null", Integer.class)).isEqualTo(businessesBefore);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.business_memberships", Integer.class))
+                .isEqualTo(membershipsBefore);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.user_terms_acceptances", Integer.class))
+                .isEqualTo(termsBefore);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.security_audit_events where event_type = 'REGISTRATION_ACCEPTED'
+                """, Integer.class)).isEqualTo(acceptedAuditsBefore);
+    }
+
+    @Test
+    void prodPosPostgreSqlPublicCanonicalIdentityBlocksUnicodeEquivalentAdministrativeUsername() {
+        String canonicalEmail = "administrator@xn--bcher-kva.example";
+        registrations.register(new PublicRegistrationRequest(
+                canonicalEmail, "Public PostgreSQL owner", "una frase larga segura PostgreSQL 2026",
+                "Public PostgreSQL owner business", true), "198.51.100.30");
+        Long ownerId = userRepository.findByUsername(OWNER_USERNAME).orElseThrow().getId();
+        Long legacyBusinessId = jdbcTemplate.queryForObject("""
+                select membership.business_id
+                from public.business_memberships membership
+                where membership.user_id = ? and membership.role = 'OWNER'
+                """, Long.class, ownerId);
+
+        assertThatThrownBy(() -> userManagement.create(new CreateUserRequest(
+                "ADMINISTRATOR@B\u00dcCHER.EXAMPLE", "Colliding PostgreSQL administrator",
+                "una frase larga segura PostgreSQL 2026", ApplicationRole.CASHIER),
+                ownerId, legacyBusinessId, "127.0.0.1"))
+                .isInstanceOf(SecurityApiException.class)
+                .satisfies(exception -> assertThat(((SecurityApiException) exception).code()).isEqualTo("INVALID_USER"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.app_users where username = ?", Integer.class, canonicalEmail)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.app_users where username = ?", Integer.class,
+                "administrator@b\u00fccher.example")).isZero();
+
+        UserResponse canonicalAdministrator = userManagement.create(new CreateUserRequest(
+                "CANONICAL@B\u00dcCHER.EXAMPLE", "Canonical PostgreSQL administrator",
+                "una frase larga segura PostgreSQL 2026", ApplicationRole.KITCHEN),
+                ownerId, legacyBusinessId, "127.0.0.1");
+        assertThat(canonicalAdministrator.username()).isEqualTo("canonical@xn--bcher-kva.example");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from public.app_users where username = ?", Integer.class,
+                "canonical@xn--bcher-kva.example")).isOne();
+    }
+
+    @Test
+    void prodPosPostgreSqlControlledLegacyOwnerIdentityConvergencePreservesReferencesAndLogin() throws Exception {
+        Long bootstrapOwnerId = userRepository.findByUsername(OWNER_USERNAME).orElseThrow().getId();
+        Long legacyBusinessId = jdbcTemplate.queryForObject("""
+                select membership.business_id
+                from public.business_memberships membership
+                where membership.user_id = ? and membership.role = 'OWNER'
+                """, Long.class, bootstrapOwnerId);
+        String oldUsername = "postgres-legacy-owner-login";
+        String canonicalEmail = "owner@xn--bcher-kva.example";
+        String password = "una frase larga segura PostgreSQL 2026";
+        UserResponse legacyOwner = userManagement.create(new CreateUserRequest(
+                oldUsername, "PostgreSQL legacy owner", password, ApplicationRole.OWNER),
+                bootstrapOwnerId, legacyBusinessId, "127.0.0.1");
+        Long userId = legacyOwner.id();
+        Long membershipId = jdbcTemplate.queryForObject("""
+                select id from public.business_memberships
+                where user_id = ? and business_id = ?
+                """, Long.class, userId, legacyBusinessId);
+        String passwordHash = jdbcTemplate.queryForObject(
+                "select password_hash from public.app_users where id = ?", String.class, userId);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                oldUsername, password, "postgres-legacy-owner-pre-convergence", null, null))))
+                .andExpect(status().isOk());
+        UUID oldSessionId = sessionRepository.findActiveByUserAndDevice(userId, "postgres-legacy-owner-pre-convergence")
+                .get(0).getId();
+
+        assertThat(jdbcTemplate.update("""
+                update public.app_users
+                set username = ?, email = ?, updated_at = current_timestamp, version = version + 1
+                where id = ?
+                """, canonicalEmail, canonicalEmail, userId)).isOne();
+        authSessions.revokeAll(userId, "IDENTITY_CONVERGED", userId, "127.0.0.1");
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.app_users
+                where id = ? and username = ? and email = ? and password_hash = ?
+                  and active = true and registration_state = 'LEGACY'
+                """, Integer.class, userId, canonicalEmail, canonicalEmail, passwordHash)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.business_memberships
+                where id = ? and user_id = ? and business_id = ? and role = 'OWNER'
+                """, Integer.class, membershipId, userId, legacyBusinessId)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.auth_sessions
+                where id = ? and revoked_at is not null and revoke_reason = 'IDENTITY_CONVERGED'
+                """, Integer.class, oldSessionId)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.user_terms_acceptances where user_id = ?", Integer.class, userId)).isZero();
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                oldUsername, password, "postgres-legacy-owner-old-login", null, null))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                canonicalEmail, password, "postgres-legacy-owner-canonical-login", null, null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
 
     @Test
@@ -308,6 +575,14 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         static ExpenseAttempt succeeded() {
             return new ExpenseAttempt(null, null);
         }
+    }
+
+    private PublicRegistrationResponse registerAtBarrier(PublicRegistrationRequest request,
+                                                          CountDownLatch ready,
+                                                          CountDownLatch start) {
+        ready.countDown();
+        await(start, "The concurrent PostgreSQL registration test did not start");
+        return registrations.register(request, "198.51.100.42");
     }
 
     private JsonNode login() throws Exception {

@@ -20,7 +20,7 @@ public class AppUser {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 80, unique = true)
+    @Column(nullable = false, length = 254, unique = true)
     private String username;
 
     @Column(name = "display_name", nullable = false, length = 120)
@@ -84,6 +84,32 @@ public class AppUser {
         user.legacyRole = Objects.requireNonNull(legacyRole);
         user.registrationState = AccountRegistrationState.LEGACY;
         user.active = true;
+        user.passwordChangedAt = now;
+        user.createdAt = now;
+        user.updatedAt = now;
+        return user;
+    }
+
+    /**
+     * Creates the deliberately inactive identity used by the public
+     * registration flow. SCRUM-56 is responsible for the later verified
+     * activation transition; this method must never create a login-eligible
+     * account.
+     */
+    static AppUser createPendingRegistration(String normalizedEmail,
+                                             String displayName,
+                                             String passwordHash,
+                                             Instant now) {
+        AppUser user = new AppUser();
+        user.username = Objects.requireNonNull(normalizedEmail);
+        user.displayName = Objects.requireNonNull(displayName);
+        user.email = normalizedEmail;
+        user.passwordHash = Objects.requireNonNull(passwordHash);
+        // The non-null legacy column remains a compatibility snapshot only.
+        // The new business authorization authority is the OWNER membership.
+        user.legacyRole = ApplicationRole.OWNER;
+        user.registrationState = AccountRegistrationState.PENDING_EMAIL_VERIFICATION;
+        user.active = false;
         user.passwordChangedAt = now;
         user.createdAt = now;
         user.updatedAt = now;

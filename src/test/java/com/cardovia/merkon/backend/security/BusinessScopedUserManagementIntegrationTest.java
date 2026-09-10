@@ -46,6 +46,7 @@ class BusinessScopedUserManagementIntegrationTest {
     @Autowired private AuthSessionRepository sessions;
     @Autowired private AuthService authService;
     @Autowired private UserManagementService userManagement;
+    @Autowired private PublicRegistrationService registrations;
     @Autowired private PasswordPolicyService passwords;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private Clock clock;
@@ -65,6 +66,8 @@ class BusinessScopedUserManagementIntegrationTest {
         jdbcTemplate.update("delete from public.security_audit_events");
         jdbcTemplate.update("delete from public.auth_refresh_token_history");
         jdbcTemplate.update("delete from public.auth_sessions");
+        jdbcTemplate.update("delete from public.registration_rate_limit_buckets");
+        jdbcTemplate.update("delete from public.user_terms_acceptances");
         memberships.deleteAll();
         users.deleteAll();
         businesses.findAll().stream()
@@ -186,6 +189,36 @@ class BusinessScopedUserManagementIntegrationTest {
         mockMvc.perform(delete("/api/v1/security/sessions/{id}", businessBSessionId)
                         .header("Authorization", "Bearer " + ownerAToken))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void administrativeEmailShapedUsernamesUseThePublicCanonicalIdentityAndReserveItsAliases() {
+        UserResponse canonical = userManagement.create(new CreateUserRequest(
+                " OWNER@B\u00dcCHER.EXAMPLE ", "Canonical administrator",
+                "una frase larga segura 123", ApplicationRole.CASHIER),
+                ownerA.getId(), businessA.getId(), "127.0.0.1");
+        assertThat(canonical.username()).isEqualTo("owner@xn--bcher-kva.example");
+        assertThat(users.findByUsername("owner@xn--bcher-kva.example")).isPresent();
+
+        UserResponse legacy = userManagement.create(new CreateUserRequest(
+                "LEGACY@NOT-EMAIL", "Legacy at username",
+                "una frase larga segura 123", ApplicationRole.KITCHEN),
+                ownerA.getId(), businessA.getId(), "127.0.0.1");
+        assertThat(legacy.username()).isEqualTo("legacy@not-email");
+    }
+
+    @Test
+    void publicCanonicalIdentityPreventsAdministrativeUnicodeEquivalentCreation() {
+        registrations.register(new PublicRegistrationRequest(
+                "owner@xn--bcher-kva.example", "Public owner",
+                "una frase larga segura 123", "Public owner business", true), "198.51.100.20");
+
+        assertCode(() -> userManagement.create(new CreateUserRequest(
+                "OWNER@B\u00dcCHER.EXAMPLE", "Colliding administrator",
+                "una frase larga segura 123", ApplicationRole.CASHIER),
+                ownerA.getId(), businessA.getId(), "127.0.0.1"), "INVALID_USER");
+        assertThat(users.findByUsername("owner@xn--bcher-kva.example")).isPresent();
+        assertThat(users.findByUsername("owner@b\u00fccher.example")).isEmpty();
     }
 
     private AppUser user(String username, ApplicationRole legacyRole) {

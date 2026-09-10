@@ -129,7 +129,7 @@ class BusinessMembershipIntegrationTest {
     }
 
     @Test
-    void duplicateMembershipIsRejectedEmailIsNormalizedAndBusinessNamesNeedNotBeUnique() {
+    void duplicateMembershipIsRejectedEmailIsCanonicalizedAndBusinessNamesNeedNotBeUnique() {
         AppUser user = createUser("member-duplicate", ApplicationRole.CASHIER);
         memberships.saveAndFlush(BusinessMembership.create(user, legacyBusiness, ApplicationRole.CASHIER, clock.instant()));
 
@@ -148,6 +148,10 @@ class BusinessMembershipIntegrationTest {
         users.saveAndFlush(emailUser);
         assertThat(emailUser.getEmail()).isEqualTo("user@example.com");
         assertThat(emailUser.getRegistrationState()).isEqualTo(AccountRegistrationState.PENDING_EMAIL_VERIFICATION);
+        assertThat(UserManagementService.normalizeEmail(" OWNER@B\u00dcCHER.DE "))
+                .isEqualTo("owner@xn--bcher-kva.de");
+        assertThat(UserManagementService.normalizeEmail("legacy@not-email"))
+                .isEqualTo("legacy@not-email");
     }
 
     private AppUser createUser(String username, ApplicationRole role) {

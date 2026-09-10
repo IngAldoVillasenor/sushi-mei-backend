@@ -73,3 +73,10 @@ merkon:
     bootstrap-owner-username: ${MERKON_BOOTSTRAP_OWNER_USERNAME:${SUSHIMEI_BOOTSTRAP_OWNER_USERNAME:}}
     bootstrap-owner-password: ${MERKON_BOOTSTRAP_OWNER_PASSWORD:${SUSHIMEI_BOOTSTRAP_OWNER_PASSWORD:}}
     bootstrap-owner-display-name: ${MERKON_BOOTSTRAP_OWNER_DISPLAY_NAME:${SUSHIMEI_BOOTSTRAP_OWNER_DISPLAY_NAME:Owner}}
+  registration:
+    terms-version: ${MERKON_REGISTRATION_TERMS_VERSION:v1}
+    rate-limit-max-attempts: ${MERKON_REGISTRATION_RATE_LIMIT_MAX_ATTEMPTS:5}
+    rate-limit-window: ${MERKON_REGISTRATION_RATE_LIMIT_WINDOW:15m}
+    # The socket peer is intentionally treated only as a coarse safety bucket:
+    # Cloud Run does not establish client-IP provenance for forwarded headers.
+    transport-rate-limit-max-attempts: ${MERKON_REGISTRATION_TRANSPORT_RATE_LIMIT_MAX_ATTEMPTS:500}
