@@ -4,14 +4,13 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 class RegistrationRateLimitService {
 
-    private static final int CREATION_RACE_RETRIES = 2;
+    private static final int H2_CREATION_RACE_RETRIES = 2;
 
     private final RegistrationRateLimitTransaction transaction;
     private final PublicRegistrationProperties properties;
@@ -33,14 +32,14 @@ class RegistrationRateLimitService {
     }
 
     private void check(String bucketKey, int maximumAttempts) {
-        for (int attempt = 0; attempt <= CREATION_RACE_RETRIES; attempt++) {
+        for (int attempt = 0; attempt <= H2_CREATION_RACE_RETRIES; attempt++) {
             try {
                 if (!transaction.recordAttempt(bucketKey, maximumAttempts)) {
                     throw rateLimited();
                 }
                 return;
-            } catch (DataIntegrityViolationException exception) {
-                if (attempt == CREATION_RACE_RETRIES) {
+            } catch (RegistrationRateLimitTransaction.BucketCreationRaceException exception) {
+                if (attempt == H2_CREATION_RACE_RETRIES) {
                     throw exception;
                 }
             }
