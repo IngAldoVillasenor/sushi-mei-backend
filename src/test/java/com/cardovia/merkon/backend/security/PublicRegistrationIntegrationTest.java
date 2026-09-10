@@ -69,6 +69,7 @@ class PublicRegistrationIntegrationTest {
         jdbcTemplate.update("delete from public.security_audit_events");
         jdbcTemplate.update("delete from public.auth_refresh_token_history");
         jdbcTemplate.update("delete from public.auth_sessions");
+        jdbcTemplate.update("delete from public.email_verification_tokens");
         jdbcTemplate.update("delete from public.registration_rate_limit_buckets");
         jdbcTemplate.update("delete from public.user_terms_acceptances");
         memberships.deleteAll();

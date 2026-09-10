@@ -53,3 +53,13 @@ merkon:
       access-token-ttl: 15m
     session-ttl: 15d
     bcrypt-strength: 4
+  transactional-email:
+    provider: DISABLED
+    enabled: false
+    from-address: no-reply@merkon.invalid
+    from-name: MerkON Test
+    verification-base-url: https://verification.merkon.invalid/verify-email
+    support-address: support@merkon.invalid
+    resend-api-base-url: https://api.resend.com
+    connect-timeout: 1s
+    read-timeout: 1s

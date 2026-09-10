@@ -14,28 +14,49 @@ class RegistrationRateLimitService {
 
     private final RegistrationRateLimitTransaction transaction;
     private final PublicRegistrationProperties properties;
+    private final EmailVerificationProperties verificationProperties;
 
     RegistrationRateLimitService(RegistrationRateLimitTransaction transaction,
-                                 PublicRegistrationProperties properties) {
+                                 PublicRegistrationProperties properties,
+                                 EmailVerificationProperties verificationProperties) {
         this.transaction = transaction;
         this.properties = properties;
+        this.verificationProperties = verificationProperties;
     }
 
     void checkTransportAddress(String observedConnectionAddress) {
         check(bucketKey("merkon-registration-transport-v2:", observedConnectionAddress),
-                properties.transportRateLimitMaxAttempts());
+                properties.transportRateLimitMaxAttempts(), properties.rateLimitWindow(),
+                "REGISTRATION_RATE_LIMITED", "Demasiadas solicitudes de registro. Inténtalo más tarde.");
     }
 
     void checkCanonicalIdentity(String canonicalEmail) {
         check(bucketKey("merkon-registration-identity-v2:", canonicalEmail),
-                properties.rateLimitMaxAttempts());
+                properties.rateLimitMaxAttempts(), properties.rateLimitWindow(),
+                "REGISTRATION_RATE_LIMITED", "Demasiadas solicitudes de registro. Inténtalo más tarde.");
     }
 
-    private void check(String bucketKey, int maximumAttempts) {
+    void checkEmailVerificationResend(String canonicalEmail) {
+        check(bucketKey("merkon-email-verification-resend-v1:", canonicalEmail),
+                verificationProperties.resendRateLimitMaxAttempts(), verificationProperties.resendRateLimitWindow(),
+                "EMAIL_VERIFICATION_RESEND_RATE_LIMITED", "Demasiadas solicitudes de reenvío. Inténtalo más tarde.");
+    }
+
+    void checkEmailVerificationTransport(String observedConnectionAddress) {
+        check(bucketKey("merkon-email-verification-transport-v1:", observedConnectionAddress),
+                verificationProperties.transportRateLimitMaxAttempts(), verificationProperties.transportRateLimitWindow(),
+                "EMAIL_VERIFICATION_TRANSPORT_RATE_LIMITED", "Demasiadas solicitudes de verificación. Inténtalo más tarde.");
+    }
+
+    private void check(String bucketKey,
+                       int maximumAttempts,
+                       java.time.Duration window,
+                       String errorCode,
+                       String errorMessage) {
         for (int attempt = 0; attempt <= H2_CREATION_RACE_RETRIES; attempt++) {
             try {
-                if (!transaction.recordAttempt(bucketKey, maximumAttempts)) {
-                    throw rateLimited();
+                if (!transaction.recordAttempt(bucketKey, maximumAttempts, window)) {
+                    throw rateLimited(errorCode, errorMessage);
                 }
                 return;
             } catch (RegistrationRateLimitTransaction.BucketCreationRaceException exception) {
@@ -57,9 +78,8 @@ class RegistrationRateLimitService {
         }
     }
 
-    private static SecurityApiException rateLimited() {
+    private static SecurityApiException rateLimited(String code, String message) {
         return new SecurityApiException(
-                "REGISTRATION_RATE_LIMITED", HttpStatus.TOO_MANY_REQUESTS,
-                "Demasiadas solicitudes de registro. Intentalo mas tarde.");
+                code, HttpStatus.TOO_MANY_REQUESTS, message);
     }
 }

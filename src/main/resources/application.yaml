@@ -80,3 +80,23 @@ merkon:
     # The socket peer is intentionally treated only as a coarse safety bucket:
     # Cloud Run does not establish client-IP provenance for forwarded headers.
     transport-rate-limit-max-attempts: ${MERKON_REGISTRATION_TRANSPORT_RATE_LIMIT_MAX_ATTEMPTS:500}
+  email-verification:
+    token-ttl: ${MERKON_EMAIL_VERIFICATION_TOKEN_TTL:24h}
+    resend-rate-limit-max-attempts: ${MERKON_EMAIL_VERIFICATION_RESEND_RATE_LIMIT_MAX_ATTEMPTS:5}
+    resend-rate-limit-window: ${MERKON_EMAIL_VERIFICATION_RESEND_RATE_LIMIT_WINDOW:15m}
+    # Socket peers are intentionally only a coarse volume guard. Forwarded
+    # client IP headers have no configured trusted-proxy provenance in Cloud Run.
+    transport-rate-limit-max-attempts: ${MERKON_EMAIL_VERIFICATION_TRANSPORT_RATE_LIMIT_MAX_ATTEMPTS:500}
+    transport-rate-limit-window: ${MERKON_EMAIL_VERIFICATION_TRANSPORT_RATE_LIMIT_WINDOW:15m}
+  transactional-email:
+    # Disabled by default: production must explicitly configure Resend and a verified sender.
+    provider: ${MERKON_TRANSACTIONAL_EMAIL_PROVIDER:DISABLED}
+    enabled: ${MERKON_TRANSACTIONAL_EMAIL_ENABLED:false}
+    api-key: ${MERKON_TRANSACTIONAL_EMAIL_API_KEY:}
+    from-address: ${MERKON_TRANSACTIONAL_EMAIL_FROM_ADDRESS:no-reply@merkon.invalid}
+    from-name: ${MERKON_TRANSACTIONAL_EMAIL_FROM_NAME:MerkON}
+    verification-base-url: ${MERKON_EMAIL_VERIFICATION_BASE_URL:https://verification.merkon.invalid/verify-email}
+    support-address: ${MERKON_TRANSACTIONAL_EMAIL_SUPPORT_ADDRESS:support@merkon.invalid}
+    resend-api-base-url: ${MERKON_RESEND_API_BASE_URL:https://api.resend.com}
+    connect-timeout: ${MERKON_TRANSACTIONAL_EMAIL_CONNECT_TIMEOUT:5s}
+    read-timeout: ${MERKON_TRANSACTIONAL_EMAIL_READ_TIMEOUT:10s}

@@ -155,6 +155,23 @@ public class AppUser {
         this.updatedAt = now;
     }
 
+    /** Consumes the only valid public-registration activation transition. */
+    void activateVerifiedRegistration(Instant now) {
+        if (registrationState != AccountRegistrationState.PENDING_EMAIL_VERIFICATION || active
+                || email == null || email.isBlank() || emailVerifiedAt != null) {
+            throw new IllegalStateException("Account is not eligible for verified activation");
+        }
+        registrationState = AccountRegistrationState.ACTIVE;
+        active = true;
+        emailVerifiedAt = Objects.requireNonNull(now);
+        // Pending users may have attempted to sign in before completing the
+        // email step. Activation is not a login, but it must clear that
+        // pre-verification lock state so the valid existing password works.
+        failedLoginAttempts = 0;
+        lockedUntil = null;
+        updatedAt = now;
+    }
+
     public Long getId() { return id; }
     public String getUsername() { return username; }
     public String getDisplayName() { return displayName; }

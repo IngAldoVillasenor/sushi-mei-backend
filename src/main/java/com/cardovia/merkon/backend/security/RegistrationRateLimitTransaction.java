@@ -1,6 +1,7 @@
 package com.cardovia.merkon.backend.security;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.sql.Timestamp;
 import java.util.Locale;
@@ -56,14 +57,11 @@ class RegistrationRateLimitTransaction {
             """;
 
     private final JdbcTemplate jdbcTemplate;
-    private final PublicRegistrationProperties properties;
     private final Clock clock;
 
     RegistrationRateLimitTransaction(JdbcTemplate jdbcTemplate,
-                                     PublicRegistrationProperties properties,
                                      Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
-        this.properties = properties;
         this.clock = clock;
     }
 
@@ -72,10 +70,10 @@ class RegistrationRateLimitTransaction {
      * and remain meaningful across Cloud Run instances sharing the database.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    boolean recordAttempt(String bucketKey, int maximumAttempts) {
+    boolean recordAttempt(String bucketKey, int maximumAttempts, Duration window) {
         Instant now = clock.instant();
         Timestamp recordedAt = Timestamp.from(now);
-        Timestamp resetBefore = Timestamp.from(now.minus(properties.rateLimitWindow()));
+        Timestamp resetBefore = Timestamp.from(now.minus(window));
         int attemptCount = switch (databaseDialect()) {
             case POSTGRESQL -> jdbcTemplate.queryForObject(
                     POSTGRESQL_RECORD_ATTEMPT,
