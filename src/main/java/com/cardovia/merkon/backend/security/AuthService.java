@@ -43,6 +43,7 @@ public class AuthService {
         }
         return response(sessions.open(
                 evaluation.userId(),
+                evaluation.passwordHashSnapshot(),
                 requiredTrim(request.deviceId()),
                 nullableTrim(request.deviceName()),
                 nullableTrim(request.appVersion()),
@@ -72,7 +73,7 @@ public class AuthService {
 
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request, String clientIp) {
-        AppUser user = users.findById(userId).orElseThrow(AuthService::unauthorized);
+        AppUser user = users.findByIdForUpdate(userId).orElseThrow(AuthService::unauthorized);
         if (!passwords.matches(request.currentPassword(), user.getPasswordHash())) {
             throw invalidCredentials();
         }

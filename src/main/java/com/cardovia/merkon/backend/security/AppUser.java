@@ -148,6 +148,19 @@ public class AppUser {
         this.updatedAt = now;
     }
 
+    /**
+     * Applies a password chosen through a successfully consumed public reset
+     * token. This is deliberately not a login: it clears stale lockout state
+     * without recording a fictitious successful sign-in.
+     */
+    void resetPassword(String passwordHash, Instant now) {
+        this.passwordHash = Objects.requireNonNull(passwordHash);
+        this.passwordChangedAt = Objects.requireNonNull(now);
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+        this.updatedAt = now;
+    }
+
     void setNormalizedEmail(String email, AccountRegistrationState registrationState, Instant now) {
         this.email = email;
         this.registrationState = Objects.requireNonNull(registrationState);

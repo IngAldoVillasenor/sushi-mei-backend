@@ -55,7 +55,9 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/refresh",
                                 "/api/v1/registration",
                                 "/api/v1/registration/email-verification/verify",
-                                "/api/v1/registration/email-verification/resend").permitAll()
+                                "/api/v1/registration/email-verification/resend",
+                                "/api/v1/auth/password-recovery/request",
+                                "/api/v1/auth/password-recovery/confirm").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/whatsapp/webhook").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/whatsapp/webhook").permitAll()
                         .requestMatchers("/internal/**").hasRole("OWNER")

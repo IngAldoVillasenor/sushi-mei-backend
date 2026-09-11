@@ -15,13 +15,16 @@ class RegistrationRateLimitService {
     private final RegistrationRateLimitTransaction transaction;
     private final PublicRegistrationProperties properties;
     private final EmailVerificationProperties verificationProperties;
+    private final PasswordRecoveryProperties passwordRecoveryProperties;
 
     RegistrationRateLimitService(RegistrationRateLimitTransaction transaction,
                                  PublicRegistrationProperties properties,
-                                 EmailVerificationProperties verificationProperties) {
+                                 EmailVerificationProperties verificationProperties,
+                                 PasswordRecoveryProperties passwordRecoveryProperties) {
         this.transaction = transaction;
         this.properties = properties;
         this.verificationProperties = verificationProperties;
+        this.passwordRecoveryProperties = passwordRecoveryProperties;
     }
 
     void checkTransportAddress(String observedConnectionAddress) {
@@ -46,6 +49,18 @@ class RegistrationRateLimitService {
         check(bucketKey("merkon-email-verification-transport-v1:", observedConnectionAddress),
                 verificationProperties.transportRateLimitMaxAttempts(), verificationProperties.transportRateLimitWindow(),
                 "EMAIL_VERIFICATION_TRANSPORT_RATE_LIMITED", "Demasiadas solicitudes de verificación. Inténtalo más tarde.");
+    }
+
+    void checkPasswordRecoveryRequest(String canonicalEmail) {
+        check(bucketKey("merkon-password-recovery-request-v1:", canonicalEmail),
+                passwordRecoveryProperties.requestRateLimitMaxAttempts(), passwordRecoveryProperties.requestRateLimitWindow(),
+                "PASSWORD_RECOVERY_RATE_LIMITED", "Demasiadas solicitudes de restablecimiento. Inténtalo más tarde.");
+    }
+
+    void checkPasswordRecoveryTransport(String observedConnectionAddress) {
+        check(bucketKey("merkon-password-recovery-transport-v1:", observedConnectionAddress),
+                passwordRecoveryProperties.transportRateLimitMaxAttempts(), passwordRecoveryProperties.transportRateLimitWindow(),
+                "PASSWORD_RECOVERY_TRANSPORT_RATE_LIMITED", "Demasiadas solicitudes de restablecimiento. Inténtalo más tarde.");
     }
 
     private void check(String bucketKey,

@@ -45,13 +45,24 @@ public class AuthSessionService {
 
     @Transactional
     public SessionToken open(Long userId,
+                             String passwordHashSnapshot,
                              String deviceId,
                              String deviceName,
                              String appVersion,
                              Long requestedBusinessId,
                              String clientIp) {
         Instant now = clock.instant();
-        AppUser user = users.findById(userId).orElseThrow();
+        // Login validation is committed separately so its lockout/audit state
+        // survives a later session-creation failure. Reacquire the user row
+        // lock here and prove the password credential has not changed since
+        // validation before a new session is allowed to exist.
+        AppUser user = users.findByIdForUpdate(userId).orElseThrow(AuthSessionService::invalidCredentials);
+        if (passwordHashSnapshot == null
+                || !sameHash(user.getPasswordHash(), passwordHashSnapshot)
+                || !user.isActive()
+                || user.getRegistrationState() == AccountRegistrationState.PENDING_EMAIL_VERIFICATION) {
+            throw invalidCredentials();
+        }
         BusinessMembership activeMembership = resolveActiveMembership(user, requestedBusinessId);
         for (AuthSession existing : sessions.findActiveByUserAndDevice(userId, deviceId)) {
             existing.revoke("REPLACED_BY_LOGIN", now);
@@ -297,6 +308,13 @@ public class AuthSessionService {
         return MessageDigest.isEqual(
                 left.getBytes(StandardCharsets.US_ASCII),
                 right.getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private static SecurityApiException invalidCredentials() {
+        return new SecurityApiException(
+                "AUTH_INVALID_CREDENTIALS",
+                HttpStatus.UNAUTHORIZED,
+                "Usuario o contrase\u00f1a incorrectos.");
     }
 
     public record SessionToken(AppUser user, AuthSession session, String rawRefreshToken) {
