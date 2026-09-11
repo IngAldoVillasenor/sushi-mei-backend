@@ -24,6 +24,8 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
     private static final String REGISTRATION_PATH = "/api/v1/registration";
     private static final String VERIFY_PATH = "/api/v1/registration/email-verification/verify";
     private static final String RESEND_PATH = "/api/v1/registration/email-verification/resend";
+    private static final String PASSWORD_RECOVERY_REQUEST_PATH = "/api/v1/auth/password-recovery/request";
+    private static final String PASSWORD_RECOVERY_CONFIRM_PATH = "/api/v1/auth/password-recovery/confirm";
 
     private final RegistrationRateLimitService rateLimit;
     private final RegistrationClientAddressResolver clientAddresses;
@@ -52,10 +54,12 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
         String observedConnectionAddress = clientAddresses.resolve(request);
         PublicRoute route = route(request);
         try {
-            if (route == PublicRoute.REGISTRATION) {
-                rateLimit.checkTransportAddress(observedConnectionAddress);
-            } else {
-                rateLimit.checkEmailVerificationTransport(observedConnectionAddress);
+            switch (route) {
+                case REGISTRATION -> rateLimit.checkTransportAddress(observedConnectionAddress);
+                case VERIFY, RESEND -> rateLimit.checkEmailVerificationTransport(observedConnectionAddress);
+                case PASSWORD_RECOVERY_REQUEST, PASSWORD_RECOVERY_CONFIRM ->
+                        rateLimit.checkPasswordRecoveryTransport(observedConnectionAddress);
+                case NONE -> throw new IllegalStateException("Unexpected public route");
             }
         } catch (SecurityApiException exception) {
             if (!isExpectedRateLimit(route, exception.code())) {
@@ -89,19 +93,26 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
             case REGISTRATION_PATH -> PublicRoute.REGISTRATION;
             case VERIFY_PATH -> PublicRoute.VERIFY;
             case RESEND_PATH -> PublicRoute.RESEND;
+            case PASSWORD_RECOVERY_REQUEST_PATH -> PublicRoute.PASSWORD_RECOVERY_REQUEST;
+            case PASSWORD_RECOVERY_CONFIRM_PATH -> PublicRoute.PASSWORD_RECOVERY_CONFIRM;
             default -> PublicRoute.NONE;
         };
     }
 
     private static boolean isExpectedRateLimit(PublicRoute route, String code) {
         return (route == PublicRoute.REGISTRATION && "REGISTRATION_RATE_LIMITED".equals(code))
-                || (route != PublicRoute.REGISTRATION && "EMAIL_VERIFICATION_TRANSPORT_RATE_LIMITED".equals(code));
+                || ((route == PublicRoute.VERIFY || route == PublicRoute.RESEND)
+                && "EMAIL_VERIFICATION_TRANSPORT_RATE_LIMITED".equals(code))
+                || ((route == PublicRoute.PASSWORD_RECOVERY_REQUEST || route == PublicRoute.PASSWORD_RECOVERY_CONFIRM)
+                && "PASSWORD_RECOVERY_TRANSPORT_RATE_LIMITED".equals(code));
     }
 
     private enum PublicRoute {
         REGISTRATION,
         VERIFY,
         RESEND,
+        PASSWORD_RECOVERY_REQUEST,
+        PASSWORD_RECOVERY_CONFIRM,
         NONE
     }
 }

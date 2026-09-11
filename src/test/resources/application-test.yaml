@@ -59,6 +59,7 @@ merkon:
     from-address: no-reply@merkon.invalid
     from-name: MerkON Test
     verification-base-url: https://verification.merkon.invalid/verify-email
+    password-reset-base-url: https://password-reset.merkon.invalid/reset-password
     support-address: support@merkon.invalid
     resend-api-base-url: https://api.resend.com
     connect-timeout: 1s

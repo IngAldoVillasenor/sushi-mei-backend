@@ -87,16 +87,20 @@ public class LoginAttemptService {
                 clientIp,
                 SecurityAuditOutcome.SUCCESS,
                 null);
-        return LoginEvaluation.success(user.getId());
+        // This is an in-process credential snapshot, never exposed in an API
+        // response or audit record. AuthSessionService rechecks it under the
+        // user write lock before creating a session so an authentication that
+        // was evaluated before a password change cannot open a session later.
+        return LoginEvaluation.success(user.getId(), user.getPasswordHash());
     }
 
-    public record LoginEvaluation(boolean success, Long userId) {
+    public record LoginEvaluation(boolean success, Long userId, String passwordHashSnapshot) {
         static LoginEvaluation failure() {
-            return new LoginEvaluation(false, null);
+            return new LoginEvaluation(false, null, null);
         }
 
-        static LoginEvaluation success(Long userId) {
-            return new LoginEvaluation(true, userId);
+        static LoginEvaluation success(Long userId, String passwordHashSnapshot) {
+            return new LoginEvaluation(true, userId, passwordHashSnapshot);
         }
     }
 }

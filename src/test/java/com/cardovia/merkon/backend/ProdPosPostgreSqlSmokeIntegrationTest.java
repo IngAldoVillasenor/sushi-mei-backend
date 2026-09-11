@@ -17,9 +17,12 @@ import com.cardovia.merkon.backend.security.AuthSessionRepository;
 import com.cardovia.merkon.backend.security.AuthSessionService;
 import com.cardovia.merkon.backend.security.CreateUserRequest;
 import com.cardovia.merkon.backend.security.LoginRequest;
+import com.cardovia.merkon.backend.security.PasswordRecoveryConfirmRequest;
+import com.cardovia.merkon.backend.security.PasswordRecoveryRequest;
 import com.cardovia.merkon.backend.security.PublicRegistrationRequest;
 import com.cardovia.merkon.backend.security.PublicRegistrationResponse;
 import com.cardovia.merkon.backend.security.PublicRegistrationService;
+import com.cardovia.merkon.backend.security.RefreshRequest;
 import com.cardovia.merkon.backend.security.SecurityApiException;
 import com.cardovia.merkon.backend.security.TransactionalEmail;
 import com.cardovia.merkon.backend.security.TransactionalEmailSender;
@@ -172,7 +175,7 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(30);
+                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(31);
         assertThat(jdbcTemplate.queryForList(
                         "select script from public.flyway_schema_history where success order by installed_rank",
                         String.class))
@@ -206,7 +209,8 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 "V27__add_business_membership_foundation.sql",
                 "V28__scope_operational_data_to_business.sql",
                 "V29__add_public_registration_foundation.sql",
-                "V30__add_email_verification_tokens.sql");
+                "V30__add_email_verification_tokens.sql",
+                "V31__add_password_reset_tokens.sql");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '27'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
@@ -215,6 +219,8 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 "select count(*) from public.flyway_schema_history where success and version = '29'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '30'", Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.flyway_schema_history where success and version = '31'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.tables
                 where table_schema = 'public' and table_name = 'user_terms_acceptances'
@@ -222,6 +228,10 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.tables
                 where table_schema = 'public' and table_name = 'email_verification_tokens'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.tables
+                where table_schema = 'public' and table_name = 'password_reset_tokens'
                 """, Integer.class)).isOne();
 
         assertThat(userRepository.findByUsername(OWNER_USERNAME)).isPresent();
@@ -388,6 +398,69 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                                 email, password, "postgres-verified-device", null, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty());
+    }
+
+    @Test
+    void prodPosPostgreSqlPasswordRecoveryConsumesTheTokenRevokesSessionsAndAllowsTheNewPassword() throws Exception {
+        emailSender.clear();
+        String email = "postgres-password-recovery@example.com";
+        String originalPassword = "una frase larga segura PostgreSQL recovery 2026";
+        String replacementPassword = "otra frase larga segura PostgreSQL recovery 2026";
+        registrations.register(new PublicRegistrationRequest(
+                email, "PostgreSQL recovery owner", originalPassword,
+                "PostgreSQL recovery business", true), "198.51.100.83");
+        String verificationToken = emailSender.singleToken();
+        mockMvc.perform(post("/api/v1/registration/email-verification/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("token", verificationToken))))
+                .andExpect(status().isOk());
+
+        String loginBody = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                email, originalPassword, "postgres-recovery-device", null, null))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String refreshToken = objectMapper.readTree(loginBody).required("refreshToken").asText();
+        Long userId = jdbcTemplate.queryForObject("select id from public.app_users where email = ?", Long.class, email);
+
+        emailSender.clear();
+        mockMvc.perform(post("/api/v1/auth/password-recovery/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new PasswordRecoveryRequest(email))))
+                .andExpect(status().isAccepted());
+        String resetToken = emailSender.singleToken();
+        mockMvc.perform(post("/api/v1/auth/password-recovery/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new PasswordRecoveryConfirmRequest(
+                                resetToken, replacementPassword))))
+                .andExpect(status().isNoContent());
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.password_reset_tokens
+                where user_id = ? and token_hash = ? and used_at is not null and revoked_at is null
+                """, Integer.class, userId, sha256(resetToken))).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.password_reset_tokens where token_hash = ?
+                """, Integer.class, resetToken)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.auth_sessions where user_id = ? and revoked_at is null
+                """, Integer.class, userId)).isZero();
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(
+                                refreshToken, "postgres-recovery-device"))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                email, originalPassword, "postgres-old-password-device", null, null))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(
+                                email, replacementPassword, "postgres-new-password-device", null, null))))
+                .andExpect(status().isOk());
     }
 
     @Test
