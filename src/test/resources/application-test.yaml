@@ -60,6 +60,7 @@ merkon:
     from-name: MerkON Test
     verification-base-url: https://verification.merkon.invalid/verify-email
     password-reset-base-url: https://password-reset.merkon.invalid/reset-password
+    account-deletion-base-url: https://account-deletion.merkon.invalid/account-deletion
     support-address: support@merkon.invalid
     resend-api-base-url: https://api.resend.com
     connect-timeout: 1s

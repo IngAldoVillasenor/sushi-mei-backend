@@ -18,5 +18,9 @@ public interface BusinessRepository extends JpaRepository<Business, Long> {
     @Query("select business from Business business where business.id = :id")
     Optional<Business> findByIdForBusinessDayOperations(@Param("id") Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select business from Business business where business.id = :id")
+    Optional<Business> findByIdForUpdate(@Param("id") Long id);
+
     List<Business> findByActiveTrueOrderByIdAsc();
 }

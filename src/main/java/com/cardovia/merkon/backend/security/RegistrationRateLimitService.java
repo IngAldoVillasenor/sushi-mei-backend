@@ -63,6 +63,16 @@ class RegistrationRateLimitService {
                 "PASSWORD_RECOVERY_TRANSPORT_RATE_LIMITED", "Demasiadas solicitudes de restablecimiento. Inténtalo más tarde.");
     }
 
+    void checkAccountDeletionIdentity(String canonicalEmail) {
+        check(bucketKey("merkon-account-deletion-identity-v1:", canonicalEmail), 5, java.time.Duration.ofMinutes(15),
+                "ACCOUNT_DELETION_RATE_LIMITED", "Demasiadas solicitudes de eliminación. Inténtalo más tarde.");
+    }
+
+    void checkAccountDeletionTransport(String observedConnectionAddress) {
+        check(bucketKey("merkon-account-deletion-transport-v1:", observedConnectionAddress), 500, java.time.Duration.ofMinutes(15),
+                "ACCOUNT_DELETION_TRANSPORT_RATE_LIMITED", "Demasiadas solicitudes de eliminación. Inténtalo más tarde.");
+    }
+
     private void check(String bucketKey,
                        int maximumAttempts,
                        java.time.Duration window,

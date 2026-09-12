@@ -12,8 +12,9 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import java.util.UUID;
 
-/** Exercises the unshipped V30-to-V31 upgrade on the production database engine. */
+/** Exercises the V30 upgrade path through both the V31 and V32 production schemas. */
 @Testcontainers(disabledWithoutDocker = true)
 class PublicRegistrationPostgreSqlMigrationIntegrationTest {
 
@@ -24,7 +25,7 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
             .withPassword("merkon_registration_password");
 
     @Test
-    void v30ToV31PreservesExistingUsersAndAddsPasswordResetTokenConstraints() {
+    void v30UpgradePreservesExistingUsersAndAddsV31AndV32Constraints() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
@@ -49,7 +50,7 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
                 select "version" from public.flyway_schema_history
                 where success and "version" is not null
                 order by installed_rank desc limit 1
-                """, String.class)).isEqualTo("31");
+                """, String.class)).isEqualTo("32");
         assertThat(jdbcTemplate.queryForObject("""
                 select username from public.app_users where username = 'legacy-v31-postgres'
                 """, String.class)).isEqualTo("legacy-v31-postgres");
@@ -80,6 +81,41 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
                 where table_schema = 'public' and table_name = 'password_reset_tokens'
                   and column_name = 'token_hash'
                 """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.tables
+                where table_schema = 'public' and table_name = 'account_deletion_requests'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from public.flyway_schema_history
+                where success and version = '32'
+                """, Integer.class)).isOne();
+        for (String column : java.util.List.of("id", "user_id", "source", "status", "token_hash", "requested_at",
+                "expires_at", "confirmed_at", "completed_at", "action_code")) {
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from information_schema.columns
+                    where table_schema = 'public' and table_name = 'account_deletion_requests' and column_name = ?
+                    """, Integer.class, column)).isOne();
+        }
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from pg_constraint
+                where conrelid = 'public.account_deletion_requests'::regclass
+                  and conname = 'account_deletion_requests_token_hash_key'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from pg_constraint
+                where conrelid = 'public.account_deletion_requests'::regclass
+                  and conname = 'account_deletion_requests_user_id_fkey'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from pg_constraint
+                where conrelid = 'public.account_deletion_requests'::regclass
+                  and conname = 'account_deletion_requests_expiry_check'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from pg_indexes
+                where schemaname = 'public' and tablename = 'account_deletion_requests'
+                  and indexname = 'account_deletion_requests_user_status_idx'
+                """, Integer.class)).isOne();
 
         jdbcTemplate.update("""
                 insert into public.app_users (username, display_name, email, registration_state, password_hash, role,
@@ -94,6 +130,41 @@ class PublicRegistrationPostgreSqlMigrationIntegrationTest {
                     'OWNER', false, 0, current_timestamp, current_timestamp, current_timestamp, 0)
                 """))
                 .isInstanceOf(DataIntegrityViolationException.class);
+
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active,
+                    failed_login_attempts, password_changed_at, created_at, updated_at, version)
+                values ('v32-postgres-schema-user', 'V32 PostgreSQL', '{bcrypt}hash', 'OWNER', true,
+                    0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """);
+        Long userId = jdbcTemplate.queryForObject("""
+                select id from public.app_users where username = 'v32-postgres-schema-user'
+                """, Long.class);
+        String tokenHash = "b".repeat(64);
+        jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, token_hash, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', ?, current_timestamp, current_timestamp + interval '1 hour')
+                """, UUID.randomUUID(), userId, tokenHash);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, token_hash, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', ?, current_timestamp, current_timestamp + interval '1 hour')
+                """, UUID.randomUUID(), userId, tokenHash)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', current_timestamp, current_timestamp + interval '1 hour')
+                """, UUID.randomUUID(), userId + 100000L)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', current_timestamp, current_timestamp)
+                """, UUID.randomUUID(), userId)).isInstanceOf(DataIntegrityViolationException.class);
+        jdbcTemplate.update("update public.app_users set registration_state = 'DELETED' where id = ?", userId);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                update public.app_users set registration_state = 'UNSUPPORTED_STATE' where id = ?
+                """, userId)).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     private static Flyway flyway(DriverManagerDataSource dataSource, MigrationVersion target) {

@@ -55,6 +55,7 @@ class ExactMoneyBackfillMigrationIntegrationTest {
     private static final String V29_SCRIPT = "V29__add_public_registration_foundation.sql";
     private static final String V30_SCRIPT = "V30__add_email_verification_tokens.sql";
     private static final String V31_SCRIPT = "V31__add_password_reset_tokens.sql";
+    private static final String V32_SCRIPT = "V32__add_account_deletion_foundation.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -128,7 +129,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 30)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 31, "SQL", V31_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 31)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("31");
+        assertSqlMigration(jdbcTemplate, 32, "SQL", V32_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 32)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("32");
         assertMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT", "NO");
         assertMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT", "NO");
         assertNamedConstraint(jdbcTemplate, "CART_ITEMS", "CART_ITEMS_UNIT_PRICE_AMOUNT_POSITIVE_CHECK");
@@ -233,7 +236,9 @@ class ExactMoneyBackfillMigrationIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 30)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 31, "SQL", V31_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 31)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("31");
+        assertSqlMigration(jdbcTemplate, 32, "SQL", V32_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 32)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("32");
         assertThat(jdbcTemplate.queryForList("select unit_price from public.cart_items order by id", Double.class))
                 .containsExactly(10.50d, 0.10d);
         assertThat(jdbcTemplate.queryForList("select unit_price_amount from public.cart_items order by id", BigDecimal.class))

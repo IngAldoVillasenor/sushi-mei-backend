@@ -15,6 +15,7 @@ public record TransactionalEmailProperties(
         String fromName,
         String verificationBaseUrl,
         String passwordResetBaseUrl,
+        String accountDeletionBaseUrl,
         String supportAddress,
         String resendApiBaseUrl,
         Duration connectTimeout,
@@ -30,9 +31,11 @@ public record TransactionalEmailProperties(
         fromName = requireText(fromName, "merkon.transactional-email.from-name", 120);
         URI verificationUrl = requireHttpUrl(verificationBaseUrl, "merkon.transactional-email.verification-base-url");
         URI passwordResetUrl = requireHttpUrl(passwordResetBaseUrl, "merkon.transactional-email.password-reset-base-url");
+        URI accountDeletionUrl = requireHttpUrl(accountDeletionBaseUrl, "merkon.transactional-email.account-deletion-base-url");
         URI resendUrl = requireHttpUrl(resendApiBaseUrl, "merkon.transactional-email.resend-api-base-url");
         verificationBaseUrl = verificationUrl.toString();
         passwordResetBaseUrl = passwordResetUrl.toString();
+        accountDeletionBaseUrl = accountDeletionUrl.toString();
         resendApiBaseUrl = resendUrl.toString();
         connectTimeout = requireTimeout(connectTimeout, "merkon.transactional-email.connect-timeout");
         readTimeout = requireTimeout(readTimeout, "merkon.transactional-email.read-timeout");
@@ -50,6 +53,9 @@ public record TransactionalEmailProperties(
             }
             if (!"https".equalsIgnoreCase(passwordResetUrl.getScheme()) || isPlaceholderUrl(passwordResetUrl)) {
                 throw new IllegalArgumentException("Transactional email is enabled but its password reset base URL is not configured");
+            }
+            if (!"https".equalsIgnoreCase(accountDeletionUrl.getScheme()) || isPlaceholderUrl(accountDeletionUrl)) {
+                throw new IllegalArgumentException("Transactional email is enabled but its account deletion base URL is not configured");
             }
             requireOfficialResendUrl(resendUrl);
         }

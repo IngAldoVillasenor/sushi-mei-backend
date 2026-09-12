@@ -48,5 +48,8 @@ public interface BusinessMembershipRepository extends JpaRepository<BusinessMemb
             """)
     List<BusinessMembership> findActiveOwnersForBusinessForUpdate(@Param("businessId") Long businessId);
 
+    @Query("select count(membership) from BusinessMembership membership join membership.user user where membership.business.id = :businessId and membership.role = com.cardovia.merkon.backend.security.ApplicationRole.OWNER and user.active = true")
+    long countActiveOwnersForBusiness(@Param("businessId") Long businessId);
+
     long countByUserId(Long userId);
 }
