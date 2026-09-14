@@ -187,6 +187,7 @@ class PasswordRecoveryIntegrationTest {
                                 "pending-recovery@example.com", "Pending owner", ORIGINAL_PASSWORD,
                                 "Pending business", true))))
                 .andExpect(status().isAccepted());
+        sender.single();
         sender.clear();
 
         String pendingResponse = requestReset("pending-recovery@example.com")
