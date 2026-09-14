@@ -104,6 +104,7 @@ merkon:
     from-name: ${MERKON_TRANSACTIONAL_EMAIL_FROM_NAME:MerkON}
     verification-base-url: ${MERKON_EMAIL_VERIFICATION_BASE_URL:https://verification.merkon.invalid/verify-email}
     password-reset-base-url: ${MERKON_PASSWORD_RESET_BASE_URL:https://password-reset.merkon.invalid/reset-password}
+    account-deletion-base-url: ${MERKON_ACCOUNT_DELETION_BASE_URL:https://account-deletion.merkon.invalid/account-deletion}
     support-address: ${MERKON_TRANSACTIONAL_EMAIL_SUPPORT_ADDRESS:support@merkon.invalid}
     resend-api-base-url: ${MERKON_RESEND_API_BASE_URL:https://api.resend.com}
     connect-timeout: ${MERKON_TRANSACTIONAL_EMAIL_CONNECT_TIMEOUT:5s}

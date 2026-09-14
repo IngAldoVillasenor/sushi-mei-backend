@@ -185,6 +185,22 @@ public class AppUser {
         updatedAt = now;
     }
 
+    /** Irreversibly removes identifying and login-capable account state. */
+    void anonymizeDeleted(String tombstoneUsername, String unusablePasswordHash, Instant now) {
+        this.username = Objects.requireNonNull(tombstoneUsername);
+        this.displayName = "Cuenta eliminada";
+        this.email = null;
+        this.emailVerifiedAt = null;
+        this.passwordHash = Objects.requireNonNull(unusablePasswordHash);
+        this.registrationState = AccountRegistrationState.DELETED;
+        this.active = false;
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+        this.lastLoginAt = null;
+        this.passwordChangedAt = Objects.requireNonNull(now);
+        this.updatedAt = now;
+    }
+
     public Long getId() { return id; }
     public String getUsername() { return username; }
     public String getDisplayName() { return displayName; }

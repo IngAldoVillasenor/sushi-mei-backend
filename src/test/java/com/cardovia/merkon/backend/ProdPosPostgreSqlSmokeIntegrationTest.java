@@ -175,7 +175,7 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
 
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(31);
+                "select count(*) from public.flyway_schema_history where success", Integer.class)).isEqualTo(32);
         assertThat(jdbcTemplate.queryForList(
                         "select script from public.flyway_schema_history where success order by installed_rank",
                         String.class))
@@ -210,7 +210,8 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 "V28__scope_operational_data_to_business.sql",
                 "V29__add_public_registration_foundation.sql",
                 "V30__add_email_verification_tokens.sql",
-                "V31__add_password_reset_tokens.sql");
+                "V31__add_password_reset_tokens.sql",
+                "V32__add_account_deletion_foundation.sql");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '27'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
@@ -221,6 +222,8 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
                 "select count(*) from public.flyway_schema_history where success and version = '30'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from public.flyway_schema_history where success and version = '31'", Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from public.flyway_schema_history where success and version = '32'", Integer.class)).isOne();
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.tables
                 where table_schema = 'public' and table_name = 'user_terms_acceptances'
@@ -232,6 +235,10 @@ class ProdPosPostgreSqlSmokeIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.tables
                 where table_schema = 'public' and table_name = 'password_reset_tokens'
+                """, Integer.class)).isOne();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.tables
+                where table_schema = 'public' and table_name = 'account_deletion_requests'
                 """, Integer.class)).isOne();
 
         assertThat(userRepository.findByUsername(OWNER_USERNAME)).isPresent();

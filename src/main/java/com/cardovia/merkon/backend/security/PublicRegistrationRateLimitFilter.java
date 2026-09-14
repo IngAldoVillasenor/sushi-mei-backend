@@ -26,6 +26,8 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
     private static final String RESEND_PATH = "/api/v1/registration/email-verification/resend";
     private static final String PASSWORD_RECOVERY_REQUEST_PATH = "/api/v1/auth/password-recovery/request";
     private static final String PASSWORD_RECOVERY_CONFIRM_PATH = "/api/v1/auth/password-recovery/confirm";
+    private static final String ACCOUNT_DELETION_REQUEST_PATH = "/api/v1/account-deletion/request";
+    private static final String ACCOUNT_DELETION_CONFIRM_PATH = "/api/v1/account-deletion/confirm";
 
     private final RegistrationRateLimitService rateLimit;
     private final RegistrationClientAddressResolver clientAddresses;
@@ -59,6 +61,7 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
                 case VERIFY, RESEND -> rateLimit.checkEmailVerificationTransport(observedConnectionAddress);
                 case PASSWORD_RECOVERY_REQUEST, PASSWORD_RECOVERY_CONFIRM ->
                         rateLimit.checkPasswordRecoveryTransport(observedConnectionAddress);
+                case ACCOUNT_DELETION_REQUEST, ACCOUNT_DELETION_CONFIRM -> rateLimit.checkAccountDeletionTransport(observedConnectionAddress);
                 case NONE -> throw new IllegalStateException("Unexpected public route");
             }
         } catch (SecurityApiException exception) {
@@ -95,6 +98,8 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
             case RESEND_PATH -> PublicRoute.RESEND;
             case PASSWORD_RECOVERY_REQUEST_PATH -> PublicRoute.PASSWORD_RECOVERY_REQUEST;
             case PASSWORD_RECOVERY_CONFIRM_PATH -> PublicRoute.PASSWORD_RECOVERY_CONFIRM;
+            case ACCOUNT_DELETION_REQUEST_PATH -> PublicRoute.ACCOUNT_DELETION_REQUEST;
+            case ACCOUNT_DELETION_CONFIRM_PATH -> PublicRoute.ACCOUNT_DELETION_CONFIRM;
             default -> PublicRoute.NONE;
         };
     }
@@ -104,7 +109,9 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
                 || ((route == PublicRoute.VERIFY || route == PublicRoute.RESEND)
                 && "EMAIL_VERIFICATION_TRANSPORT_RATE_LIMITED".equals(code))
                 || ((route == PublicRoute.PASSWORD_RECOVERY_REQUEST || route == PublicRoute.PASSWORD_RECOVERY_CONFIRM)
-                && "PASSWORD_RECOVERY_TRANSPORT_RATE_LIMITED".equals(code));
+                && "PASSWORD_RECOVERY_TRANSPORT_RATE_LIMITED".equals(code))
+                || ((route == PublicRoute.ACCOUNT_DELETION_REQUEST || route == PublicRoute.ACCOUNT_DELETION_CONFIRM)
+                && "ACCOUNT_DELETION_TRANSPORT_RATE_LIMITED".equals(code));
     }
 
     private enum PublicRoute {
@@ -113,6 +120,8 @@ class PublicRegistrationRateLimitFilter extends OncePerRequestFilter {
         RESEND,
         PASSWORD_RECOVERY_REQUEST,
         PASSWORD_RECOVERY_CONFIRM,
+        ACCOUNT_DELETION_REQUEST,
+        ACCOUNT_DELETION_CONFIRM,
         NONE
     }
 }

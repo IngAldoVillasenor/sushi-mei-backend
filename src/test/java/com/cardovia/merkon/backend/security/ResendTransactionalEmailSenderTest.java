@@ -77,6 +77,7 @@ class ResendTransactionalEmailSenderTest {
                 "MerkON",
                 "https://verify.example.com/email",
                 "https://reset.example.com/password",
+                "https://delete.example.com/account-deletion",
                 "support@example.com",
                 "http://127.0.0.1:" + port,
                 Duration.ofSeconds(1),

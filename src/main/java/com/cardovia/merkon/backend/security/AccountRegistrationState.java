@@ -4,5 +4,6 @@ package com.cardovia.merkon.backend.security;
 public enum AccountRegistrationState {
     LEGACY,
     PENDING_EMAIL_VERIFICATION,
-    ACTIVE
+    ACTIVE,
+    DELETED
 }

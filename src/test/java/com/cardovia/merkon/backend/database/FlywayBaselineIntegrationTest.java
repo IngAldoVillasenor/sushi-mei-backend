@@ -70,6 +70,7 @@ class FlywayBaselineIntegrationTest {
     private static final String V29_SCRIPT = "V29__add_public_registration_foundation.sql";
     private static final String V30_SCRIPT = "V30__add_email_verification_tokens.sql";
     private static final String V31_SCRIPT = "V31__add_password_reset_tokens.sql";
+    private static final String V32_SCRIPT = "V32__add_account_deletion_foundation.sql";
 
     private final List<JdbcConnectionPool> isolatedDataSources = new ArrayList<>();
 
@@ -124,7 +125,8 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
         assertSqlMigration(jdbcTemplate, 30, "SQL", V30_SCRIPT);
         assertSqlMigration(jdbcTemplate, 31, "SQL", V31_SCRIPT);
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("31");
+        assertSqlMigration(jdbcTemplate, 32, "SQL", V32_SCRIPT);
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("32");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
 
         assertTableExists(jdbcTemplate, "CART");
@@ -206,12 +208,13 @@ class FlywayBaselineIntegrationTest {
         assertPublicRegistrationSchema(jdbcTemplate);
         assertEmailVerificationSchema(jdbcTemplate);
         assertPasswordResetSchema(jdbcTemplate);
+        assertAccountDeletionSchema(jdbcTemplate);
         assertAuthoritativeCatalogBootstrapData(jdbcTemplate);
         assertAuthoritativePromotionBootstrapData(jdbcTemplate);
     }
 
     @Test
-    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV31AsSuccessfulSqlMigrations() {
+    void cleanIsolatedDatabaseRecordsAllMigrationsThroughV32AsSuccessfulSqlMigrations() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
 
@@ -248,7 +251,9 @@ class FlywayBaselineIntegrationTest {
         assertSqlMigration(jdbcTemplate, 29, "SQL", V29_SCRIPT);
         assertSqlMigration(jdbcTemplate, 30, "SQL", V30_SCRIPT);
         assertSqlMigration(jdbcTemplate, 31, "SQL", V31_SCRIPT);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("31");
+        assertSqlMigration(jdbcTemplate, 32, "SQL", V32_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 32)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("32");
         assertFlywayHistoryTableExistsInPublic(jdbcTemplate);
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "CART_ITEMS", "UNIT_PRICE_AMOUNT");
         assertConstrainedParallelMoneyColumn(jdbcTemplate, "ORDERS", "TOTAL_AMOUNT_AMOUNT");
@@ -272,6 +277,7 @@ class FlywayBaselineIntegrationTest {
         assertPublicRegistrationSchema(jdbcTemplate);
         assertEmailVerificationSchema(jdbcTemplate);
         assertPasswordResetSchema(jdbcTemplate);
+        assertAccountDeletionSchema(jdbcTemplate);
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from public.catalog_bootstrap_rule_sets
                 where rule_set_id = 'PHASE_6F1_AUTHORITATIVE_CATALOG_RULES' and applied_at is null
@@ -566,8 +572,10 @@ class FlywayBaselineIntegrationTest {
         assertThat(historyCount(jdbcTemplate, 30)).isEqualTo(1);
         assertSqlMigration(jdbcTemplate, 31, "SQL", V31_SCRIPT);
         assertThat(historyCount(jdbcTemplate, 31)).isEqualTo(1);
-        assertThat(currentVersion(jdbcTemplate)).isEqualTo("31");
-        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 32);
+        assertSqlMigration(jdbcTemplate, 32, "SQL", V32_SCRIPT);
+        assertThat(historyCount(jdbcTemplate, 32)).isEqualTo(1);
+        assertThat(currentVersion(jdbcTemplate)).isEqualTo("32");
+        assertThat(publicTableCount(jdbcTemplate)).isEqualTo(tableCountBeforeBaseline + 33);
         assertThat(jdbcTemplate.queryForObject("select dish_name from public.cart_items", String.class)).isEqualTo("Legacy Maki");
         assertThat(jdbcTemplate.queryForObject("select quantity from public.cart_items", Integer.class)).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject("select unit_price from public.cart_items", Double.class)).isEqualTo(10.50d);
@@ -1204,7 +1212,7 @@ class FlywayBaselineIntegrationTest {
     }
 
     @Test
-    void v30ToV31PreservesExistingUsersAndAddsThePasswordResetSchema() {
+    void v30UpgradePreservesExistingUsersAndAddsV31PasswordResetAndV32DeletionSchemas() {
         JdbcConnectionPool isolatedDataSource = newIsolatedDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(isolatedDataSource);
         newFlyway(isolatedDataSource, MigrationVersion.fromVersion("30")).migrate();
@@ -1226,6 +1234,7 @@ class FlywayBaselineIntegrationTest {
 
         assertSqlMigration(jdbcTemplate, 30, "SQL", V30_SCRIPT);
         assertSqlMigration(jdbcTemplate, 31, "SQL", V31_SCRIPT);
+        assertSqlMigration(jdbcTemplate, 32, "SQL", V32_SCRIPT);
         assertThat(jdbcTemplate.queryForObject(
                 "select username from public.app_users where username = 'legacy-v30'", String.class))
                 .isEqualTo("legacy-v30");
@@ -1236,6 +1245,7 @@ class FlywayBaselineIntegrationTest {
         assertPublicRegistrationSchema(jdbcTemplate);
         assertEmailVerificationSchema(jdbcTemplate);
         assertPasswordResetSchema(jdbcTemplate);
+        assertAccountDeletionSchema(jdbcTemplate);
     }
 
     private void assertBusinessMembershipSchema(JdbcTemplate jdbcTemplate) {
@@ -1282,6 +1292,64 @@ class FlywayBaselineIntegrationTest {
                 "PASSWORD_RESET_TOKENS_TOKEN_HASH_KEY")).isTrue();
         assertThat(namedConstraintExists(jdbcTemplate, "PASSWORD_RESET_TOKENS",
                 "PASSWORD_RESET_TOKENS_USER_ID_FKEY")).isTrue();
+    }
+
+    /** V32 must be enforceable, not merely present in Flyway history. */
+    private void assertAccountDeletionSchema(JdbcTemplate jdbcTemplate) {
+        assertTableExists(jdbcTemplate, "ACCOUNT_DELETION_REQUESTS");
+        for (String column : List.of("ID", "USER_ID", "SOURCE", "STATUS", "TOKEN_HASH", "REQUESTED_AT",
+                "EXPIRES_AT", "CONFIRMED_AT", "COMPLETED_AT", "ACTION_CODE")) {
+            assertColumnPresent(jdbcTemplate, "ACCOUNT_DELETION_REQUESTS", column);
+        }
+        assertThat(namedConstraintExists(jdbcTemplate, "ACCOUNT_DELETION_REQUESTS",
+                "ACCOUNT_DELETION_REQUESTS_PKEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ACCOUNT_DELETION_REQUESTS",
+                "ACCOUNT_DELETION_REQUESTS_TOKEN_HASH_KEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ACCOUNT_DELETION_REQUESTS",
+                "ACCOUNT_DELETION_REQUESTS_USER_ID_FKEY")).isTrue();
+        assertThat(namedConstraintExists(jdbcTemplate, "ACCOUNT_DELETION_REQUESTS",
+                "ACCOUNT_DELETION_REQUESTS_EXPIRY_CHECK")).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.indexes
+                where table_schema = 'PUBLIC' and table_name = 'ACCOUNT_DELETION_REQUESTS'
+                  and index_name = 'ACCOUNT_DELETION_REQUESTS_USER_STATUS_IDX'
+                """, Integer.class)).isOne();
+
+        jdbcTemplate.update("""
+                insert into public.app_users (username, display_name, password_hash, role, active,
+                    failed_login_attempts, password_changed_at, created_at, updated_at, version)
+                values ('v32-account-deletion-schema-user', 'V32 schema user', '{bcrypt}hash', 'OWNER', true,
+                    0, current_timestamp, current_timestamp, current_timestamp, 0)
+                """);
+        Long userId = jdbcTemplate.queryForObject("""
+                select id from public.app_users where username = 'v32-account-deletion-schema-user'
+                """, Long.class);
+        UUID firstId = UUID.randomUUID();
+        String tokenHash = "a".repeat(64);
+        jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, token_hash, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', ?, current_timestamp, dateadd('HOUR', 1, current_timestamp))
+                """, firstId, userId, tokenHash);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, token_hash, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', ?, current_timestamp, dateadd('HOUR', 1, current_timestamp))
+                """, UUID.randomUUID(), userId, tokenHash)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', current_timestamp, dateadd('HOUR', 1, current_timestamp))
+                """, UUID.randomUUID(), userId + 100000L)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into public.account_deletion_requests
+                    (id, user_id, source, status, requested_at, expires_at)
+                values (?, ?, 'PUBLIC', 'PENDING_CONFIRMATION', current_timestamp, current_timestamp)
+                """, UUID.randomUUID(), userId)).isInstanceOf(DataIntegrityViolationException.class);
+        jdbcTemplate.update("update public.app_users set registration_state = 'DELETED' where id = ?", userId);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                update public.app_users set registration_state = 'UNSUPPORTED_STATE' where id = ?
+                """, userId)).isInstanceOf(DataIntegrityViolationException.class);
     }
     @TestConfiguration(proxyBeanMethods = false)
     static class TestInfrastructureConfiguration {
